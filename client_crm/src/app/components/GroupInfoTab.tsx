@@ -1,8 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
-import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
+import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import {
   Select,
@@ -19,52 +19,131 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./ui/dialog";
-import { Calendar, Clock, GraduationCap, Users, BookOpen, Edit2, Plus, Trash2, ArchiveRestore } from "lucide-react";
-import { useState } from "react";
-
-interface GroupInfo {
-  name: string;
-  teacher: string;
-  subject: string;
-  level: string;
-}
+import { Calendar, Clock, GraduationCap, Users, BookOpen, Plus, Trash2, Sparkles, UserPlus, Edit, Save, X } from "lucide-react";
+import { useState, useEffect } from "react";
+import { toast } from "sonner";
+import type { Group, ScheduleCreate, Student, Subject, User, SchoolLocation } from "../types/api";
+import { api } from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
 
 interface GroupInfoTabProps {
-  group: GroupInfo;
-  isAdmin?: boolean;
+  group: Group;
+  onUpdate?: () => void;
 }
 
-interface Student {
-  id: string;
-  name: string;
-  isArchived?: boolean;
-}
+export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
-const mockTeachers = [
-  "Бочко В.Д.",
-  "Байкальская",
-  "Иванов А.С.",
-  "Петрова М.В.",
-];
+  const [comment, setComment] = useState(group.comment || "");
+  const [startDate, setStartDate] = useState(group.start_date || "");
+  const [isSaving, setIsSaving] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isAddScheduleOpen, setIsAddScheduleOpen] = useState(false);
+  const [isGenerateLessonsOpen, setIsGenerateLessonsOpen] = useState(false);
+  const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
+  const [generateMonths, setGenerateMonths] = useState("3");
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [newSchedule, setNewSchedule] = useState<ScheduleCreate>({
+    day_of_week: "",
+    start_time: "",
+    duration_minutes: 90,
+  });
 
-export function GroupInfoTab({ group, isAdmin = true }: GroupInfoTabProps) {
-  const [comment, setComment] = useState("Студенты активные и мотивированные. Необходимо уделить больше внимания практическим заданиям по программированию.");
+  // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
-  const [description, setDescription] = useState("Группа для подготовки к ЕГЭ по информатике. Программа включает изучение всех разделов кодификатора, решение типовых заданий и разбор сложных тем.");
-  const [scheduleDay, setScheduleDay] = useState("Четверг");
-  const [scheduleTime, setScheduleTime] = useState("16:30");
-  const [scheduleDuration, setScheduleDuration] = useState("90");
-  const [selectedTeacher, setSelectedTeacher] = useState(group.teacher);
-  const [students, setStudents] = useState<Student[]>([
-    { id: "1", name: "Алиев Андрей" },
-    { id: "2", name: "Иванов Петр" },
-    { id: "3", name: "Сидоров Иван" },
-    { id: "4", name: "Петров Алексей" },
-  ]);
-  const [archivedStudents, setArchivedStudents] = useState<Student[]>([]);
-  const [isAddStudentDialogOpen, setIsAddStudentDialogOpen] = useState(false);
-  const [newStudentName, setNewStudentName] = useState("");
-  const [showArchive, setShowArchive] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: group.name,
+    subject_id: group.subject.id,
+    teacher_id: group.teacher.id,
+    level: group.level || "",
+    description: group.description || "",
+    school_location: group.school_location || "",
+  });
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [teachers, setTeachers] = useState<User[]>([]);
+  const [schoolLocations, setSchoolLocations] = useState<SchoolLocation[]>([]);
+
+  useEffect(() => {
+    if (isAddStudentOpen) {
+      loadAllStudents();
+    }
+  }, [isAddStudentOpen]);
+
+  useEffect(() => {
+    if (isEditMode) {
+      loadEditModeData();
+    }
+  }, [isEditMode]);
+
+  const loadAllStudents = async () => {
+    try {
+      const students = await api.getStudents();
+      // Filter out students already in the group
+      const availableStudents = students.filter(
+        (student) => !group.students.some((gs) => gs.id === student.id)
+      );
+      setAllStudents(availableStudents);
+    } catch (error) {
+      console.error("Failed to load students:", error);
+      toast.error("Ошибка при загрузке студентов");
+    }
+  };
+
+  const loadEditModeData = async () => {
+    try {
+      const [subjectsData, teachersData, locationsData] = await Promise.all([
+        api.getSubjects(),
+        api.getEmployees(),
+        api.getSchoolLocations(),
+      ]);
+      setSubjects(subjectsData);
+      setTeachers(teachersData.filter(t => t.role === "teacher" || t.role === "admin"));
+      setSchoolLocations(locationsData);
+    } catch (error) {
+      console.error("Failed to load edit mode data:", error);
+      toast.error("Ошибка при загрузке данных");
+    }
+  };
+
+  const formatSubjectName = (subject: Subject) => {
+    if (subject.exam_type) {
+      return `${subject.name} (${subject.exam_type})`;
+    }
+    return subject.name;
+  };
+
+  const handleEnterEditMode = () => {
+    setEditFormData({
+      name: group.name,
+      subject_id: group.subject.id,
+      teacher_id: group.teacher.id,
+      level: group.level || "",
+      description: group.description || "",
+      school_location: group.school_location || "",
+    });
+    setIsEditMode(true);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditMode(false);
+  };
+
+  const handleSaveEdit = async () => {
+    try {
+      setIsSaving(true);
+      await api.updateGroup(group.id, editFormData);
+      setIsEditMode(false);
+      if (onUpdate) onUpdate();
+      toast.success("Информация о группе обновлена");
+    } catch (error) {
+      console.error("Failed to update group:", error);
+      toast.error("Ошибка при обновлении группы");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const daysOfWeek = [
     "Понедельник",
@@ -76,50 +155,114 @@ export function GroupInfoTab({ group, isAdmin = true }: GroupInfoTabProps) {
     "Воскресенье",
   ];
 
-  const formatSchedule = () => {
-    const hours = Math.floor(parseInt(scheduleDuration) / 60);
-    const minutes = parseInt(scheduleDuration) % 60;
+  const formatScheduleTime = (time: string, duration: number) => {
+    const hours = Math.floor(duration / 60);
+    const minutes = duration % 60;
     let durationText = "";
-    if (hours > 0) {
-      durationText += `${hours} ч`;
-    }
+    if (hours > 0) durationText += `${hours} ч`;
     if (minutes > 0) {
       if (hours > 0) durationText += " ";
       durationText += `${minutes} мин`;
     }
-    return `${scheduleDay}, ${scheduleTime} (${durationText})`;
+    return `${time} (${durationText})`;
   };
 
-  const handleSaveChanges = () => {
-    setIsEditMode(false);
-    // Here you would save changes to the backend
-  };
-
-  const handleAddStudent = () => {
-    if (newStudentName.trim()) {
-      const newStudent: Student = {
-        id: Date.now().toString(),
-        name: newStudentName.trim(),
-      };
-      setStudents([...students, newStudent]);
-      setNewStudentName("");
-      setIsAddStudentDialogOpen(false);
+  const handleSaveComment = async () => {
+    try {
+      setIsSaving(true);
+      await api.updateGroup(group.id, { comment });
+      if (onUpdate) onUpdate();
+      toast.success("Комментарий сохранен");
+    } catch (error) {
+      console.error("Failed to save comment:", error);
+      toast.error("Ошибка при сохранении комментария");
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleArchiveStudent = (studentId: string) => {
-    const student = students.find(s => s.id === studentId);
-    if (student) {
-      setStudents(students.filter(s => s.id !== studentId));
-      setArchivedStudents([...archivedStudents, { ...student, isArchived: true }]);
+  const handleSaveStartDate = async () => {
+    try {
+      setIsSaving(true);
+      await api.updateGroup(group.id, { start_date: startDate });
+      if (onUpdate) onUpdate();
+      toast.success("Дата начала сохранена");
+    } catch (error) {
+      console.error("Failed to save start date:", error);
+      toast.error("Ошибка при сохранении даты начала");
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleRestoreStudent = (studentId: string) => {
-    const student = archivedStudents.find(s => s.id === studentId);
-    if (student) {
-      setArchivedStudents(archivedStudents.filter(s => s.id !== studentId));
-      setStudents([...students, { ...student, isArchived: false }]);
+  const handleGenerateLessons = async () => {
+    try {
+      setIsGenerating(true);
+      const months = parseInt(generateMonths);
+      await api.generateLessons(group.id, { months });
+      setIsGenerateLessonsOpen(false);
+      toast.success("Уроки успешно сгенерированы!");
+      if (onUpdate) onUpdate();
+    } catch (error) {
+      console.error("Failed to generate lessons:", error);
+      toast.error("Ошибка при генерации уроков");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleAddStudent = async () => {
+    if (!selectedStudentId) return;
+    try {
+      await api.addStudentToGroup(group.id, selectedStudentId);
+      setIsAddStudentOpen(false);
+      setSelectedStudentId("");
+      if (onUpdate) onUpdate();
+      toast.success("Студент добавлен в группу");
+    } catch (error) {
+      console.error("Failed to add student:", error);
+      toast.error("Ошибка при добавлении студента");
+    }
+  };
+
+  const handleRemoveStudent = async (studentId: string) => {
+    if (!confirm("Удалить студента из группы?")) return;
+    try {
+      await api.removeStudentFromGroup(group.id, studentId);
+      if (onUpdate) onUpdate();
+      toast.success("Студент удален из группы");
+    } catch (error) {
+      console.error("Failed to remove student:", error);
+      toast.error("Ошибка при удалении студента");
+    }
+  };
+
+  const handleAddSchedule = async () => {
+    try {
+      await api.createSchedule(group.id, newSchedule);
+      setIsAddScheduleOpen(false);
+      setNewSchedule({
+        day_of_week: "",
+        start_time: "",
+        duration_minutes: 90,
+      });
+      if (onUpdate) onUpdate();
+      toast.success("Расписание добавлено");
+    } catch (error) {
+      console.error("Failed to add schedule:", error);
+      toast.error("Ошибка при добавлении расписания");
+    }
+  };
+
+  const handleDeleteSchedule = async (scheduleId: string) => {
+    if (!confirm("Удалить это расписание?")) return;
+    try {
+      await api.deleteSchedule(group.id, scheduleId);
+      if (onUpdate) onUpdate();
+      toast.success("Расписание удалено");
+    } catch (error) {
+      console.error("Failed to delete schedule:", error);
+      toast.error("Ошибка при удалении расписания");
     }
   };
 
@@ -127,277 +270,566 @@ export function GroupInfoTab({ group, isAdmin = true }: GroupInfoTabProps) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold">Информация о группе</h2>
-        {isAdmin && (
+        {isAdmin && !isEditMode && (
+          <Button onClick={handleEnterEditMode} variant="outline">
+            <Edit className="w-4 h-4 mr-2" />
+            Редактировать
+          </Button>
+        )}
+        {isAdmin && isEditMode && (
           <div className="flex gap-2">
-            {isEditMode ? (
-              <>
-                <Button variant="outline" onClick={() => setIsEditMode(false)}>
-                  Отмена
-                </Button>
-                <Button onClick={handleSaveChanges}>
-                  Сохранить изменения
-                </Button>
-              </>
-            ) : (
-              <Button variant="outline" onClick={() => setIsEditMode(true)}>
-                <Edit2 className="w-4 h-4 mr-2" />
-                Редактировать
-              </Button>
-            )}
+            <Button onClick={handleCancelEdit} variant="outline">
+              <X className="w-4 h-4 mr-2" />
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSaveEdit}
+              disabled={
+                isSaving ||
+                !editFormData.name ||
+                !editFormData.subject_id ||
+                !editFormData.teacher_id ||
+                !editFormData.level
+              }
+            >
+              <Save className="w-4 h-4 mr-2" />
+              {isSaving ? "Сохранение..." : "Сохранить"}
+            </Button>
           </div>
         )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Info and Schedule Combined */}
+        {/* Main Info */}
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Основная информация</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* Название группы в режиме редактирования */}
+            {isEditMode && (
+              <div>
+                <Label htmlFor="name">Название группы</Label>
+                <Input
+                  id="name"
+                  value={editFormData.name}
+                  onChange={(e) =>
+                    setEditFormData({ ...editFormData, name: e.target.value })
+                  }
+                  className="mt-2"
+                />
+              </div>
+            )}
+
+            {/* Основная информация */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Левая колонка - Предмет с уровнем и Школа */}
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-medium text-slate-600">
-                    Предмет / Уровень подготовки
-                  </label>
-                  <p className="mt-1 text-slate-900 flex items-center gap-2">
-                    <BookOpen className="w-4 h-4" />
-                    {group.subject}
-                    {group.level && (
-                      <Badge className="bg-blue-600 ml-1">{group.level}</Badge>
-                    )}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-slate-600 block mb-2">
-                    Расписание
+                    Предмет
                   </label>
                   {isEditMode ? (
-                    <div className="flex items-center gap-2">
-                      <Select value={scheduleDay} onValueChange={setScheduleDay}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {daysOfWeek.map((day) => (
-                            <SelectItem key={day} value={day}>
-                              {day}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Input
-                        value={scheduleTime}
-                        onChange={(e) => setScheduleTime(e.target.value)}
-                        placeholder="16:30"
-                        className="w-20"
-                      />
-                      <Input
-                        value={scheduleDuration}
-                        onChange={(e) => setScheduleDuration(e.target.value)}
-                        placeholder="90"
-                        className="w-20"
-                      />
-                    </div>
+                    <Select
+                      value={editFormData.subject_id}
+                      onValueChange={(value) =>
+                        setEditFormData({ ...editFormData, subject_id: value })
+                      }
+                    >
+                      <SelectTrigger className="mt-2">
+                        <SelectValue placeholder="Выберите предмет" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {subjects.map((subject) => (
+                          <SelectItem key={subject.id} value={subject.id}>
+                            {formatSubjectName(subject)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   ) : (
-                    <p className="mt-1 text-slate-900 flex items-center gap-2">
-                      <Calendar className="w-4 h-4" />
-                      {formatSchedule()}
+                    <p className="text-slate-900 flex items-center gap-2 mt-1">
+                      <BookOpen className="w-4 h-4" />
+                      {formatSubjectName(group.subject)}
                     </p>
                   )}
                 </div>
+
+                {/* Тип подготовки */}
+                <div>
+                  <label className="text-sm font-medium text-slate-600">
+                    Тип подготовки
+                  </label>
+                  {isEditMode ? (
+                    <Select
+                      value={editFormData.level}
+                      onValueChange={(value) =>
+                        setEditFormData({ ...editFormData, level: value })
+                      }
+                    >
+                      <SelectTrigger className="mt-2">
+                        <SelectValue placeholder="Выберите тип" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ОГЭ">ОГЭ</SelectItem>
+                        <SelectItem value="ЕГЭ">ЕГЭ</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="mt-1">
+                      {group.level ? (
+                        <Badge className={group.level === 'ЕГЭ' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}>
+                          {group.level}
+                        </Badge>
+                      ) : (
+                        <span className="text-slate-400">Не указан</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-slate-600">
+                    Школа
+                  </label>
+                  {isEditMode ? (
+                    <Select
+                      value={editFormData.school_location || "_none_"}
+                      onValueChange={(value) =>
+                        setEditFormData({
+                          ...editFormData,
+                          school_location: value === "_none_" ? "" : value
+                        })
+                      }
+                    >
+                      <SelectTrigger className="mt-2">
+                        <SelectValue placeholder="Выберите школу" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none_">Не указана</SelectItem>
+                        {schoolLocations.map((location) => (
+                          <SelectItem key={location.id} value={location.name}>
+                            {location.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <p className="mt-1 text-slate-900">
+                      {group.school_location || (
+                        <span className="text-slate-500">Не указана</span>
+                      )}
+                    </p>
+                  )}
+                </div>
+
+                {/* Преподаватель в режиме редактирования */}
+                {isEditMode && (
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">
+                      Преподаватель
+                    </label>
+                    <Select
+                      value={editFormData.teacher_id}
+                      onValueChange={(value) =>
+                        setEditFormData({ ...editFormData, teacher_id: value })
+                      }
+                    >
+                      <SelectTrigger className="mt-2">
+                        <SelectValue placeholder="Выберите преподавателя" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {teachers.map((teacher) => (
+                          <SelectItem key={teacher.id} value={teacher.id}>
+                            {teacher.first_name} {teacher.last_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
 
-              <div>
-                <label className="text-sm font-medium text-slate-600 block mb-2">
-                  Описание
-                </label>
-                {isEditMode ? (
-                  <Textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Описание группы..."
-                    rows={4}
-                  />
-                ) : (
-                  <p className="mt-1 text-slate-700 leading-relaxed">
-                    {description}
-                  </p>
-                )}
+              {/* Правая колонка - Расписание, Дата начала */}
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-slate-600">
+                      Расписание
+                    </label>
+                    {isAdmin && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setIsAddScheduleOpen(true)}
+                      >
+                        <Plus className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                  {group.schedules && group.schedules.length > 0 ? (
+                    <div className="space-y-2">
+                      {group.schedules.map((schedule) => (
+                        <div
+                          key={schedule.id}
+                          className="flex items-center justify-between p-2 border rounded-lg"
+                        >
+                          <div className="flex items-center gap-2 text-sm">
+                            <Calendar className="w-4 h-4" />
+                            <span className="font-medium">{schedule.day_of_week}</span>
+                            <Clock className="w-4 h-4 ml-2" />
+                            <span>{formatScheduleTime(schedule.start_time, schedule.duration_minutes)}</span>
+                          </div>
+                          {isAdmin && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              onClick={() => handleDeleteSchedule(schedule.id)}
+                            >
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">Расписание не указано</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-slate-600 block mb-2">
+                    Дата начала занятий
+                  </label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      disabled={!isAdmin}
+                      className="flex-1"
+                    />
+                    {isAdmin && startDate !== (group.start_date || "") && (
+                      <Button
+                        onClick={handleSaveStartDate}
+                        disabled={isSaving}
+                        size="sm"
+                      >
+                        Сохранить
+                      </Button>
+                    )}
+                  </div>
+                  {isAdmin && group.start_date && group.schedules.length > 0 && (
+                    <Button
+                      onClick={() => setIsGenerateLessonsOpen(true)}
+                      className="mt-2 bg-green-600 hover:bg-green-700 w-full"
+                      size="sm"
+                    >
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Сгенерировать уроки
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
 
+            {/* Описание снизу */}
+            <div className="pt-4 border-t">
+              <label className="text-sm font-medium text-slate-600 block mb-2">
+                Описание
+              </label>
+              {isEditMode ? (
+                <Textarea
+                  value={editFormData.description}
+                  onChange={(e) =>
+                    setEditFormData({ ...editFormData, description: e.target.value })
+                  }
+                  className="min-h-[120px] resize-y"
+                  placeholder="Добавьте описание группы..."
+                />
+              ) : (
+                <p className="text-slate-700 leading-relaxed">
+                  {group.description || (
+                    <span className="text-slate-500">Описание не указано</span>
+                  )}
+                </p>
+              )}
+            </div>
+
+            {/* Комментарий - доступно для преподавателей и админов */}
             <div className="pt-4 border-t">
               <label className="text-sm font-medium text-slate-600 block mb-2">
                 Комментарий
               </label>
-              <textarea
+              <Textarea
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
-                className="w-full min-h-[100px] p-3 border border-slate-300 rounded-lg text-slate-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
+                className="min-h-[100px] resize-y"
                 placeholder="Добавьте комментарий о группе..."
               />
+              <div className="mt-2 flex justify-end">
+                <Button
+                  onClick={handleSaveComment}
+                  disabled={isSaving || comment === (group.comment || "")}
+                  size="sm"
+                >
+                  {isSaving ? "Сохранение..." : "Сохранить комментарий"}
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Students */}
+        {/* Teacher and Students */}
         <Card>
-          <CardContent className="space-y-6 pt-6">
+          <CardContent className="space-y-4 pt-4">
             {/* Teacher */}
             <div>
-              <div className="flex items-center gap-2 mb-3">
-                <GraduationCap className="w-5 h-5 text-slate-700" />
-                <h3 className="text-base font-semibold text-slate-900">Преподаватель</h3>
+              <div className="flex items-center gap-2 mb-2">
+                <GraduationCap className="w-4 h-4 text-slate-700" />
+                <h3 className="text-sm font-semibold text-slate-900">Преподаватель</h3>
               </div>
-              {isEditMode ? (
-                <Select value={selectedTeacher} onValueChange={setSelectedTeacher}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {mockTeachers.map((teacher) => (
-                      <SelectItem key={teacher} value={teacher}>
-                        {teacher}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center">
-                    <GraduationCap className="w-5 h-5" />
-                  </div>
-                  <p className="font-medium text-sm">{selectedTeacher}</p>
+              <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-semibold">
+                  {group.teacher.first_name[0]}{group.teacher.last_name[0]}
                 </div>
-              )}
+                <p className="font-medium text-sm">
+                  {group.teacher.first_name} {group.teacher.last_name}
+                </p>
+              </div>
             </div>
 
             {/* Students List */}
             <div>
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <Users className="w-5 h-5 text-slate-700" />
-                  <h3 className="text-base font-semibold text-slate-900">Студенты ({students.length})</h3>
+                  <Users className="w-4 h-4 text-slate-700" />
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Студенты ({group.students?.length || 0})
+                  </h3>
                 </div>
                 {isAdmin && (
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => setIsAddStudentDialogOpen(true)}
+                    onClick={() => setIsAddStudentOpen(true)}
+                    className="h-7 w-7 p-0"
                   >
-                    <Plus className="w-4 h-4" />
+                    <UserPlus className="w-3.5 h-3.5" />
                   </Button>
                 )}
               </div>
-              <div className="space-y-3">
-                {students.map((student) => (
-                  <div
-                    key={student.id}
-                    className="flex items-center justify-between gap-3 p-3 border rounded-lg hover:bg-slate-50"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-semibold text-sm">
-                        {student.name.split(" ").map((n) => n[0]).join("")}
-                      </div>
-                      <p className="font-medium text-sm">{student.name}</p>
-                    </div>
-                    {isAdmin && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8"
-                        onClick={() => handleArchiveStudent(student.id)}
-                      >
-                        <Trash2 className="w-4 h-4 text-red-500" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Archived Students */}
-            {isAdmin && archivedStudents.length > 0 && (
-              <div>
-                <div className="flex items-center justify-between mb-3 pt-4 border-t">
-                  <div className="flex items-center gap-2">
-                    <ArchiveRestore className="w-5 h-5 text-slate-700" />
-                    <h3 className="text-base font-semibold text-slate-900">Архив ({archivedStudents.length})</h3>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setShowArchive(!showArchive)}
-                  >
-                    {showArchive ? "Скрыть" : "Показать"}
-                  </Button>
-                </div>
-                {showArchive && (
-                  <div className="space-y-3">
-                    {archivedStudents.map((student) => (
-                      <div
-                        key={student.id}
-                        className="flex items-center justify-between gap-3 p-3 border border-dashed rounded-lg bg-slate-50"
-                      >
-                        <div className="flex items-center gap-3 opacity-60">
-                          <div className="w-10 h-10 rounded-full bg-slate-400 text-white flex items-center justify-center font-semibold text-sm">
-                            {student.name.split(" ").map((n) => n[0]).join("")}
-                          </div>
-                          <p className="font-medium text-sm">{student.name}</p>
+              <div className="space-y-2">
+                {group.students && group.students.length > 0 ? (
+                  group.students.map((student) => (
+                    <div
+                      key={student.id}
+                      className="flex items-center justify-between p-2 border rounded-lg hover:bg-slate-50"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center font-semibold text-xs">
+                          {student.first_name[0]}{student.last_name[0]}
                         </div>
+                        <p className="font-medium text-sm">
+                          {student.first_name} {student.last_name}
+                        </p>
+                      </div>
+                      {isAdmin && (
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-8 w-8"
-                          onClick={() => handleRestoreStudent(student.id)}
+                          className="h-7 w-7"
+                          onClick={() => handleRemoveStudent(student.id)}
                         >
-                          <ArchiveRestore className="w-4 h-4 text-blue-500" />
+                          <Trash2 className="w-3.5 h-3.5 text-red-500" />
                         </Button>
-                      </div>
-                    ))}
-                  </div>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-500 text-center py-3">
+                    Нет студентов в группе
+                  </p>
                 )}
               </div>
-            )}
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Add Student Dialog */}
-      <Dialog open={isAddStudentDialogOpen} onOpenChange={setIsAddStudentDialogOpen}>
+      {/* Add Schedule Dialog */}
+      <Dialog open={isAddScheduleOpen} onOpenChange={setIsAddScheduleOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Добавить студента</DialogTitle>
+            <DialogTitle>Добавить расписание</DialogTitle>
             <DialogDescription>
-              Введите имя нового студента.
+              Укажите день недели и время занятий
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="name">Имя студента</Label>
+              <Label htmlFor="day">День недели</Label>
+              <Select
+                value={newSchedule.day_of_week}
+                onValueChange={(value) =>
+                  setNewSchedule({ ...newSchedule, day_of_week: value })
+                }
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Выберите день" />
+                </SelectTrigger>
+                <SelectContent>
+                  {daysOfWeek.map((day) => (
+                    <SelectItem key={day} value={day}>
+                      {day}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="time">Время начала</Label>
               <Input
-                id="name"
-                value={newStudentName}
-                onChange={(e) => setNewStudentName(e.target.value)}
-                placeholder="Иван Иванов"
+                id="time"
+                type="time"
+                value={newSchedule.start_time}
+                onChange={(e) =>
+                  setNewSchedule({ ...newSchedule, start_time: e.target.value })
+                }
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="duration">Длительность (минуты)</Label>
+              <Input
+                id="duration"
+                type="number"
+                value={newSchedule.duration_minutes}
+                onChange={(e) =>
+                  setNewSchedule({
+                    ...newSchedule,
+                    duration_minutes: parseInt(e.target.value) || 90,
+                  })
+                }
                 className="mt-2"
               />
             </div>
           </div>
           <DialogFooter>
             <Button
-              type="button"
+              variant="outline"
+              onClick={() => setIsAddScheduleOpen(false)}
+            >
+              Отмена
+            </Button>
+            <Button
+              onClick={handleAddSchedule}
+              disabled={!newSchedule.day_of_week || !newSchedule.start_time}
+            >
+              Добавить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Generate Lessons Dialog */}
+      <Dialog open={isGenerateLessonsOpen} onOpenChange={setIsGenerateLessonsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Сгенерировать уроки</DialogTitle>
+            <DialogDescription>
+              Автоматически создать уроки по расписанию группы
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="months">На сколько месяцев вперёд</Label>
+              <Input
+                id="months"
+                type="number"
+                min="1"
+                max="12"
+                value={generateMonths}
+                onChange={(e) => setGenerateMonths(e.target.value)}
+                className="mt-2"
+              />
+            </div>
+            <div className="bg-blue-50 p-3 rounded-lg text-sm text-slate-700">
+              <p>
+                Будут созданы уроки с <strong>{group.start_date}</strong> на <strong>{generateMonths}</strong> месяцев вперёд
+                по расписанию группы ({group.schedules.length} {group.schedules.length === 1 ? "занятие" : "занятия"} в неделю).
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsGenerateLessonsOpen(false)}
+              disabled={isGenerating}
+            >
+              Отмена
+            </Button>
+            <Button
+              onClick={handleGenerateLessons}
+              disabled={isGenerating}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isGenerating ? "Генерация..." : "Сгенерировать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Student Dialog */}
+      <Dialog open={isAddStudentOpen} onOpenChange={setIsAddStudentOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Добавить студента в группу</DialogTitle>
+            <DialogDescription>
+              Выберите студента из списка
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="student">Студент</Label>
+              <Select
+                value={selectedStudentId}
+                onValueChange={setSelectedStudentId}
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Выберите студента" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allStudents.length > 0 ? (
+                    allStudents.map((student) => (
+                      <SelectItem key={student.id} value={student.id}>
+                        {student.first_name} {student.last_name}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="none" disabled>
+                      Нет доступных студентов
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
               variant="outline"
               onClick={() => {
-                setIsAddStudentDialogOpen(false);
-                setNewStudentName("");
+                setIsAddStudentOpen(false);
+                setSelectedStudentId("");
               }}
             >
               Отмена
             </Button>
-            <Button type="button" onClick={handleAddStudent}>
+            <Button
+              onClick={handleAddStudent}
+              disabled={!selectedStudentId}
+            >
               Добавить
             </Button>
           </DialogFooter>

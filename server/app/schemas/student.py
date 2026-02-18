@@ -32,12 +32,21 @@ class StudentHistoryResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class GroupInfoResponse(BaseModel):
+    id: UUID
+    name: str
+    school_location: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class StudentCreate(BaseModel):
     first_name: str
     last_name: str
     phone: Optional[str] = None
     telegram_id: Optional[str] = None
     current_school: Optional[str] = None
+    class_number: Optional[int] = None
     status: StudentStatus = StudentStatus.active
     parent_contacts: list[ParentContactCreate] = []
 
@@ -48,7 +57,9 @@ class StudentUpdate(BaseModel):
     phone: Optional[str] = None
     telegram_id: Optional[str] = None
     current_school: Optional[str] = None
+    class_number: Optional[int] = None
     status: Optional[StudentStatus] = None
+    parent_contacts: Optional[list[ParentContactCreate]] = None
 
 
 class StudentResponse(BaseModel):
@@ -58,8 +69,11 @@ class StudentResponse(BaseModel):
     phone: Optional[str]
     telegram_id: Optional[str]
     current_school: Optional[str]
+    class_number: Optional[int]
     status: StudentStatus
     created_at: datetime_type
     parent_contacts: list[ParentContactResponse] = []
+    groups: list[GroupInfoResponse] = []
+    history: list[StudentHistoryResponse] = []
 
     model_config = {"from_attributes": True}

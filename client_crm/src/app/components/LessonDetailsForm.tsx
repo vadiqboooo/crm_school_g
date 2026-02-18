@@ -14,13 +14,24 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "./ui/popover";
-import { ArrowLeft, Settings } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { toast } from "sonner";
+import { api } from "../lib/api";
+import type {
+  Lesson,
+  LessonAttendance,
+  AttendanceStatus,
+  WorkType,
+  GradingSystem,
+  HomeworkGrading
+} from "../types/api";
 
-interface Student {
+interface StudentAttendance {
   id: string;
+  attendanceId?: string;
   name: string;
-  status: string;
+  status: AttendanceStatus;
   lateMinutes?: number;
   lessonGrade?: string;
   homeworkGrade?: string;
@@ -28,61 +39,57 @@ interface Student {
 }
 
 interface LessonDetailsFormProps {
-  lesson: {
-    id: string;
-    date: string;
-    time: string;
-    group: string;
-    topic: string;
-  };
+  lesson: Lesson;
   onClose: () => void;
 }
 
-const mockStudents: Student[] = [
-  {
-    id: "1",
-    name: "Антипин Саша",
-    status: "present",
-    lessonGrade: "",
-    homeworkGrade: "",
-    comment: "",
-  },
-  {
-    id: "2",
-    name: "Бяков Матвей",
-    status: "present",
-    lessonGrade: "",
-    homeworkGrade: "",
-    comment: "",
-  },
-  {
-    id: "3",
-    name: "Килин Егор",
-    status: "present",
-    lessonGrade: "",
-    homeworkGrade: "",
-    comment: "",
-  },
-  {
-    id: "4",
-    name: "Алиев Андрей",
-    status: "present",
-    lessonGrade: "",
-    homeworkGrade: "",
-    comment: "",
-  },
-];
-
 export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
-  const [students, setStudents] = useState(mockStudents);
-  const [lessonWorkType, setLessonWorkType] = useState<string>("none"); // none, control, test
-  const [lessonGradingSystem, setLessonGradingSystem] = useState<string>("5point"); // 5point, tasks
-  const [lessonTasksCount, setLessonTasksCount] = useState<string>("10");
-  const [homeworkGradingSystem, setHomeworkGradingSystem] = useState<string>("5point"); // 5point, tasks, passfall
-  const [homeworkTasksCount, setHomeworkTasksCount] = useState<string>("5");
-  const [hadPreviousHomework, setHadPreviousHomework] = useState<boolean>(true);
-  const [lessonTopic, setLessonTopic] = useState<string>(lesson.topic !== "—" ? lesson.topic : "");
-  const [homework, setHomework] = useState<string>("");
+  const [students, setStudents] = useState<StudentAttendance[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [lessonWorkType, setLessonWorkType] = useState<WorkType>(lesson.work_type || "none");
+  const [lessonGradingSystem, setLessonGradingSystem] = useState<GradingSystem>(lesson.grading_system || "5point");
+  const [lessonTasksCount, setLessonTasksCount] = useState<string>(String(lesson.tasks_count || 10));
+  const [homeworkGradingSystem, setHomeworkGradingSystem] = useState<HomeworkGrading>(lesson.homework_grading || "5point");
+  const [homeworkTasksCount, setHomeworkTasksCount] = useState<string>(String(lesson.homework_tasks_count || 5));
+  const [hadPreviousHomework, setHadPreviousHomework] = useState<boolean>(lesson.had_previous_homework);
+  const [lessonTopic, setLessonTopic] = useState<string>(lesson.topic || "");
+  const [homework, setHomework] = useState<string>(lesson.homework || "");
+
+  useEffect(() => {
+    loadData();
+  }, [lesson.id]);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [groupData, attendanceData] = await Promise.all([
+        api.getGroup(lesson.group_id),
+        api.getLessonAttendance(lesson.id),
+      ]);
+
+      const studentAttendance: StudentAttendance[] = groupData.students.map((student) => {
+        const attendance = attendanceData.find((a) => a.student_id === student.id);
+        return {
+          id: student.id,
+          attendanceId: attendance?.id,
+          name: `${student.first_name} ${student.last_name}`,
+          status: attendance?.attendance || "present",
+          lateMinutes: attendance?.late_minutes,
+          lessonGrade: attendance?.lesson_grade || "",
+          homeworkGrade: attendance?.homework_grade || "",
+          comment: attendance?.comment || "",
+        };
+      });
+
+      setStudents(studentAttendance);
+    } catch (err) {
+      console.error("Failed to load data:", err);
+      toast.error("Ошибка при загрузке данных");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleStatusChange = (studentId: string, status: string) => {
     setStudents((prev) =>
@@ -108,6 +115,77 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
     );
   };
 
+  const handleGradeChange = (studentId: string, field: "lessonGrade" | "homeworkGrade", value: string) => {
+    setStudents((prev) =>
+      prev.map((s) =>
+        s.id === studentId ? { ...s, [field]: value } : s
+      )
+    );
+  };
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+
+      // Update lesson details
+      await api.updateLesson(lesson.id, {
+        topic: lessonTopic,
+        homework,
+        work_type: lessonWorkType,
+        grading_system: lessonGradingSystem,
+        tasks_count: lessonWorkType === "control" && lessonGradingSystem === "tasks" ? parseInt(lessonTasksCount) : undefined,
+        homework_grading: hadPreviousHomework ? homeworkGradingSystem : undefined,
+        homework_tasks_count: hadPreviousHomework && homeworkGradingSystem === "tasks" ? parseInt(homeworkTasksCount) : undefined,
+        had_previous_homework: hadPreviousHomework,
+        status: "conducted",
+      });
+
+      // Create or update attendance records
+      for (const student of students) {
+        const attendanceData = {
+          attendance: student.status,
+          late_minutes: student.status === "late" ? student.lateMinutes : undefined,
+          lesson_grade: student.lessonGrade || undefined,
+          homework_grade: student.homeworkGrade || undefined,
+          comment: student.comment || undefined,
+        };
+
+        if (student.attendanceId) {
+          await api.updateAttendance(lesson.id, student.attendanceId, attendanceData);
+        } else {
+          await api.createAttendance(lesson.id, {
+            student_id: student.id,
+            ...attendanceData,
+          });
+        }
+      }
+
+      toast.success("Урок успешно сохранен");
+      onClose();
+    } catch (err) {
+      console.error("Failed to save lesson:", err);
+      toast.error("Ошибка при сохранении урока");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const day = String(date.getDate()).padStart(2, "0");
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const year = date.getFullYear();
+    return `${day}.${month}.${year}`;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -122,7 +200,7 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
             Назад к урокам
           </Button>
           <h2 className="text-2xl font-semibold">
-            Проведение урока — {lesson.date} в {lesson.time}
+            Проведение урока — {formatDate(lesson.date)} {lesson.time ? `в ${lesson.time}` : ""}
           </h2>
         </div>
       </div>
@@ -360,10 +438,15 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
                           lessonWorkType === "control" && lessonGradingSystem === "tasks" ? (
                             <Input
                               placeholder={`0-${lessonTasksCount}`}
+                              value={student.lessonGrade}
+                              onChange={(e) => handleGradeChange(student.id, "lessonGrade", e.target.value)}
                               className="text-center"
                             />
                           ) : lessonWorkType === "test" ? (
-                            <Select>
+                            <Select
+                              value={student.lessonGrade}
+                              onValueChange={(value) => handleGradeChange(student.id, "lessonGrade", value)}
+                            >
                               <SelectTrigger className="w-full">
                                 <SelectValue placeholder="—" />
                               </SelectTrigger>
@@ -375,6 +458,8 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
                           ) : (
                             <Input
                               placeholder="1-5"
+                              value={student.lessonGrade}
+                              onChange={(e) => handleGradeChange(student.id, "lessonGrade", e.target.value)}
                               className="text-center"
                             />
                           )
@@ -385,7 +470,10 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
                       <td className="px-4 py-3">
                         {hadPreviousHomework ? (
                           homeworkGradingSystem === "passfall" ? (
-                            <Select>
+                            <Select
+                              value={student.homeworkGrade}
+                              onValueChange={(value) => handleGradeChange(student.id, "homeworkGrade", value)}
+                            >
                               <SelectTrigger className="w-full">
                                 <SelectValue placeholder="—" />
                               </SelectTrigger>
@@ -397,11 +485,15 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
                           ) : homeworkGradingSystem === "tasks" ? (
                             <Input
                               placeholder={`0-${homeworkTasksCount}`}
+                              value={student.homeworkGrade}
+                              onChange={(e) => handleGradeChange(student.id, "homeworkGrade", e.target.value)}
                               className="text-center"
                             />
                           ) : (
                             <Input
                               placeholder="1-5"
+                              value={student.homeworkGrade}
+                              onChange={(e) => handleGradeChange(student.id, "homeworkGrade", e.target.value)}
                               className="text-center"
                             />
                           )
@@ -436,11 +528,22 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
 
       {/* Actions */}
       <div className="flex justify-end gap-3">
-        <Button variant="outline" onClick={onClose}>
+        <Button variant="outline" onClick={onClose} disabled={saving}>
           Отмена
         </Button>
-        <Button className="bg-blue-600 hover:bg-blue-700">
-          Сохранить посещаемость
+        <Button
+          className="bg-blue-600 hover:bg-blue-700"
+          onClick={handleSave}
+          disabled={saving}
+        >
+          {saving ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Сохранение...
+            </>
+          ) : (
+            "Сохранить посещаемость"
+          )}
         </Button>
       </div>
     </div>

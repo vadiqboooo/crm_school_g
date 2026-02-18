@@ -1,11 +1,20 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
+import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Plus, BookOpen, Users as UsersIcon, Edit, Trash2, MoreVertical, Loader2, Save } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 import {
   Select,
   SelectContent,
@@ -28,8 +37,9 @@ import {
   DialogTitle,
 } from "../components/ui/dialog";
 import { api } from "../lib/api";
-import type { Subject, User, Settings, SettingsUpdate } from "../types/api";
+import type { Subject, User, Settings, SettingsUpdate, SchoolLocation, SchoolLocationCreate, Exam, ExamCreate } from "../types/api";
 import { useAuth } from "../contexts/AuthContext";
+import { SubjectEditDialog } from "../components/SubjectEditDialog";
 
 export function SchoolPage() {
   const { user } = useAuth();
@@ -38,23 +48,54 @@ export function SchoolPage() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [teachers, setTeachers] = useState<User[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [locations, setLocations] = useState<SchoolLocation[]>([]);
+  const [examTemplates, setExamTemplates] = useState<Exam[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState("subjects");
 
   // Subject dialog
   const [subjectDialogOpen, setSubjectDialogOpen] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState("");
   const [creatingSubject, setCreatingSubject] = useState(false);
 
+  // Subject edit dialog
+  const [subjectEditDialogOpen, setSubjectEditDialogOpen] = useState(false);
+  const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const [isCreateSubject, setIsCreateSubject] = useState(false);
+
   // Employee dialog
   const [employeeDialogOpen, setEmployeeDialogOpen] = useState(false);
   const [creatingEmployee, setCreatingEmployee] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<User | null>(null);
   const [newEmployee, setNewEmployee] = useState({
     password: "",
     first_name: "",
     last_name: "",
     phone: "",
     role: "teacher" as "admin" | "teacher" | "manager",
+  });
+
+  // Location dialog
+  const [locationDialogOpen, setLocationDialogOpen] = useState(false);
+  const [creatingLocation, setCreatingLocation] = useState(false);
+  const [newLocation, setNewLocation] = useState<SchoolLocationCreate>({
+    name: "",
+    address: "",
+    phone: "",
+    description: "",
+  });
+
+  // Exam template dialog
+  const [examTemplateDialogOpen, setExamTemplateDialogOpen] = useState(false);
+  const [creatingExamTemplate, setCreatingExamTemplate] = useState(false);
+  const [editingExamTemplate, setEditingExamTemplate] = useState<Exam | null>(null);
+  const [examTemplateForm, setExamTemplateForm] = useState<ExamCreate>({
+    title: "",
+    subject: "",
+    difficulty: "",
+    threshold_score: undefined,
+    comment: "",
   });
 
   // Transliteration function
@@ -100,15 +141,19 @@ export function SchoolPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [subjectsData, teachersData, settingsData] = await Promise.all([
+      const [subjectsData, teachersData, settingsData, locationsData, templatesData] = await Promise.all([
         api.getSubjects(),
         api.getEmployees(),
         api.getSettings(),
+        api.getSchoolLocations(),
+        api.getExamTemplates(),
       ]);
 
       setSubjects(subjectsData);
       setTeachers(teachersData); // Show all employees
       setSettings(settingsData);
+      setLocations(locationsData);
+      setExamTemplates(templatesData);
       setSettingsForm({
         school_name: settingsData.school_name || "",
         description: settingsData.description || "",
@@ -145,6 +190,18 @@ export function SchoolPage() {
     }
   };
 
+  const handleOpenCreateSubject = () => {
+    setEditingSubject(null);
+    setIsCreateSubject(true);
+    setSubjectEditDialogOpen(true);
+  };
+
+  const handleOpenEditSubject = (subject: Subject) => {
+    setEditingSubject(subject);
+    setIsCreateSubject(false);
+    setSubjectEditDialogOpen(true);
+  };
+
   const handleDeleteSubject = async (id: string) => {
     if (!confirm("Вы уверены, что хотите удалить предмет?")) return;
 
@@ -171,36 +228,94 @@ export function SchoolPage() {
     }
   };
 
+  const handleOpenEditEmployee = (employee: User) => {
+    setEditingEmployee(employee);
+    setNewEmployee({
+      password: "",
+      first_name: employee.first_name,
+      last_name: employee.last_name,
+      phone: employee.phone || "",
+      role: employee.role,
+    });
+    setEmployeeDialogOpen(true);
+  };
+
+  const handleOpenCreateEmployee = () => {
+    setEditingEmployee(null);
+    setNewEmployee({
+      password: "",
+      first_name: "",
+      last_name: "",
+      phone: "",
+      role: "teacher",
+    });
+    setEmployeeDialogOpen(true);
+  };
+
   const handleCreateEmployee = async () => {
-    if (!newEmployee.password || !newEmployee.first_name || !newEmployee.last_name) {
-      alert("Заполните обязательные поля");
-      return;
-    }
+    if (editingEmployee) {
+      // Update existing employee
+      if (!newEmployee.first_name || !newEmployee.last_name) {
+        alert("Заполните обязательные поля");
+        return;
+      }
 
-    try {
-      setCreatingEmployee(true);
-      // Generate login and email
-      const login = generateLogin(newEmployee.first_name, newEmployee.last_name);
-      const email = `${login}@crm-school.com`;
+      try {
+        setCreatingEmployee(true);
+        await api.updateEmployee(editingEmployee.id, {
+          first_name: newEmployee.first_name,
+          last_name: newEmployee.last_name,
+          phone: newEmployee.phone || undefined,
+          role: newEmployee.role,
+        });
+        await loadData();
+        setEmployeeDialogOpen(false);
+        setEditingEmployee(null);
+        setNewEmployee({
+          password: "",
+          first_name: "",
+          last_name: "",
+          phone: "",
+          role: "teacher",
+        });
+      } catch (error) {
+        console.error("Failed to update employee:", error);
+        alert("Ошибка при обновлении сотрудника");
+      } finally {
+        setCreatingEmployee(false);
+      }
+    } else {
+      // Create new employee
+      if (!newEmployee.password || !newEmployee.first_name || !newEmployee.last_name) {
+        alert("Заполните обязательные поля");
+        return;
+      }
 
-      await api.createEmployee({
-        ...newEmployee,
-        email,
-      });
-      await loadData();
-      setEmployeeDialogOpen(false);
-      setNewEmployee({
-        password: "",
-        first_name: "",
-        last_name: "",
-        phone: "",
-        role: "teacher",
-      });
-    } catch (error) {
-      console.error("Failed to create employee:", error);
-      alert("Ошибка при создании сотрудника");
-    } finally {
-      setCreatingEmployee(false);
+      try {
+        setCreatingEmployee(true);
+        // Generate login and email
+        const login = generateLogin(newEmployee.first_name, newEmployee.last_name);
+        const email = `${login}@crm-school.com`;
+
+        await api.createEmployee({
+          ...newEmployee,
+          email,
+        });
+        await loadData();
+        setEmployeeDialogOpen(false);
+        setNewEmployee({
+          password: "",
+          first_name: "",
+          last_name: "",
+          phone: "",
+          role: "teacher",
+        });
+      } catch (error) {
+        console.error("Failed to create employee:", error);
+        alert("Ошибка при создании сотрудника");
+      } finally {
+        setCreatingEmployee(false);
+      }
     }
   };
 
@@ -213,6 +328,103 @@ export function SchoolPage() {
     } catch (error) {
       console.error("Failed to delete employee:", error);
       alert("Ошибка при удалении сотрудника");
+    }
+  };
+
+  const handleCreateLocation = async () => {
+    if (!newLocation.name.trim()) {
+      alert("Заполните название филиала");
+      return;
+    }
+
+    try {
+      setCreatingLocation(true);
+      await api.createSchoolLocation(newLocation);
+      await loadData();
+      setLocationDialogOpen(false);
+      setNewLocation({
+        name: "",
+        address: "",
+        phone: "",
+        description: "",
+      });
+    } catch (error) {
+      console.error("Failed to create location:", error);
+      alert("Ошибка при создании филиала");
+    } finally {
+      setCreatingLocation(false);
+    }
+  };
+
+  const handleDeleteLocation = async (id: string) => {
+    if (!confirm("Вы уверены, что хотите удалить филиал?")) return;
+
+    try {
+      await api.deleteSchoolLocation(id);
+      await loadData();
+    } catch (error) {
+      console.error("Failed to delete location:", error);
+      alert("Ошибка при удалении филиала");
+    }
+  };
+
+  const handleOpenCreateExamTemplate = () => {
+    setEditingExamTemplate(null);
+    setExamTemplateForm({
+      title: "",
+      subject: "",
+      difficulty: "",
+      threshold_score: undefined,
+      comment: "",
+    });
+    setExamTemplateDialogOpen(true);
+  };
+
+  const handleOpenEditExamTemplate = (template: Exam) => {
+    setEditingExamTemplate(template);
+    setExamTemplateForm({
+      title: template.title,
+      subject: template.subject || "",
+      subject_id: template.subject_id,
+      difficulty: template.difficulty || "",
+      threshold_score: template.threshold_score,
+      comment: template.comment || "",
+    });
+    setExamTemplateDialogOpen(true);
+  };
+
+  const handleSaveExamTemplate = async () => {
+    if (!examTemplateForm.title.trim()) {
+      alert("Введите название экзамена");
+      return;
+    }
+
+    try {
+      setCreatingExamTemplate(true);
+      if (editingExamTemplate) {
+        await api.updateExamTemplate(editingExamTemplate.id, examTemplateForm);
+      } else {
+        await api.createExamTemplate(examTemplateForm);
+      }
+      await loadData();
+      setExamTemplateDialogOpen(false);
+    } catch (error) {
+      console.error("Failed to save exam template:", error);
+      alert("Ошибка при сохранении шаблона экзамена");
+    } finally {
+      setCreatingExamTemplate(false);
+    }
+  };
+
+  const handleDeleteExamTemplate = async (id: string) => {
+    if (!confirm("Вы уверены, что хотите удалить шаблон экзамена?")) return;
+
+    try {
+      await api.deleteExamTemplate(id);
+      await loadData();
+    } catch (error) {
+      console.error("Failed to delete exam template:", error);
+      alert("Ошибка при удалении шаблона экзамена");
     }
   };
 
@@ -236,10 +448,12 @@ export function SchoolPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="subjects" className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="subjects">Предметы</TabsTrigger>
           <TabsTrigger value="teachers">Сотрудники</TabsTrigger>
+          <TabsTrigger value="locations">Филиалы</TabsTrigger>
+          <TabsTrigger value="exams">Экзамены</TabsTrigger>
           <TabsTrigger value="settings">Настройки</TabsTrigger>
         </TabsList>
 
@@ -250,7 +464,7 @@ export function SchoolPage() {
             {isAdmin && (
               <Button
                 className="gap-2"
-                onClick={() => setSubjectDialogOpen(true)}
+                onClick={handleOpenCreateSubject}
               >
                 <Plus className="w-4 h-4" />
                 Добавить предмет
@@ -258,17 +472,229 @@ export function SchoolPage() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {subjects.map((subject) => (
-              <Card key={subject.id} className="group">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center">
-                      <BookOpen className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">{subject.name}</CardTitle>
-                    </div>
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Название</TableHead>
+                    <TableHead>Количество заданий</TableHead>
+                    <TableHead>Первичный балл</TableHead>
+                    <TableHead>Статус</TableHead>
+                    {isAdmin && <TableHead className="w-[80px]">Действия</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {subjects.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={isAdmin ? 5 : 4} className="text-center py-8 text-slate-500">
+                        Предметы не найдены
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    subjects.map((subject) => (
+                      <TableRow key={subject.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center flex-shrink-0">
+                              <BookOpen className="w-4 h-4 text-white" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{subject.name}</span>
+                              {subject.exam_type && (
+                                <Badge className={subject.exam_type === 'ЕГЭ' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}>
+                                  {subject.exam_type}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {subject.tasks && subject.tasks.length > 0 ? (
+                            <span className="text-slate-700">{subject.tasks.length}</span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {subject.tasks && subject.tasks.length > 0 ? (
+                            <Badge variant="outline" className="font-mono">
+                              {subject.tasks.reduce((sum: number, task: any) => sum + (task.maxScore || 0), 0)}
+                            </Badge>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {subject.is_active ? (
+                            <Badge className="bg-green-100 text-green-800">Активен</Badge>
+                          ) : (
+                            <Badge variant="secondary">Неактивен</Badge>
+                          )}
+                        </TableCell>
+                        {isAdmin && (
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                  <MoreVertical className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  className="gap-2"
+                                  onClick={() => handleOpenEditSubject(subject)}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                  Редактировать
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="gap-2 text-red-600"
+                                  onClick={() => handleDeleteSubject(subject.id)}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                  Удалить
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Teachers Tab */}
+        <TabsContent value="teachers">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Сотрудники</h2>
+            {isAdmin && (
+              <Button
+                className="gap-2"
+                onClick={handleOpenCreateEmployee}
+              >
+                <Plus className="w-4 h-4" />
+                Добавить сотрудника
+              </Button>
+            )}
+          </div>
+
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ФИО</TableHead>
+                    <TableHead>Логин</TableHead>
+                    <TableHead>Телефон</TableHead>
+                    <TableHead>Роль</TableHead>
+                    {isAdmin && <TableHead className="w-[80px]">Действия</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {teachers.map((teacher) => {
+                    const login = teacher.email.split('@')[0];
+                    const roleNames = {
+                      admin: "Администратор",
+                      teacher: "Преподаватель",
+                      manager: "Менеджер"
+                    };
+
+                    return (
+                      <TableRow key={teacher.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white font-semibold text-sm">
+                              {teacher.first_name.charAt(0)}
+                              {teacher.last_name.charAt(0)}
+                            </div>
+                            <div>
+                              <div className="font-medium">
+                                {teacher.first_name} {teacher.last_name}
+                              </div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-mono text-sm text-slate-700">{login}</span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm text-slate-600">
+                            {teacher.phone || "—"}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm">{roleNames[teacher.role]}</span>
+                        </TableCell>
+                        {isAdmin && (
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                  <MoreVertical className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  className="gap-2"
+                                  onClick={() => handleOpenEditEmployee(teacher)}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                  Редактировать
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="gap-2 text-red-600"
+                                  onClick={() => handleDeleteEmployee(teacher.id)}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                  Удалить
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              {teachers.length === 0 && (
+                <div className="py-8 text-center text-slate-500">
+                  Сотрудники еще не добавлены
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Locations Tab */}
+        <TabsContent value="locations">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Филиалы школы</h2>
+            {isAdmin && (
+              <Button
+                className="gap-2"
+                onClick={() => setLocationDialogOpen(true)}
+              >
+                <Plus className="w-4 h-4" />
+                Добавить филиал
+              </Button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {locations.map((location) => (
+              <Card key={location.id} className="group">
+                <CardHeader className="flex flex-row items-start justify-between pb-2">
+                  <div>
+                    <CardTitle className="text-lg">{location.name}</CardTitle>
+                    {location.address && (
+                      <p className="text-sm text-slate-600 mt-1">{location.address}</p>
+                    )}
                   </div>
                   {isAdmin && (
                     <DropdownMenu>
@@ -284,7 +710,7 @@ export function SchoolPage() {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem
                           className="gap-2 text-red-600"
-                          onClick={() => handleDeleteSubject(subject.id)}
+                          onClick={() => handleDeleteLocation(location.id)}
                         >
                           <Trash2 className="w-4 h-4" />
                           Удалить
@@ -294,88 +720,114 @@ export function SchoolPage() {
                   )}
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-slate-600">
-                    {subject.description || "Описание отсутствует"}
-                  </p>
+                  {location.phone && (
+                    <p className="text-sm text-slate-600 mb-1">
+                      <strong>Телефон:</strong> {location.phone}
+                    </p>
+                  )}
+                  {location.description && (
+                    <p className="text-sm text-slate-600">
+                      {location.description}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             ))}
           </div>
         </TabsContent>
 
-        {/* Teachers Tab */}
-        <TabsContent value="teachers">
+        {/* Exams Tab */}
+        <TabsContent value="exams">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold">Сотрудники</h2>
-            {isAdmin && (
-              <Button
-                className="gap-2"
-                onClick={() => setEmployeeDialogOpen(true)}
-              >
-                <Plus className="w-4 h-4" />
-                Добавить сотрудника
-              </Button>
-            )}
+            <h2 className="text-xl font-semibold">Шаблоны экзаменов</h2>
+            <Button
+              className="gap-2"
+              onClick={handleOpenCreateExamTemplate}
+            >
+              <Plus className="w-4 h-4" />
+              Добавить шаблон
+            </Button>
           </div>
 
-          <div className="grid grid-cols-1 gap-4">
-            {teachers.map((teacher) => {
-              // Extract login from email (before @)
-              const login = teacher.email.split('@')[0];
-              const roleNames = {
-                admin: "Администратор",
-                teacher: "Преподаватель",
-                manager: "Менеджер"
-              };
-
-              return (
-                <Card key={teacher.id} className="group">
-                  <CardContent className="py-4">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white font-semibold">
-                        {teacher.first_name.charAt(0)}
-                        {teacher.last_name.charAt(0)}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {examTemplates.map((template) => (
+              <Card key={template.id} className="group">
+                <CardHeader className="flex flex-row items-start justify-between pb-2">
+                  <div className="flex-1">
+                    <CardTitle className="text-lg">{template.title}</CardTitle>
+                    {template.subject_rel ? (
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-sm text-slate-600">
+                          Предмет: {template.subject_rel.name}
+                        </p>
+                        {template.subject_rel.exam_type && (
+                          <Badge className={template.subject_rel.exam_type === 'ЕГЭ' ? 'bg-purple-100 text-purple-800 text-xs' : 'bg-green-100 text-green-800 text-xs'}>
+                            {template.subject_rel.exam_type}
+                          </Badge>
+                        )}
                       </div>
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-slate-900">
-                          {teacher.first_name} {teacher.last_name}
-                        </h3>
-                        <div className="flex gap-4 text-sm text-slate-600 mt-1">
-                          <span>Логин: <span className="font-mono text-slate-700">{login}</span></span>
-                          {teacher.phone && <span>{teacher.phone}</span>}
-                        </div>
-                      </div>
-                      <div className="text-sm text-slate-600">
-                        <span className="font-medium">{roleNames[teacher.role]}</span>
-                      </div>
-                    {isAdmin && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity"
-                          >
-                            <MoreVertical className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            className="gap-2 text-red-600"
-                            onClick={() => handleDeleteEmployee(teacher.id)}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            Удалить
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                    ) : template.subject ? (
+                      <p className="text-sm text-slate-600 mt-1">
+                        Предмет: {template.subject}
+                      </p>
+                    ) : null}
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        className="gap-2"
+                        onClick={() => handleOpenEditExamTemplate(template)}
+                      >
+                        <Edit className="w-4 h-4" />
+                        Редактировать
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="gap-2 text-red-600"
+                        onClick={() => handleDeleteExamTemplate(template.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Удалить
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </CardHeader>
+                <CardContent>
+                  {template.difficulty && (
+                    <p className="text-sm text-slate-600 mb-1">
+                      <strong>Сложность:</strong> {template.difficulty}
+                    </p>
+                  )}
+                  {template.threshold_score && (
+                    <p className="text-sm text-slate-600 mb-1">
+                      <strong>Проходной балл:</strong> {template.threshold_score}
+                    </p>
+                  )}
+                  {template.comment && (
+                    <p className="text-sm text-slate-600 mt-2">
+                      {template.comment}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
           </div>
+
+          {examTemplates.length === 0 && (
+            <Card>
+              <CardContent className="py-8 text-center text-slate-500">
+                Шаблоны экзаменов еще не добавлены
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* Settings Tab */}
@@ -584,11 +1036,13 @@ export function SchoolPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Create Employee Dialog */}
+      {/* Create/Edit Employee Dialog */}
       <Dialog open={employeeDialogOpen} onOpenChange={setEmployeeDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Добавить нового сотрудника</DialogTitle>
+            <DialogTitle>
+              {editingEmployee ? "Редактировать сотрудника" : "Добавить нового сотрудника"}
+            </DialogTitle>
             <DialogDescription>
               Заполните информацию о сотруднике
             </DialogDescription>
@@ -621,12 +1075,24 @@ export function SchoolPage() {
               </div>
             </div>
 
-            {/* Display generated login */}
-            {newEmployee.first_name && newEmployee.last_name && (
+            {/* Display generated login for new employee */}
+            {!editingEmployee && newEmployee.first_name && newEmployee.last_name && (
               <div className="space-y-2">
                 <Label>Логин (генерируется автоматически)</Label>
                 <Input
                   value={generateLogin(newEmployee.first_name, newEmployee.last_name)}
+                  disabled
+                  className="bg-slate-50"
+                />
+              </div>
+            )}
+
+            {/* Display existing login for editing employee */}
+            {editingEmployee && (
+              <div className="space-y-2">
+                <Label>Логин</Label>
+                <Input
+                  value={editingEmployee.email.split('@')[0]}
                   disabled
                   className="bg-slate-50"
                 />
@@ -646,20 +1112,22 @@ export function SchoolPage() {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="emp_password">Пароль *</Label>
-                <Input
-                  id="emp_password"
-                  type="password"
-                  value={newEmployee.password}
-                  onChange={(e) =>
-                    setNewEmployee({ ...newEmployee, password: e.target.value })
-                  }
-                  placeholder="••••••••"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
+              {!editingEmployee && (
+                <div className="space-y-2">
+                  <Label htmlFor="emp_password">Пароль *</Label>
+                  <Input
+                    id="emp_password"
+                    type="password"
+                    value={newEmployee.password}
+                    onChange={(e) =>
+                      setNewEmployee({ ...newEmployee, password: e.target.value })
+                    }
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+              )}
+              <div className={`space-y-2 ${editingEmployee ? 'col-span-2' : ''}`}>
                 <Label htmlFor="emp_role">Роль *</Label>
                 <Select
                   value={newEmployee.role}
@@ -682,7 +1150,10 @@ export function SchoolPage() {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setEmployeeDialogOpen(false)}
+              onClick={() => {
+                setEmployeeDialogOpen(false);
+                setEditingEmployee(null);
+              }}
               disabled={creatingEmployee}
             >
               Отмена
@@ -691,7 +1162,7 @@ export function SchoolPage() {
               onClick={handleCreateEmployee}
               disabled={
                 creatingEmployee ||
-                !newEmployee.password ||
+                (!editingEmployee && !newEmployee.password) ||
                 !newEmployee.first_name ||
                 !newEmployee.last_name
               }
@@ -700,10 +1171,226 @@ export function SchoolPage() {
               {creatingEmployee ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {editingEmployee ? "Сохранение..." : "Создание..."}
+                </>
+              ) : (
+                editingEmployee ? "Сохранить" : "Создать"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Location Dialog */}
+      <Dialog open={locationDialogOpen} onOpenChange={setLocationDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Добавить филиал</DialogTitle>
+            <DialogDescription>
+              Заполните информацию о филиале школы
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="loc_name">Название *</Label>
+              <Input
+                id="loc_name"
+                value={newLocation.name}
+                onChange={(e) =>
+                  setNewLocation({ ...newLocation, name: e.target.value })
+                }
+                placeholder="Филиал Центральный"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="loc_address">Адрес</Label>
+              <Textarea
+                id="loc_address"
+                value={newLocation.address || ""}
+                onChange={(e) =>
+                  setNewLocation({ ...newLocation, address: e.target.value })
+                }
+                placeholder="г. Москва, ул. Примерная, д. 1"
+                rows={2}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="loc_phone">Телефон</Label>
+              <Input
+                id="loc_phone"
+                value={newLocation.phone || ""}
+                onChange={(e) =>
+                  setNewLocation({ ...newLocation, phone: e.target.value })
+                }
+                placeholder="+7 999 123-45-67"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="loc_description">Описание</Label>
+              <Textarea
+                id="loc_description"
+                value={newLocation.description || ""}
+                onChange={(e) =>
+                  setNewLocation({ ...newLocation, description: e.target.value })
+                }
+                placeholder="Дополнительная информация о филиале..."
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setLocationDialogOpen(false)}
+              disabled={creatingLocation}
+            >
+              Отмена
+            </Button>
+            <Button
+              onClick={handleCreateLocation}
+              disabled={creatingLocation || !newLocation.name.trim()}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {creatingLocation ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Создание...
                 </>
               ) : (
                 "Создать"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Subject Edit Dialog */}
+      <SubjectEditDialog
+        subject={editingSubject}
+        open={subjectEditDialogOpen}
+        onOpenChange={setSubjectEditDialogOpen}
+        onSuccess={loadData}
+        isCreate={isCreateSubject}
+      />
+
+      {/* Exam Template Dialog */}
+      <Dialog open={examTemplateDialogOpen} onOpenChange={setExamTemplateDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {editingExamTemplate ? "Редактировать шаблон экзамена" : "Создать шаблон экзамена"}
+            </DialogTitle>
+            <DialogDescription>
+              Этот шаблон можно будет использовать при создании экзаменов в группах
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="exam_title">Название экзамена *</Label>
+              <Input
+                id="exam_title"
+                value={examTemplateForm.title}
+                onChange={(e) =>
+                  setExamTemplateForm({ ...examTemplateForm, title: e.target.value })
+                }
+                placeholder="ЕГЭ по математике, ОГЭ по русскому..."
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="exam_subject">Предмет</Label>
+                <Select
+                  value={examTemplateForm.subject_id || ""}
+                  onValueChange={(value) => {
+                    const selectedSubject = subjects.find(s => s.id === value);
+                    setExamTemplateForm({
+                      ...examTemplateForm,
+                      subject_id: value,
+                      subject: selectedSubject?.name
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите предмет" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {subjects.map((subject) => (
+                      <SelectItem key={subject.id} value={subject.id}>
+                        {subject.name}{subject.exam_type && ` (${subject.exam_type})`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="exam_difficulty">Сложность</Label>
+                <Input
+                  id="exam_difficulty"
+                  value={examTemplateForm.difficulty || ""}
+                  onChange={(e) =>
+                    setExamTemplateForm({ ...examTemplateForm, difficulty: e.target.value })
+                  }
+                  placeholder="Базовый, Профильный..."
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="exam_threshold">Проходной балл</Label>
+              <Input
+                id="exam_threshold"
+                type="number"
+                value={examTemplateForm.threshold_score || ""}
+                onChange={(e) =>
+                  setExamTemplateForm({
+                    ...examTemplateForm,
+                    threshold_score: e.target.value ? parseInt(e.target.value) : undefined,
+                  })
+                }
+                placeholder="0"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="exam_comment">Комментарий</Label>
+              <Textarea
+                id="exam_comment"
+                value={examTemplateForm.comment || ""}
+                onChange={(e) =>
+                  setExamTemplateForm({ ...examTemplateForm, comment: e.target.value })
+                }
+                placeholder="Дополнительная информация об экзамене..."
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setExamTemplateDialogOpen(false)}
+              disabled={creatingExamTemplate}
+            >
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSaveExamTemplate}
+              disabled={creatingExamTemplate || !examTemplateForm.title.trim()}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {creatingExamTemplate ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Сохранение...
+                </>
+              ) : (
+                "Сохранить"
               )}
             </Button>
           </DialogFooter>

@@ -33,6 +33,7 @@ import {
   Share2,
   Check,
   Loader2,
+  ArrowUp,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -87,13 +88,32 @@ export function StudentsPage() {
     phone: "",
     telegram_id: "",
     current_school: "",
+    class_number: undefined,
     status: "active",
     parent_contacts: [],
   });
 
+  // Edit mode in student card
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState<Student | null>(null);
+  const [updating, setUpdating] = useState(false);
+
+  // Scroll to top button
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
   // Load students
   useEffect(() => {
     loadStudents();
+  }, []);
+
+  // Track scroll position for "scroll to top" button
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 300);
+    };
+
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   // Load student from URL parameter
@@ -143,6 +163,7 @@ export function StudentsPage() {
         phone: "",
         telegram_id: "",
         current_school: "",
+        class_number: undefined,
         status: "active",
         parent_contacts: [],
       });
@@ -169,6 +190,49 @@ export function StudentsPage() {
     }
   };
 
+  const handleStartEdit = () => {
+    if (selectedStudent) {
+      setEditFormData({ ...selectedStudent });
+      setIsEditMode(true);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditMode(false);
+    setEditFormData(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editFormData) return;
+
+    try {
+      setUpdating(true);
+      await api.updateStudent(editFormData.id, {
+        first_name: editFormData.first_name,
+        last_name: editFormData.last_name,
+        phone: editFormData.phone,
+        telegram_id: editFormData.telegram_id,
+        current_school: editFormData.current_school,
+        class_number: editFormData.class_number,
+        status: editFormData.status,
+        parent_contacts: editFormData.parent_contacts.map((contact) => ({
+          name: contact.name,
+          relation: contact.relation,
+          phone: contact.phone,
+          telegram_id: contact.telegram_id,
+        })),
+      });
+      await loadStudents();
+      setIsEditMode(false);
+      setEditFormData(null);
+    } catch (error) {
+      console.error("Failed to update student:", error);
+      alert("Ошибка при обновлении студента");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const filteredStudents = students.filter((student) => {
     const fullName = `${student.last_name} ${student.first_name}`.toLowerCase();
     const matchesSearch = fullName.includes(searchQuery.toLowerCase());
@@ -192,6 +256,10 @@ export function StudentsPage() {
       setLinkCopied(true);
       setTimeout(() => setLinkCopied(false), 2000);
     }
+  };
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const getHistoryIcon = (type: string) => {
@@ -268,23 +336,62 @@ export function StudentsPage() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={handleShareLink}
-                >
-                  {linkCopied ? (
-                    <>
-                      <Check className="w-4 h-4" />
-                      Ссылка скопирована
-                    </>
-                  ) : (
-                    <>
-                      <Share2 className="w-4 h-4" />
-                      Поделиться ссылкой
-                    </>
-                  )}
-                </Button>
+                {isEditMode ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={handleCancelEdit}
+                      disabled={updating}
+                    >
+                      Отмена
+                    </Button>
+                    <Button
+                      onClick={handleSaveEdit}
+                      disabled={updating}
+                      className="bg-blue-600 hover:bg-blue-700 gap-2"
+                    >
+                      {updating ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Сохранение...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4" />
+                          Сохранить
+                        </>
+                      )}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      variant="outline"
+                      className="gap-2"
+                      onClick={handleStartEdit}
+                    >
+                      <Edit className="w-4 h-4" />
+                      Редактировать
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="gap-2"
+                      onClick={handleShareLink}
+                    >
+                      {linkCopied ? (
+                        <>
+                          <Check className="w-4 h-4" />
+                          Ссылка скопирована
+                        </>
+                      ) : (
+                        <>
+                          <Share2 className="w-4 h-4" />
+                          Поделиться ссылкой
+                        </>
+                      )}
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -300,42 +407,126 @@ export function StudentsPage() {
                   </h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label className="text-slate-600">ФИО</Label>
-                      <p className="mt-1 font-medium">
-                        {selectedStudent.last_name} {selectedStudent.first_name}
-                      </p>
+                      <Label className="text-slate-600">Фамилия</Label>
+                      {isEditMode && editFormData ? (
+                        <Input
+                          value={editFormData.last_name}
+                          onChange={(e) =>
+                            setEditFormData({ ...editFormData, last_name: e.target.value })
+                          }
+                          className="mt-1"
+                          placeholder="Фамилия"
+                        />
+                      ) : (
+                        <p className="mt-1 font-medium">
+                          {selectedStudent.last_name}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <Label className="text-slate-600">Имя</Label>
+                      {isEditMode && editFormData ? (
+                        <Input
+                          value={editFormData.first_name}
+                          onChange={(e) =>
+                            setEditFormData({ ...editFormData, first_name: e.target.value })
+                          }
+                          className="mt-1"
+                          placeholder="Имя"
+                        />
+                      ) : (
+                        <p className="mt-1 font-medium">
+                          {selectedStudent.first_name}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <Label className="text-slate-600">Класс</Label>
+                      {isEditMode && editFormData ? (
+                        <Input
+                          type="number"
+                          min="1"
+                          max="11"
+                          value={editFormData.class_number || ""}
+                          onChange={(e) =>
+                            setEditFormData({
+                              ...editFormData,
+                              class_number: e.target.value ? parseInt(e.target.value) : undefined
+                            })
+                          }
+                          className="mt-1"
+                          placeholder="9, 10, 11..."
+                        />
+                      ) : (
+                        <p className="mt-1 font-medium">
+                          {selectedStudent.class_number ? `${selectedStudent.class_number} класс` : "Не указан"}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <Label className="text-slate-600">Школа обучения</Label>
-                      <p className="mt-1 font-medium">
-                        {selectedStudent.current_school || "Не указана"}
-                      </p>
+                      {isEditMode && editFormData ? (
+                        <Input
+                          value={editFormData.current_school || ""}
+                          onChange={(e) =>
+                            setEditFormData({ ...editFormData, current_school: e.target.value })
+                          }
+                          className="mt-1"
+                          placeholder="Гимназия №1"
+                        />
+                      ) : (
+                        <p className="mt-1 font-medium">
+                          {selectedStudent.current_school || "Не указана"}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <Label className="text-slate-600">Телефон</Label>
-                      <p className="mt-1 font-medium flex items-center gap-2">
-                        {selectedStudent.phone ? (
-                          <>
-                            <Phone className="w-4 h-4" />
-                            {selectedStudent.phone}
-                          </>
-                        ) : (
-                          <span className="text-slate-400">Не указан</span>
-                        )}
-                      </p>
+                      {isEditMode && editFormData ? (
+                        <Input
+                          value={editFormData.phone || ""}
+                          onChange={(e) =>
+                            setEditFormData({ ...editFormData, phone: e.target.value })
+                          }
+                          className="mt-1"
+                          placeholder="+7 999 123-45-67"
+                        />
+                      ) : (
+                        <p className="mt-1 font-medium flex items-center gap-2">
+                          {selectedStudent.phone ? (
+                            <>
+                              <Phone className="w-4 h-4" />
+                              {selectedStudent.phone}
+                            </>
+                          ) : (
+                            <span className="text-slate-400">Не указан</span>
+                          )}
+                        </p>
+                      )}
                     </div>
                     <div>
-                      <Label className="text-slate-600">Telegram</Label>
-                      <p className="mt-1 font-medium flex items-center gap-2">
-                        {selectedStudent.telegram_id ? (
-                          <>
-                            <MessageCircle className="w-4 h-4 text-green-600" />
-                            {selectedStudent.telegram_id}
-                          </>
-                        ) : (
-                          <span className="text-slate-400">Не привязан</span>
-                        )}
-                      </p>
+                      <Label className="text-slate-600">Telegram ID</Label>
+                      {isEditMode && editFormData ? (
+                        <Input
+                          value={editFormData.telegram_id || ""}
+                          onChange={(e) =>
+                            setEditFormData({ ...editFormData, telegram_id: e.target.value })
+                          }
+                          className="mt-1"
+                          placeholder="Telegram ID"
+                        />
+                      ) : (
+                        <p className="mt-1 font-medium flex items-center gap-2">
+                          {selectedStudent.telegram_id ? (
+                            <>
+                              <MessageCircle className="w-4 h-4 text-green-600" />
+                              {selectedStudent.telegram_id}
+                            </>
+                          ) : (
+                            <span className="text-slate-400">Не привязан</span>
+                          )}
+                        </p>
+                      )}
                     </div>
                     <div className="col-span-2">
                       <Label className="text-slate-600">Группы</Label>
@@ -353,6 +544,39 @@ export function StudentsPage() {
                         )}
                       </div>
                     </div>
+                    <div className="col-span-2">
+                      <Label className="text-slate-600">Статус</Label>
+                      {isEditMode && editFormData ? (
+                        <Select
+                          value={editFormData.status}
+                          onValueChange={(value: "active" | "inactive") =>
+                            setEditFormData({ ...editFormData, status: value })
+                          }
+                        >
+                          <SelectTrigger className="mt-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="active">Активный</SelectItem>
+                            <SelectItem value="inactive">Неактивный</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <p className="mt-1">
+                          <Badge
+                            className={
+                              selectedStudent.status === "active"
+                                ? "bg-green-100 text-green-800"
+                                : "bg-slate-100 text-slate-800"
+                            }
+                          >
+                            {selectedStudent.status === "active"
+                              ? "Активен"
+                              : "Неактивен"}
+                          </Badge>
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -360,39 +584,168 @@ export function StudentsPage() {
               {/* Parent Contacts - Right */}
               <Card>
                 <CardContent className="pt-6">
-                  <h3 className="text-lg font-semibold mb-4">
-                    Контакты родителей
-                  </h3>
-                  {selectedStudent.parent_contacts.length > 0 ? (
-                    <div className="space-y-2">
-                      {selectedStudent.parent_contacts.map((parent) => (
-                        <div
-                          key={parent.id}
-                          className="flex items-center gap-4 text-sm"
-                        >
-                          <span className="font-medium text-slate-900 min-w-[150px]">
-                            {parent.name}
-                          </span>
-                          <div className="flex items-center gap-2 text-slate-600">
-                            <Phone className="w-3 h-3 text-slate-400" />
-                            {parent.phone}
-                          </div>
-                          <Badge variant="outline" className="text-xs">
-                            {parent.relation}
-                          </Badge>
-                          {parent.telegram_id && (
-                            <div className="flex items-center gap-1 text-slate-600">
-                              <MessageCircle className="w-3 h-3 text-green-600" />
-                              <span className="text-xs">{parent.telegram_id}</span>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold">
+                      Контакты родителей
+                    </h3>
+                    {isEditMode && editFormData && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => {
+                          setEditFormData({
+                            ...editFormData,
+                            parent_contacts: [
+                              ...editFormData.parent_contacts,
+                              {
+                                id: `new-${Date.now()}`,
+                                student_id: editFormData.id,
+                                name: "",
+                                relation: "мама" as ParentRelation,
+                                phone: "",
+                                telegram_id: "",
+                              },
+                            ],
+                          });
+                        }}
+                      >
+                        <Plus className="w-4 h-4" />
+                        Добавить контакт
+                      </Button>
+                    )}
+                  </div>
+                  {isEditMode && editFormData ? (
+                    <div className="space-y-4">
+                      {editFormData.parent_contacts.length > 0 ? (
+                        editFormData.parent_contacts.map((parent, index) => (
+                          <div
+                            key={parent.id}
+                            className="p-4 border rounded-lg space-y-3"
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <Label className="font-medium">Контакт {index + 1}</Label>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => {
+                                  setEditFormData({
+                                    ...editFormData,
+                                    parent_contacts: editFormData.parent_contacts.filter(
+                                      (_, i) => i !== index
+                                    ),
+                                  });
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
                             </div>
-                          )}
-                        </div>
-                      ))}
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <Label className="text-xs text-slate-600">Имя *</Label>
+                                <Input
+                                  value={parent.name}
+                                  onChange={(e) => {
+                                    const updated = [...editFormData.parent_contacts];
+                                    updated[index] = { ...parent, name: e.target.value };
+                                    setEditFormData({ ...editFormData, parent_contacts: updated });
+                                  }}
+                                  placeholder="Иванова Мария"
+                                  className="mt-1"
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-slate-600">Родство *</Label>
+                                <Select
+                                  value={parent.relation}
+                                  onValueChange={(value: ParentRelation) => {
+                                    const updated = [...editFormData.parent_contacts];
+                                    updated[index] = { ...parent, relation: value };
+                                    setEditFormData({ ...editFormData, parent_contacts: updated });
+                                  }}
+                                >
+                                  <SelectTrigger className="mt-1">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {parentRelations.map((rel) => (
+                                      <SelectItem key={rel.value} value={rel.value}>
+                                        {rel.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div>
+                                <Label className="text-xs text-slate-600">Телефон *</Label>
+                                <Input
+                                  value={parent.phone}
+                                  onChange={(e) => {
+                                    const updated = [...editFormData.parent_contacts];
+                                    updated[index] = { ...parent, phone: e.target.value };
+                                    setEditFormData({ ...editFormData, parent_contacts: updated });
+                                  }}
+                                  placeholder="+7 999 123-45-67"
+                                  className="mt-1"
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-slate-600">Telegram ID</Label>
+                                <Input
+                                  value={parent.telegram_id || ""}
+                                  onChange={(e) => {
+                                    const updated = [...editFormData.parent_contacts];
+                                    updated[index] = { ...parent, telegram_id: e.target.value };
+                                    setEditFormData({ ...editFormData, parent_contacts: updated });
+                                  }}
+                                  placeholder="Telegram ID"
+                                  className="mt-1"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-slate-400 text-sm text-center py-4">
+                          Контакты не добавлены. Нажмите "Добавить контакт" для добавления.
+                        </p>
+                      )}
                     </div>
                   ) : (
-                    <p className="text-slate-400 text-sm">
-                      Контакты не добавлены
-                    </p>
+                    <>
+                      {selectedStudent.parent_contacts.length > 0 ? (
+                        <div className="space-y-2">
+                          {selectedStudent.parent_contacts.map((parent) => (
+                            <div
+                              key={parent.id}
+                              className="flex items-center gap-4 text-sm"
+                            >
+                              <span className="font-medium text-slate-900 min-w-[150px]">
+                                {parent.name}
+                              </span>
+                              <div className="flex items-center gap-2 text-slate-600">
+                                <Phone className="w-3 h-3 text-slate-400" />
+                                {parent.phone}
+                              </div>
+                              <Badge variant="outline" className="text-xs">
+                                {parent.relation}
+                              </Badge>
+                              {parent.telegram_id && (
+                                <div className="flex items-center gap-1 text-slate-600">
+                                  <MessageCircle className="w-3 h-3 text-green-600" />
+                                  <span className="text-xs">{parent.telegram_id}</span>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-slate-400 text-sm">
+                          Контакты не добавлены
+                        </p>
+                      )}
+                    </>
                   )}
                 </CardContent>
               </Card>
@@ -473,7 +826,9 @@ export function StudentsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>ФИО</TableHead>
+                      <TableHead>Класс</TableHead>
                       <TableHead>Школа</TableHead>
+                      <TableHead>Группы</TableHead>
                       <TableHead>Телефон студента</TableHead>
                       <TableHead>Телефоны родителей</TableHead>
                       <TableHead>Telegram</TableHead>
@@ -502,8 +857,52 @@ export function StudentsPage() {
                           </div>
                         </TableCell>
                         <TableCell>
+                          {student.class_number ? (
+                            <span className="font-medium">{student.class_number}</span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
                           {student.current_school || (
                             <span className="text-slate-400">Не указана</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {student.groups && student.groups.length > 0 ? (
+                            <HoverCard>
+                              <HoverCardTrigger asChild>
+                                <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-800 font-semibold text-sm cursor-pointer hover:bg-blue-200 transition-colors">
+                                  {student.groups.length}
+                                </div>
+                              </HoverCardTrigger>
+                              <HoverCardContent className="w-64" align="start">
+                                <div className="space-y-2">
+                                  <h4 className="font-semibold text-sm text-slate-900">
+                                    Группы студента
+                                  </h4>
+                                  <div className="flex flex-col gap-2">
+                                    {student.groups.map((group) => (
+                                      <div
+                                        key={group.id}
+                                        className="flex items-center gap-2 text-sm"
+                                      >
+                                        <Badge className="bg-blue-600">
+                                          {group.name}
+                                        </Badge>
+                                        {group.school_location && (
+                                          <span className="text-xs text-slate-500">
+                                            {group.school_location}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </HoverCardContent>
+                            </HoverCard>
+                          ) : (
+                            <span className="text-sm text-slate-400">—</span>
                           )}
                         </TableCell>
                         <TableCell>
@@ -582,16 +981,6 @@ export function StudentsPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                className="gap-2"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleViewDetails(student);
-                                }}
-                              >
-                                <Edit className="w-4 h-4" />
-                                Просмотр
-                              </DropdownMenuItem>
                               <DropdownMenuItem
                                 className="gap-2 text-red-600"
                                 onClick={(e) => {
@@ -672,16 +1061,35 @@ export function StudentsPage() {
                 />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="current_school">Школа обучения</Label>
-              <Input
-                id="current_school"
-                value={newStudent.current_school}
-                onChange={(e) =>
-                  setNewStudent({ ...newStudent, current_school: e.target.value })
-                }
-                placeholder="Гимназия №1"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="class_number">Класс</Label>
+                <Input
+                  id="class_number"
+                  type="number"
+                  min="1"
+                  max="11"
+                  value={newStudent.class_number || ""}
+                  onChange={(e) =>
+                    setNewStudent({
+                      ...newStudent,
+                      class_number: e.target.value ? parseInt(e.target.value) : undefined
+                    })
+                  }
+                  placeholder="9, 10, 11..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="current_school">Школа обучения</Label>
+                <Input
+                  id="current_school"
+                  value={newStudent.current_school}
+                  onChange={(e) =>
+                    setNewStudent({ ...newStudent, current_school: e.target.value })
+                  }
+                  placeholder="Гимназия №1"
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -709,6 +1117,17 @@ export function StudentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Scroll to top button */}
+      {showScrollTop && !selectedStudent && (
+        <Button
+          className="fixed bottom-8 right-8 h-12 w-12 rounded-full shadow-lg bg-blue-600 hover:bg-blue-700 z-50 transition-all duration-300"
+          onClick={scrollToTop}
+          title="Наверх"
+        >
+          <ArrowUp className="w-5 h-5" />
+        </Button>
+      )}
     </div>
   );
 }

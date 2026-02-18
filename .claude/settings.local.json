@@ -11,7 +11,26 @@
       "Bash(curl:*)",
       "Bash(pip uninstall:*)",
       "Bash(pip install:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(pip:*)",
+      "Bash(alembic revision:*)",
+      "Bash(alembic upgrade:*)",
+      "Bash(psql:*)",
+      "Bash(alembic current:*)",
+      "Bash(alembic downgrade:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(taskkill:*)",
+      "Bash(pkill:*)",
+      "Bash(xargs kill:*)",
+      "Bash(sqlite3:*)",
+      "Bash(netstat:*)",
+      "Bash(tasklist:*)",
+      "Bash(tee:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run dev:*)",
+      "Bash(timeout:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

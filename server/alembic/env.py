@@ -21,6 +21,7 @@ from app.models import (
     DailyReport, ReportChurnStudent, ReportNotifiedStudent, Task,
 )
 from app.models.settings import Settings
+from app.models.schedule import Schedule
 
 target_metadata = Base.metadata
 

@@ -7,3 +7,5 @@ from app.models.exam import Exam, ExamResult
 from app.models.finance import Payment, EmployeeSalary
 from app.models.report import DailyReport, ReportChurnStudent, ReportNotifiedStudent, Task
 from app.models.settings import Settings
+from app.models.schedule import Schedule
+from app.models.school_location import SchoolLocation

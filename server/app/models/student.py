@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime
 
-from sqlalchemy import String, Text, DateTime, ForeignKey, Enum as SAEnum
+from sqlalchemy import String, Text, DateTime, ForeignKey, Integer, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -40,6 +40,7 @@ class Student(Base):
     phone: Mapped[str | None] = mapped_column(String(20))
     telegram_id: Mapped[str | None] = mapped_column(String(100))
     current_school: Mapped[str | None] = mapped_column(String(200))
+    class_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[StudentStatus] = mapped_column(SAEnum(StudentStatus), default=StudentStatus.active)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

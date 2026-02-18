@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime, time
+from datetime import datetime, time, date
 
-from sqlalchemy import String, Integer, Text, Time, DateTime, Boolean, ForeignKey
+from sqlalchemy import String, Integer, Text, Time, Date, DateTime, Boolean, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -19,6 +19,7 @@ class Group(Base):
     schedule_day: Mapped[str | None] = mapped_column(String(20))
     schedule_time: Mapped[time | None] = mapped_column(Time)
     schedule_duration: Mapped[int | None] = mapped_column(Integer)
+    start_date: Mapped[date | None] = mapped_column(Date)
     school_location: Mapped[str | None] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text)
     comment: Mapped[str | None] = mapped_column(Text)
@@ -26,10 +27,12 @@ class Group(Base):
 
     subject = relationship("Subject", back_populates="groups")
     teacher = relationship("Employee", back_populates="groups")
-    students = relationship("GroupStudent", back_populates="group")
-    lessons = relationship("Lesson", back_populates="group")
-    exams = relationship("Exam", back_populates="group")
-    payments = relationship("Payment", back_populates="group")
+    group_students = relationship("GroupStudent", back_populates="group", cascade="all, delete-orphan")
+    students = relationship("Student", secondary="group_students", viewonly=True)
+    schedules = relationship("Schedule", back_populates="group", cascade="all, delete-orphan")
+    lessons = relationship("Lesson", back_populates="group", cascade="all, delete-orphan")
+    exams = relationship("Exam", back_populates="group", cascade="all, delete-orphan")
+    payments = relationship("Payment", back_populates="group", cascade="all, delete-orphan")
 
 
 class GroupStudent(Base):
@@ -41,5 +44,5 @@ class GroupStudent(Base):
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
     joined_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    group = relationship("Group", back_populates="students")
+    group = relationship("Group", back_populates="group_students")
     student = relationship("Student", back_populates="groups")

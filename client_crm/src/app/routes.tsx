@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router";
 import { HomePage } from "./pages/HomePage";
 import { GroupPage } from "./pages/GroupPage";
 import { StudentsPage } from "./pages/StudentsPage";
+import { ExamsPage } from "./pages/ExamsPage";
 import { SchoolPage } from "./pages/SchoolPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { FinancesPage } from "./pages/FinancesPage";
@@ -39,6 +40,10 @@ export const router = createBrowserRouter([
       {
         path: "students/:studentId",
         Component: StudentsPage,
+      },
+      {
+        path: "exams",
+        Component: ExamsPage,
       },
       {
         path: "school",

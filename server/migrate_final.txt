@@ -1,0 +1,185 @@
+Traceback (most recent call last):
+  File "C:\Users\vadiq\OneDrive\Desktop\DEV_MODE\crm_school_g\server\migrate_groups.py", line 236, in main
+    await migrate_group_students(sqlite_conn, session, group_mapping)
+  File "C:\Users\vadiq\OneDrive\Desktop\DEV_MODE\crm_school_g\server\migrate_groups.py", line 206, in migrate_group_students
+    group.students.append(student)
+    ^^^^^^^^^^^^^^
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\orm\attributes.py", line 566, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1086, in get
+    value = self._fire_loader_callables(state, key, passive)
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1121, in _fire_loader_callables
+    return self.callable_(state, passive)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\orm\strategies.py", line 967, in _load_for_state
+    return self._emit_lazyload(
+           ~~~~~~~~~~~~~~~~~~~^
+        session,
+        ^^^^^^^^
+    ...<7 lines>...
+        execution_options,
+        ^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\orm\strategies.py", line 1130, in _emit_lazyload
+    result = session.execute(
+        stmt, params, execution_options=execution_options
+    )
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\orm\session.py", line 2362, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\orm\session.py", line 2247, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<4 lines>...
+        conn,
+        ^^^^^
+    )
+    ^
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\orm\context.py", line 305, in orm_execute_statement
+    result = conn.execute(
+        statement, params or {}, execution_options=execution_options
+    )
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\engine\base.py", line 1418, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\sql\elements.py", line 515, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\engine\base.py", line 1640, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\engine\base.py", line 2358, in _handle_dbapi_exception
+    raise exc_info[1].with_traceback(exc_info[2])
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\engine\default.py", line 941, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 572, in execute
+    self._adapt_connection.await_(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self._prepare_and_execute(operation, parameters)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\vadiq\AppData\Local\Programs\Python\Python313\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py", line 123, in await_only
+    raise exc.MissingGreenlet(
+    ...<2 lines>...
+    )
+sqlalchemy.exc.MissingGreenlet: greenlet_spawn has not been called; can't call await_only() here. Was IO attempted in an unexpected place? (Background on this error at: https://sqlalche.me/e/20/xd2s)
+============================================================
+МИГРАЦИЯ ГРУПП И СТУДЕНТОВ ИЗ SQLITE В POSTGRESQL
+============================================================
+
+Подключение к SQLite: ../school.db
+Подключение к PostgreSQL: postgresql+asyncpg://postgres:Cvdfer34@localhost:5432/crm_school
+
+=== Миграция групп ===
+Найдено групп в SQLite: 59
+  + [  1] Информатика ЕГЭ Л_ЧТ                     -> Информатика (ЕГЭ) (Вадим Божко)
+  + [  2] Математика ПРОФ Л_ВТ                     -> Математика профильная (ЕГЭ) (Л.О. Трапезникова)
+  + [  3] Математика ПРОФ Б_СР                     -> Математика профильная (ЕГЭ) (Л.О. Трапезникова)
+  + [  4] Русский язык ЕГЭ Б_ПН_СР                 -> Русский язык (ЕГЭ) (А.А. Ахметханова)
+  + [  5] Русский язык ЕГЭ Б_ВТ_ЧТ                 -> Русский язык (ЕГЭ) (А.А. Ахметханова)
+  + [  6] Математика ПРОФ Б_ЧТ                     -> Математика профильная (ЕГЭ) (Л.О. Трапезникова)
+  + [  7] Математика ПРОФ Б_ПТ                     -> Математика профильная (ЕГЭ) (Л.О. Трапезникова)
+  + [  8] Математика ПРОФ Б_СБ                     -> Математика профильная (ЕГЭ) (Л.О. Трапезникова)
+  + [  9] Информатика ЕГЭ Б_СР                     -> Информатика (ЕГЭ) (Вадим Божко)
+  + [ 10] Математика ПРОФ Б_ПТ                     -> Математика профильная (ЕГЭ) (М.А. Грунский)
+  + [ 11] Общество ЕГЭ Б_СР_ПН                     -> Обществознание (ЕГЭ) (З. Власевский)
+  + [ 12] Английский Б_ПН_СР                       -> Английский язык (ЕГЭ) (А.А. Толкачева)
+  + [ 13] Математика БАЗА Б_СБ                     -> Математика базовая (ЕГЭ) (В.Д. Татаринова)
+  + [ 14] Математика БАЗА Б_СБ#2                   -> Математика базовая (ЕГЭ) (В.Д. Татаринова)
+  + [ 15] Физика ЕГЭ Б_ПН                          -> Физика (ЕГЭ) (А. Швецов)
+  + [ 16] Русский язык ЕГЭ Л_ПН_ПТ                 -> Русский язык (ЕГЭ) (Ю. Ситникова)
+  + [ 17] Русский язык ЕГЭ Л_СР_ПТ                 -> Русский язык (ЕГЭ) (Ю. Ситникова)
+  + [ 18] Физика ЕГЭ Б_ВТ                          -> Физика (ЕГЭ) (А. Швецов)
+  + [ 19] Физика ЕГЭ Б_СР#1                        -> Физика (ЕГЭ) (А. Швецов)
+  + [ 20] Физика ЕГЭ Б_СР#2                        -> Физика (ЕГЭ) (А. Швецов)
+  + [ 21] Физика ЕГЭ Б_Чт                          -> Физика (ЕГЭ) (А. Швецов)
+  + [ 22] Общество ЕГЭ Б_СР ПТ 1                   -> Обществознание (ЕГЭ) (С.Д. Семидельская)
+  + [ 23] История ЕГЭ Б_                           -> История (ЕГЭ) (С.Д. Семидельская)
+  + [ 24] Биология ЕГЭ Б_ПН_СБ                     -> Биология (ЕГЭ) (Е. Рымарева)
+  + [ 25] Биология ЕГЭ Б_ПН_ВТ                     -> Биология (ЕГЭ) (Е. Рымарева)
+  + [ 26] Русский язык ЕГЭ Б_ПН_СР                 -> Русский язык (ЕГЭ) (Е. Малышева)
+  + [ 27] Русский язык ЕГЭ Б_ПН_СР#2               -> Русский язык (ЕГЭ) (Е. Малышева)
+  + [ 28] Русский язык ЕГЭ Б_ПН_СР#3               -> Русский язык (ЕГЭ) (Е. Малышева)
+  + [ 29] Математика ОГЭ Б_ВТ                      -> Математика (ОГЭ) (А. Белоусова)
+  + [ 30] Русский язык ОГЭ Б_ПН_ЧТ                 -> Русский язык (ОГЭ) (О. Шушарина)
+  + [ 31] Биология ОГЭ_Б_СР_ПТ                     -> Биология (ОГЭ) (К. Вздорова)
+  + [ 32] Русский язык Л_ВТ ЧТ 1                   -> Русский язык (ОГЭ) (М. Быковская)
+  + [ 33] Русский язык Л ВТ ЧТ 2                   -> Русский язык (ОГЭ) (М. Быковская)
+  + [ 34] Математика Л 10 ПН                       -> Математика профильная (ЕГЭ) (Л.О. Трапезникова)
+  + [ 35] Математика ОГЭ Л ПН                      -> Математика (ОГЭ) (А. Мартынова)
+  + [ 36] Математика Л ОГЭ ПТ                      -> Математика (ОГЭ) (А. Мартынова)
+  + [ 37] Математика ОГЭ Л СР                      -> Математика (ОГЭ) (Ю. Чувашкина)
+  + [ 38] Обществознание ЕГЭ Л ВТ ЧТ               -> Обществознание (ЕГЭ) (Ф. Кузнецов)
+  + [ 39] Обществознание ОГЭ Л ПН ЧТ               -> Обществознание (ОГЭ) (А. Харланович)
+  + [ 40] Химия ЕГЭ Л ЧТ                           -> Химия (ЕГЭ) (Т.В. Бабаева)
+  + [ 41] География ОГЭ Б СР ВС                    -> География (ОГЭ) (А.А. Ахметханова)
+  + [ 42] Информатика ОГЭ Б СБ                     -> Информатика (ОГЭ) (А. Романенко)
+  + [ 43] Математика 10 Б СБ                       -> Математика профильная (ЕГЭ) (Л.О. Трапезникова)
+  + [ 44] Математика проф Б ВТ                     -> Математика (ОГЭ) (М.А. Грунский)
+  + [ 45] Математика ОГЭ Б СБ 1                    -> Математика (ОГЭ) (А. Белоусова)
+  + [ 46] Математика ОГЭ Б 2                       -> Математика (ОГЭ) (А. Белоусова)
+  + [ 47] Математика ОГЭ ЧТ Б                      -> Математика (ОГЭ) (А. Белоусова)
+  + [ 48] Общество ЕГЭ Б 2                         -> Обществознание (ЕГЭ) (С.Д. Семидельская)
+  + [ 49] ОБщество Е Б ВТ ЧТ                       -> Обществознание (ЕГЭ) (С.Д. Семидельская)
+  + [ 50] Русский язык Б 10 ВТ ЧТ                  -> Русский язык (ЕГЭ) (А.А. Ахметханова)
+  + [ 51] Русский язык Б ОГЭ Вт Чт                 -> Русский язык (ОГЭ) (А.А. Ахметханова)
+  + [ 52] Русский ОГЭ Б Пн Пт 1                    -> Русский язык (ОГЭ) (А.А. Ахметханова)
+  + [ 53] Русский язык ОГЭ Б Пн и Пт 2             -> Русский язык (ОГЭ) (А.А. Ахметханова)
+  + [ 54] Общество ОГЭ Б ПТ                        -> Обществознание (ОГЭ) (А. Помазкин)
+  + [ 55] Общество ОГЭ Б ПН ЧТ                     -> Обществознание (ОГЭ) (Е. Никифорова)
+  + [ 56] Физика ОГЭ Б ПТ                          -> Физика (ОГЭ) (В.М. Шергина)
+  + [ 57] Физика ЕГЭ Б ЧТ                          -> Физика (ЕГЭ) (М.А. Грунский)
+  + [ 58] Химия ОГЭ Б                              -> Химия (ЕГЭ) (Т.В. Бабаева)
+  ПРОПУСК: Группа 'СПЕЦ ГРУППА(НЕ УДАЛЯТЬ)' - предмет 'None' не найден
+
+Мигрировано групп: 58
+Пропущено: 1
+
+=== Миграция студентов в группах ===
+Найдено связей группа-студент в SQLite: 431
+
+ОШИБКА: greenlet_spawn has not been called; can't call await_only() here. Was IO attempted in an unexpected place? (Background on this error at: https://sqlalche.me/e/20/xd2s)
