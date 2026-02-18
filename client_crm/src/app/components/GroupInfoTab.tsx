@@ -42,9 +42,13 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
   const [isAddScheduleOpen, setIsAddScheduleOpen] = useState(false);
   const [isGenerateLessonsOpen, setIsGenerateLessonsOpen] = useState(false);
   const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
+  const [isArchivedStudentsOpen, setIsArchivedStudentsOpen] = useState(false);
+  const [archivedStudents, setArchivedStudents] = useState<import("../types/api").GroupStudent[]>([]);
+  const [loadingArchived, setLoadingArchived] = useState(false);
   const [generateMonths, setGenerateMonths] = useState("3");
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [studentSearchQuery, setStudentSearchQuery] = useState("");
   const [newSchedule, setNewSchedule] = useState<ScheduleCreate>({
     day_of_week: "",
     start_time: "",
@@ -217,6 +221,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
       await api.addStudentToGroup(group.id, selectedStudentId);
       setIsAddStudentOpen(false);
       setSelectedStudentId("");
+      setStudentSearchQuery("");
       if (onUpdate) onUpdate();
       toast.success("Студент добавлен в группу");
     } catch (error) {
@@ -230,11 +235,42 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
     try {
       await api.removeStudentFromGroup(group.id, studentId);
       if (onUpdate) onUpdate();
-      toast.success("Студент удален из группы");
+      toast.success("Студент архивирован");
     } catch (error) {
       console.error("Failed to remove student:", error);
       toast.error("Ошибка при удалении студента");
     }
+  };
+
+  const loadArchivedStudents = async () => {
+    try {
+      setLoadingArchived(true);
+      const archived = await api.getArchivedStudents(group.id);
+      setArchivedStudents(archived);
+    } catch (error) {
+      console.error("Failed to load archived students:", error);
+      toast.error("Ошибка при загрузке архива");
+    } finally {
+      setLoadingArchived(false);
+    }
+  };
+
+  const handleRestoreStudent = async (studentId: string) => {
+    if (!confirm("Восстановить студента в группе?")) return;
+    try {
+      await api.restoreStudentToGroup(group.id, studentId);
+      if (onUpdate) onUpdate();
+      await loadArchivedStudents();
+      toast.success("Студент восстановлен");
+    } catch (error) {
+      console.error("Failed to restore student:", error);
+      toast.error("Ошибка при восстановлении студента");
+    }
+  };
+
+  const handleOpenArchive = async () => {
+    setIsArchivedStudentsOpen(true);
+    await loadArchivedStudents();
   };
 
   const handleAddSchedule = async () => {
@@ -289,7 +325,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                 !editFormData.name ||
                 !editFormData.subject_id ||
                 !editFormData.teacher_id ||
-                !editFormData.level
+                (isAdmin && !editFormData.level)
               }
             >
               <Save className="w-4 h-4 mr-2" />
@@ -355,38 +391,40 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                   )}
                 </div>
 
-                {/* Тип подготовки */}
-                <div>
-                  <label className="text-sm font-medium text-slate-600">
-                    Тип подготовки
-                  </label>
-                  {isEditMode ? (
-                    <Select
-                      value={editFormData.level}
-                      onValueChange={(value) =>
-                        setEditFormData({ ...editFormData, level: value })
-                      }
-                    >
-                      <SelectTrigger className="mt-2">
-                        <SelectValue placeholder="Выберите тип" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="ОГЭ">ОГЭ</SelectItem>
-                        <SelectItem value="ЕГЭ">ЕГЭ</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <div className="mt-1">
-                      {group.level ? (
-                        <Badge className={group.level === 'ЕГЭ' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}>
-                          {group.level}
-                        </Badge>
-                      ) : (
-                        <span className="text-slate-400">Не указан</span>
-                      )}
-                    </div>
-                  )}
-                </div>
+                {/* Тип подготовки - только для админов */}
+                {isAdmin && (
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">
+                      Тип подготовки
+                    </label>
+                    {isEditMode ? (
+                      <Select
+                        value={editFormData.level}
+                        onValueChange={(value) =>
+                          setEditFormData({ ...editFormData, level: value })
+                        }
+                      >
+                        <SelectTrigger className="mt-2">
+                          <SelectValue placeholder="Выберите тип" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ОГЭ">ОГЭ</SelectItem>
+                          <SelectItem value="ЕГЭ">ЕГЭ</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <div className="mt-1">
+                        {group.level ? (
+                          <Badge className={group.level === 'ЕГЭ' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}>
+                            {group.level}
+                          </Badge>
+                        ) : (
+                          <span className="text-slate-400">Не указан</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <label className="text-sm font-medium text-slate-600">
@@ -610,14 +648,24 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                   </h3>
                 </div>
                 {isAdmin && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setIsAddStudentOpen(true)}
-                    className="h-7 w-7 p-0"
-                  >
-                    <UserPlus className="w-3.5 h-3.5" />
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleOpenArchive}
+                      className="h-7 px-2 text-xs"
+                    >
+                      Архив
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setIsAddStudentOpen(true)}
+                      className="h-7 w-7 p-0"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
                 )}
               </div>
               <div className="space-y-2">
@@ -782,38 +830,90 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
       </Dialog>
 
       {/* Add Student Dialog */}
-      <Dialog open={isAddStudentOpen} onOpenChange={setIsAddStudentOpen}>
-        <DialogContent>
+      <Dialog open={isAddStudentOpen} onOpenChange={(open) => {
+        setIsAddStudentOpen(open);
+        if (!open) {
+          setSelectedStudentId("");
+          setStudentSearchQuery("");
+        }
+      }}>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Добавить студента в группу</DialogTitle>
             <DialogDescription>
-              Выберите студента из списка
+              Найдите и выберите студента
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Search Input */}
             <div>
-              <Label htmlFor="student">Студент</Label>
-              <Select
-                value={selectedStudentId}
-                onValueChange={setSelectedStudentId}
-              >
-                <SelectTrigger className="mt-2">
-                  <SelectValue placeholder="Выберите студента" />
-                </SelectTrigger>
-                <SelectContent>
-                  {allStudents.length > 0 ? (
-                    allStudents.map((student) => (
-                      <SelectItem key={student.id} value={student.id}>
-                        {student.first_name} {student.last_name}
-                      </SelectItem>
+              <Label>Поиск студента</Label>
+              <Input
+                placeholder="Введите имя или фамилию..."
+                value={studentSearchQuery}
+                onChange={(e) => {
+                  setStudentSearchQuery(e.target.value);
+                  setSelectedStudentId("");
+                }}
+                className="mt-2"
+                autoFocus
+              />
+            </div>
+
+            {/* Students List */}
+            <div className="border rounded-lg max-h-96 overflow-y-auto">
+              {allStudents.length > 0 ? (
+                (() => {
+                  const filteredStudents = allStudents.filter((student) => {
+                    const fullName = `${student.first_name} ${student.last_name}`.toLowerCase();
+                    return fullName.includes(studentSearchQuery.toLowerCase());
+                  });
+
+                  return filteredStudents.length > 0 ? (
+                    filteredStudents.map((student) => (
+                      <div
+                        key={student.id}
+                        onClick={() => setSelectedStudentId(student.id)}
+                        className={`
+                          flex items-center justify-between p-3 hover:bg-slate-50 cursor-pointer border-b last:border-b-0
+                          ${selectedStudentId === student.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''}
+                        `}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-semibold text-sm">
+                            {student.first_name[0]}{student.last_name[0]}
+                          </div>
+                          <div>
+                            <div className="font-medium text-slate-900">
+                              {student.first_name} {student.last_name}
+                            </div>
+                            {student.phone && (
+                              <div className="text-sm text-slate-500">
+                                {student.phone}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {selectedStudentId === student.id && (
+                          <div className="text-blue-600">
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
                     ))
                   ) : (
-                    <SelectItem value="none" disabled>
-                      Нет доступных студентов
-                    </SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
+                    <div className="text-center py-8 text-slate-500">
+                      Студенты не найдены
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="text-center py-8 text-slate-500">
+                  Нет доступных студентов
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
@@ -822,6 +922,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
               onClick={() => {
                 setIsAddStudentOpen(false);
                 setSelectedStudentId("");
+                setStudentSearchQuery("");
               }}
             >
               Отмена
@@ -831,6 +932,67 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
               disabled={!selectedStudentId}
             >
               Добавить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Archived Students Dialog */}
+      <Dialog open={isArchivedStudentsOpen} onOpenChange={setIsArchivedStudentsOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Архив студентов</DialogTitle>
+            <DialogDescription>
+              Студенты, удалённые из группы. Вы можете восстановить их.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {loadingArchived ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : archivedStudents.length > 0 ? (
+              archivedStudents.map((gs) => (
+                <div
+                  key={gs.id}
+                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-slate-400 text-white flex items-center justify-center font-semibold text-xs">
+                      {gs.student?.first_name[0]}{gs.student?.last_name[0]}
+                    </div>
+                    <div>
+                      <div className="font-medium text-slate-900">
+                        {gs.student?.first_name} {gs.student?.last_name}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        Был в группе с {new Date(gs.joined_at).toLocaleDateString("ru-RU")}
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleRestoreStudent(gs.student_id)}
+                    className="text-blue-600 hover:text-blue-700"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Восстановить
+                  </Button>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-8 text-slate-500">
+                Архив пуст
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsArchivedStudentsOpen(false)}
+            >
+              Закрыть
             </Button>
           </DialogFooter>
         </DialogContent>

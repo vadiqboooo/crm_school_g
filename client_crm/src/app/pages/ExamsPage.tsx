@@ -258,15 +258,24 @@ export function ExamsPage() {
 
   const handleEditResult = (result: ExamResult & { exam: Exam }) => {
     setEditingResult(result);
-    // Get task count from exam's subject
-    const examSubject = (result as any).exam?.subject_rel;
-    const taskCount = examSubject?.tasks?.length || 27;
-    setAnswers(result.answers || Array(taskCount).fill(null));
-    setStudentComment(result.student_comment || "");
 
     // Get exam to find subject_id
     const exam = exams.find(e => e.id === result.exam_id) || (result as any).exam;
-    setEditResultSubjectId(exam?.subject_id || exam?.subject_rel?.id || "");
+    const subjectId = exam?.subject_id || exam?.subject_rel?.id || "";
+    setEditResultSubjectId(subjectId);
+
+    // Get subject from subjects list (this has the current configuration)
+    const currentSubject = subjects.find(s => s.id === subjectId);
+    const taskCount = currentSubject?.tasks?.length || 27;
+
+    // Resize answers array to match current subject configuration
+    const existingAnswers = result.answers || [];
+    const resizedAnswers = Array(taskCount).fill(null).map((_, index) =>
+      existingAnswers[index] !== undefined ? existingAnswers[index] : null
+    );
+    setAnswers(resizedAnswers);
+
+    setStudentComment(result.student_comment || "");
 
     // Get current teacher who checked the work
     setEditResultTeacherId(result.added_by_employee?.id || "");
@@ -280,12 +289,35 @@ export function ExamsPage() {
     try {
       setIsSubmitting(true);
 
-      // Update exam subject if changed
       const currentExam = exams.find(e => e.id === editingResult.exam_id) || (editingResult as any).exam;
+      let examIdToUse = editingResult.exam_id;
+      let newExamCreated: Exam | null = null;
+
+      // Save current expanded student to restore after reload
+      const currentExpandedStudent = expandedStudentId;
+
+      // If subject changed, create a new exam instead of updating the existing one
+      // This prevents affecting other students' results for the same exam
       if (editResultSubjectId && currentExam?.subject_id !== editResultSubjectId) {
-        await api.updateExam(editingResult.exam_id, {
+        const selectedSubject = subjects.find(s => s.id === editResultSubjectId);
+
+        // Create new exam with the new subject
+        newExamCreated = await api.createExam({
+          title: currentExam?.title || "Экзамен",
+          subject: selectedSubject?.name,
           subject_id: editResultSubjectId,
+          date: currentExam?.date,
+          is_template: false,
+          difficulty: currentExam?.difficulty,
+          threshold_score: currentExam?.threshold_score,
+          selected_tasks: currentExam?.selected_tasks,
+          task_topics: currentExam?.task_topics,
         });
+
+        examIdToUse = newExamCreated.id;
+
+        // Delete the old result from the old exam
+        await api.deleteExamResult(editingResult.exam_id, editingResult.id);
       }
 
       // Get subject for score calculation
@@ -294,17 +326,67 @@ export function ExamsPage() {
       // Calculate scores from answers
       const { primary: calculatedPrimaryScore, final: calculatedFinalScore } = calculateScores(answers, examSubject);
 
-      // Update the result
-      const updatedResult = await api.updateExamResult(editingResult.exam_id, editingResult.id, {
-        primary_score: calculatedPrimaryScore,
-        final_score: calculatedFinalScore,
-        answers: answers,
-        student_comment: studentComment || undefined,
-        added_by: editResultTeacherId || undefined,
+      let updatedOrCreatedResult: ExamResult;
+
+      // If subject changed, create new result; otherwise update existing
+      if (examIdToUse !== editingResult.exam_id) {
+        // Create new result (added_by will be set automatically to current user)
+        updatedOrCreatedResult = await api.createExamResult(examIdToUse, {
+          student_id: editingResult.student_id,
+          primary_score: calculatedPrimaryScore,
+          final_score: calculatedFinalScore,
+          answers: answers,
+          student_comment: studentComment || undefined,
+        });
+
+        // Admin can update added_by to any teacher or remove it (set to null)
+        // Teachers can't change added_by when creating new results
+        if (isAdmin) {
+          updatedOrCreatedResult = await api.updateExamResult(examIdToUse, updatedOrCreatedResult.id, {
+            added_by: editResultTeacherId || null,
+          } as any);
+        }
+      } else {
+        // Update the existing result
+        // Admin can change added_by, teachers can only update if it's already theirs
+        const updateData: any = {
+          primary_score: calculatedPrimaryScore,
+          final_score: calculatedFinalScore,
+          answers: answers,
+          student_comment: studentComment || undefined,
+        };
+
+        // Only update added_by if user is admin
+        if (isAdmin) {
+          updateData.added_by = editResultTeacherId || null;
+        }
+
+        updatedOrCreatedResult = await api.updateExamResult(editingResult.exam_id, editingResult.id, updateData);
+      }
+
+      // Update state locally instead of full reload for better UX
+      if (newExamCreated) {
+        // Add new exam to state
+        setExams(prev => [...prev, newExamCreated!]);
+      }
+
+      // Update results in state
+      setAllResults(prev => {
+        // Remove old result if it was replaced
+        const filtered = examIdToUse !== editingResult.exam_id
+          ? prev.filter(r => r.id !== editingResult.id)
+          : prev.filter(r => r.id !== editingResult.id);
+
+        // Add/update the result
+        const examForResult = newExamCreated || currentExam;
+        return [
+          ...filtered,
+          { ...updatedOrCreatedResult, exam: examForResult } as any
+        ];
       });
 
-      // Reload data to get updated exam info
-      await loadData();
+      // Restore expanded state
+      setExpandedStudentId(currentExpandedStudent);
 
       // Reset form
       setIsEditResultDialogOpen(false);

@@ -1,18 +1,23 @@
 from uuid import UUID
+from datetime import date
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.student import Student, ParentContact, StudentHistory, HistoryEventType
-from app.models.group import GroupStudent
+from app.models.group import GroupStudent, Group
+from app.models.lesson import Lesson, LessonAttendance
+from app.models.subject import Subject
 from app.models.employee import Employee
 from app.schemas.student import (
     StudentCreate, StudentUpdate, StudentResponse,
     ParentContactCreate, ParentContactResponse,
     StudentHistoryResponse, GroupInfoResponse,
+    StudentPerformanceRecord, StudentPerformanceResponse,
 )
 from app.auth.dependencies import get_current_user
 
@@ -282,3 +287,86 @@ async def get_student_history(
         .order_by(StudentHistory.created_at.desc())
     )
     return result.scalars().all()
+
+
+# --- Performance ---
+
+@router.get("/{student_id}/performance", response_model=StudentPerformanceResponse)
+async def get_student_performance(
+    student_id: UUID,
+    group_id: Optional[UUID] = Query(None),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Get performance data for a specific student (admin only)."""
+    # Admin-only access
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Access denied. Admin only.")
+
+    # Verify student exists
+    student_result = await db.execute(
+        select(Student).where(Student.id == student_id)
+    )
+    student = student_result.scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # Build query with joins
+    query = (
+        select(
+            LessonAttendance,
+            Lesson,
+            Group,
+            Subject
+        )
+        .join(Lesson, LessonAttendance.lesson_id == Lesson.id)
+        .join(Group, Lesson.group_id == Group.id)
+        .join(Subject, Group.subject_id == Subject.id)
+        .where(
+            LessonAttendance.student_id == student_id,
+            Lesson.status == "conducted",
+            Lesson.is_cancelled == False
+        )
+    )
+
+    # Apply optional filters
+    if group_id:
+        query = query.where(Group.id == group_id)
+    if start_date:
+        query = query.where(Lesson.date >= start_date)
+    if end_date:
+        query = query.where(Lesson.date <= end_date)
+
+    # Order by date descending
+    query = query.order_by(Lesson.date.desc(), Lesson.time.desc())
+
+    # Execute query
+    result = await db.execute(query)
+    rows = result.all()
+
+    # Build performance records
+    performance_records = []
+    for attendance, lesson, group, subject in rows:
+        performance_records.append(StudentPerformanceRecord(
+            lesson_id=lesson.id,
+            lesson_date=lesson.date,
+            lesson_time=lesson.time,
+            lesson_topic=lesson.topic,
+            lesson_homework=lesson.homework,
+            group_id=group.id,
+            group_name=group.name,
+            subject_name=subject.name,
+            attendance=attendance.attendance,
+            late_minutes=attendance.late_minutes,
+            lesson_grade=attendance.lesson_grade,
+            homework_grade=attendance.homework_grade,
+            comment=attendance.comment,
+        ))
+
+    return StudentPerformanceResponse(
+        student_id=student.id,
+        student_name=f"{student.first_name} {student.last_name}",
+        performance_records=performance_records
+    )

@@ -4,6 +4,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Badge } from "../components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -56,6 +57,8 @@ import {
 } from "../components/ui/hover-card";
 import { useParams, useNavigate } from "react-router";
 import { api } from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
+import { StudentPerformanceTab } from "../components/StudentPerformanceTab";
 import type { Student, StudentCreate, StudentHistory, ParentRelation } from "../types/api";
 
 const parentRelations: { value: ParentRelation; label: string }[] = [
@@ -70,8 +73,11 @@ const parentRelations: { value: ParentRelation; label: string }[] = [
 export function StudentsPage() {
   const { studentId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   const [students, setStudents] = useState<Student[]>([]);
+  const [activeTab, setActiveTab] = useState("info");
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -396,9 +402,19 @@ export function StudentsPage() {
             </div>
           </div>
 
-          <div className="grid gap-6">
-            {/* Two column layout */}
-            <div className="grid grid-cols-2 gap-6">
+          {/* Tabs */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="bg-white border mb-6">
+              <TabsTrigger value="info">Информация</TabsTrigger>
+              {isAdmin && <TabsTrigger value="performance">Успеваемость</TabsTrigger>}
+              <TabsTrigger value="history">История</TabsTrigger>
+            </TabsList>
+
+            {/* Info Tab */}
+            <TabsContent value="info">
+              <div className="grid gap-6">
+                {/* Two column layout */}
+                <div className="grid grid-cols-2 gap-6">
               {/* Basic Info - Left */}
               <Card>
                 <CardContent className="pt-6">
@@ -750,8 +766,21 @@ export function StudentsPage() {
                 </CardContent>
               </Card>
             </div>
+              </div>
+            </TabsContent>
 
-            {/* History */}
+            {/* Performance Tab */}
+            {isAdmin && (
+              <TabsContent value="performance">
+                <StudentPerformanceTab
+                  studentId={selectedStudent.id}
+                  studentGroups={selectedStudent.groups}
+                />
+              </TabsContent>
+            )}
+
+            {/* History Tab */}
+            <TabsContent value="history">
             <Card>
               <CardContent className="pt-6">
                 <h3 className="text-lg font-semibold mb-4">История действий</h3>
@@ -787,7 +816,8 @@ export function StudentsPage() {
                 </div>
               </CardContent>
             </Card>
-          </div>
+            </TabsContent>
+          </Tabs>
         </div>
       ) : (
         // Students Table

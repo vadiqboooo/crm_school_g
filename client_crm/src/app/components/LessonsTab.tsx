@@ -196,12 +196,6 @@ export function LessonsTab({ groupId, groupName }: LessonsTabProps) {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold">Уроки группы</h2>
         <div className="flex items-center gap-4">
-          {isAdmin && (
-            <Button onClick={handleCreateLesson} size="sm">
-              <Plus className="w-4 h-4 mr-2" />
-              Добавить урок
-            </Button>
-          )}
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -243,8 +237,20 @@ export function LessonsTab({ groupId, groupName }: LessonsTabProps) {
                 const status = getStatusText(lesson);
                 const isCancelled = lesson.is_cancelled;
                 const hasDetails = lesson.status === "conducted";
+
+                // Check if lesson is uncompleted (more than 1 day old and not conducted)
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const lessonDate = new Date(lesson.date);
+                lessonDate.setHours(0, 0, 0, 0);
+                const daysDiff = Math.floor((today.getTime() - lessonDate.getTime()) / (1000 * 60 * 60 * 24));
+                const isUncompleted = daysDiff > 1 && lesson.status !== "conducted";
+
                 return (
-                  <TableRow key={lesson.id} className={isCancelled ? "opacity-60" : ""}>
+                  <TableRow
+                    key={lesson.id}
+                    className={isCancelled ? "opacity-60" : ""}
+                  >
                     <TableCell className={`font-medium ${isCancelled ? "line-through" : ""}`}>
                       {formatDate(lesson.date)}
                     </TableCell>
@@ -265,7 +271,7 @@ export function LessonsTab({ groupId, groupName }: LessonsTabProps) {
                     <TableCell>
                       <Badge
                         variant="secondary"
-                        className={status.color ? `${status.color} hover:${status.color}` : ""}
+                        className={isUncompleted ? "bg-red-100 text-red-700 hover:bg-red-200" : (status.color ? `${status.color} hover:${status.color}` : "")}
                       >
                         {status.text}
                       </Badge>

@@ -63,6 +63,7 @@ export function HomePage() {
   const [teachers, setTeachers] = useState<User[]>([]);
   const [locations, setLocations] = useState<SchoolLocation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [uncompletedLessonsByGroup, setUncompletedLessonsByGroup] = useState<Map<string, number>>(new Map());
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -137,6 +138,30 @@ export function HomePage() {
       setSubjects(subjectsData);
       setTeachers(teachersData.filter((t) => t.role === "teacher"));
       setLocations(locationsData);
+
+      // Load uncompleted lessons count for teachers
+      if (isTeacher) {
+        const lessons = await api.getLessons();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const uncompletedByGroup = new Map<string, number>();
+
+        lessons.forEach((lesson) => {
+          const lessonDate = new Date(lesson.date);
+          lessonDate.setHours(0, 0, 0, 0);
+
+          const daysDiff = Math.floor((today.getTime() - lessonDate.getTime()) / (1000 * 60 * 60 * 24));
+
+          // Count lessons that are more than 1 day old and not conducted
+          if (daysDiff > 1 && lesson.status !== "conducted") {
+            const count = uncompletedByGroup.get(lesson.group_id) || 0;
+            uncompletedByGroup.set(lesson.group_id, count + 1);
+          }
+        });
+
+        setUncompletedLessonsByGroup(uncompletedByGroup);
+      }
     } catch (error) {
       console.error("Failed to load data:", error);
     } finally {
@@ -307,64 +332,66 @@ export function HomePage() {
             </div>
 
             <div className="flex items-center gap-3">
-              {/* Exam Type Filter */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className={selectedExamTypes.length > 0 ? 'border-blue-600 text-blue-600' : ''}
-                  >
-                    <Filter className="w-4 h-4 mr-2" />
-                    Тип подготовки
-                    {selectedExamTypes.length > 0 && (
-                      <Badge variant="secondary" className="ml-2 h-5 px-1.5">
-                        {selectedExamTypes.length}
-                      </Badge>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-64" align="start">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-medium text-sm">Фильтр по типу подготовки</h4>
+              {/* Exam Type Filter - только для админов */}
+              {isAdmin && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={selectedExamTypes.length > 0 ? 'border-blue-600 text-blue-600' : ''}
+                    >
+                      <Filter className="w-4 h-4 mr-2" />
+                      Тип подготовки
                       {selectedExamTypes.length > 0 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-2 text-xs"
-                          onClick={() => setSelectedExamTypes([])}
-                        >
-                          Сбросить
-                        </Button>
+                        <Badge variant="secondary" className="ml-2 h-5 px-1.5">
+                          {selectedExamTypes.length}
+                        </Badge>
                       )}
-                    </div>
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64" align="start">
                     <div className="space-y-2">
-                      {['ОГЭ', 'ЕГЭ'].map((examType) => (
-                        <div key={examType} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`exam-type-filter-${examType}`}
-                            checked={selectedExamTypes.includes(examType)}
-                            onCheckedChange={(checked) => {
-                              setSelectedExamTypes(
-                                checked
-                                  ? [...selectedExamTypes, examType]
-                                  : selectedExamTypes.filter((t) => t !== examType)
-                              );
-                            }}
-                          />
-                          <label
-                            htmlFor={`exam-type-filter-${examType}`}
-                            className="text-sm font-normal cursor-pointer flex-1"
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-medium text-sm">Фильтр по типу подготовки</h4>
+                        {selectedExamTypes.length > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-xs"
+                            onClick={() => setSelectedExamTypes([])}
                           >
-                            {examType}
-                          </label>
-                        </div>
-                      ))}
+                            Сбросить
+                          </Button>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        {['ОГЭ', 'ЕГЭ'].map((examType) => (
+                          <div key={examType} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`exam-type-filter-${examType}`}
+                              checked={selectedExamTypes.includes(examType)}
+                              onCheckedChange={(checked) => {
+                                setSelectedExamTypes(
+                                  checked
+                                    ? [...selectedExamTypes, examType]
+                                    : selectedExamTypes.filter((t) => t !== examType)
+                                );
+                              }}
+                            />
+                            <label
+                              htmlFor={`exam-type-filter-${examType}`}
+                              className="text-sm font-normal cursor-pointer flex-1"
+                            >
+                              {examType}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
+                  </PopoverContent>
+                </Popover>
+              )}
 
               {/* View mode toggle - only for admin and manager */}
               {canUseTableView && (
@@ -436,10 +463,16 @@ export function HomePage() {
               <p>Нет групп, соответствующих выбранным фильтрам</p>
             </div>
           ) : (
-            filteredGroups.map((group) => (
+            filteredGroups.map((group) => {
+              const uncompletedCount = uncompletedLessonsByGroup.get(group.id) || 0;
+              const hasWarning = uncompletedCount > 0;
+
+              return (
             <Card
               key={group.id}
-              className="hover:shadow-lg transition-shadow cursor-pointer group overflow-hidden"
+              className={`hover:shadow-lg transition-shadow cursor-pointer group overflow-hidden ${
+                hasWarning ? 'border-2 border-red-500 bg-red-50' : ''
+              }`}
               onClick={() => navigate(`/group/${group.id}`)}
             >
               {/* Top section */}
@@ -449,6 +482,14 @@ export function HomePage() {
                     {group.name}
                   </h3>
                   <div className="flex items-center gap-1">
+                    {hasWarning && isTeacher && (
+                      <Badge
+                        variant="destructive"
+                        className="bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center mr-2"
+                      >
+                        {uncompletedCount}
+                      </Badge>
+                    )}
                     <Users className="w-4 h-4 text-slate-500" />
                     <span className="text-base font-medium text-slate-700">
                       {group.studentsCount || 0}
@@ -507,11 +548,6 @@ export function HomePage() {
               <div className="p-4 pt-3">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2 text-sm text-slate-700">
-                    {group.level && (
-                      <Badge variant="outline" className="border-blue-400 text-blue-600 text-xs">
-                        {group.level}
-                      </Badge>
-                    )}
                     <Book className="w-3.5 h-3.5 text-slate-500" />
                     <span>{group.subject.name}</span>
                     {group.subject.exam_type && (
@@ -532,7 +568,8 @@ export function HomePage() {
                 </div>
               </div>
             </Card>
-          ))
+          );
+            })
           )}
         </div>
       ) : (
@@ -730,11 +767,6 @@ export function HomePage() {
                           {group.subject.exam_type && (
                             <Badge className={group.subject.exam_type === 'ЕГЭ' ? 'bg-purple-100 text-purple-800 text-xs' : 'bg-green-100 text-green-800 text-xs'}>
                               {group.subject.exam_type}
-                            </Badge>
-                          )}
-                          {group.level && (
-                            <Badge variant="outline" className="border-blue-400 text-blue-600 text-xs">
-                              {group.level}
                             </Badge>
                           )}
                         </div>

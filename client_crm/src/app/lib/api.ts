@@ -176,6 +176,25 @@ class ApiClient {
     return this.request<import("../types/api").StudentHistory[]>(`/students/${id}/history`);
   }
 
+  async getStudentPerformance(
+    studentId: string,
+    filters?: {
+      groupId?: string;
+      startDate?: string;
+      endDate?: string;
+    }
+  ): Promise<import("../types/api").StudentPerformanceResponse> {
+    const params = new URLSearchParams();
+    if (filters?.groupId) params.append("group_id", filters.groupId);
+    if (filters?.startDate) params.append("start_date", filters.startDate);
+    if (filters?.endDate) params.append("end_date", filters.endDate);
+
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return this.request<import("../types/api").StudentPerformanceResponse>(
+      `/students/${studentId}/performance${query}`
+    );
+  }
+
   async addParentContact(
     studentId: string,
     data: { name: string; relation: string; phone: string; telegram_id?: string }
@@ -231,6 +250,16 @@ class ApiClient {
   async removeStudentFromGroup(groupId: string, studentId: string): Promise<void> {
     return this.request<void>(`/groups/${groupId}/students/${studentId}`, {
       method: "DELETE",
+    });
+  }
+
+  async getArchivedStudents(groupId: string): Promise<import("../types/api").GroupStudent[]> {
+    return this.request<import("../types/api").GroupStudent[]>(`/groups/${groupId}/students/archived`);
+  }
+
+  async restoreStudentToGroup(groupId: string, studentId: string): Promise<void> {
+    return this.request<void>(`/groups/${groupId}/students/${studentId}/restore`, {
+      method: "POST",
     });
   }
 

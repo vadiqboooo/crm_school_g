@@ -25,7 +25,7 @@ class GenerateLessonsRequest(BaseModel):
     months: Optional[int] = None
 
 
-@router.get("/", response_model=list[GroupResponse])
+@router.get("/")
 async def list_groups(
     db: AsyncSession = Depends(get_db),
     current_user: Employee = Depends(get_current_user),
@@ -33,7 +33,7 @@ async def list_groups(
     query = select(Group).options(
         selectinload(Group.subject),
         selectinload(Group.teacher),
-        selectinload(Group.students),
+        selectinload(Group.group_students).selectinload(GroupStudent.student),
         selectinload(Group.schedules)
     )
 
@@ -43,7 +43,39 @@ async def list_groups(
 
     query = query.order_by(Group.name)
     result = await db.execute(query)
-    return result.scalars().all()
+    groups = result.scalars().all()
+
+    # Filter out archived students from each group
+    groups_data = []
+    for group in groups:
+        active_students = [
+            {
+                "id": gs.student.id,
+                "first_name": gs.student.first_name,
+                "last_name": gs.student.last_name,
+            }
+            for gs in group.group_students if not gs.is_archived
+        ]
+
+        groups_data.append({
+            "id": group.id,
+            "name": group.name,
+            "subject": group.subject,
+            "teacher": group.teacher,
+            "level": group.level,
+            "schedule_day": group.schedule_day,
+            "schedule_time": group.schedule_time,
+            "schedule_duration": group.schedule_duration,
+            "schedules": group.schedules,
+            "start_date": group.start_date,
+            "school_location": group.school_location,
+            "description": group.description,
+            "comment": group.comment,
+            "created_at": group.created_at,
+            "students": active_students,
+        })
+
+    return groups_data
 
 
 @router.post("/", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)
@@ -59,7 +91,7 @@ async def create_group(
     return group
 
 
-@router.get("/{group_id}", response_model=GroupResponse)
+@router.get("/{group_id}")
 async def get_group(
     group_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -70,7 +102,7 @@ async def get_group(
         .options(
             selectinload(Group.subject),
             selectinload(Group.teacher),
-            selectinload(Group.students),
+            selectinload(Group.group_students).selectinload(GroupStudent.student),
             selectinload(Group.schedules)
         )
         .where(Group.id == group_id)
@@ -82,6 +114,35 @@ async def get_group(
     # Если пользователь - учитель (не админ), проверяем что это его группа
     if current_user.role == "teacher" and group.teacher_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
+
+    # Filter out archived students
+    active_students = [
+        {
+            "id": gs.student.id,
+            "first_name": gs.student.first_name,
+            "last_name": gs.student.last_name,
+        }
+        for gs in group.group_students if not gs.is_archived
+    ]
+
+    # Return group data with filtered students
+    return {
+        "id": group.id,
+        "name": group.name,
+        "subject": group.subject,
+        "teacher": group.teacher,
+        "level": group.level,
+        "schedule_day": group.schedule_day,
+        "schedule_time": group.schedule_time,
+        "schedule_duration": group.schedule_duration,
+        "schedules": group.schedules,
+        "start_date": group.start_date,
+        "school_location": group.school_location,
+        "description": group.description,
+        "comment": group.comment,
+        "created_at": group.created_at,
+        "students": active_students,
+    }
 
     return group
 
@@ -237,9 +298,79 @@ async def remove_student_from_group(
     )
     db.add(history)
 
-    await db.delete(gs)
+    # Archive student instead of deleting
+    gs.is_archived = True
     await db.commit()
-    return {"detail": "Removed"}
+    return {"detail": "Archived"}
+
+
+@router.post("/{group_id}/students/{student_id}/restore")
+async def restore_student_to_group(
+    group_id: UUID,
+    student_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    # Get group information for history
+    group_result = await db.execute(select(Group).where(Group.id == group_id))
+    group = group_result.scalar_one_or_none()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    # Verify group access for teachers
+    if current_user.role == "teacher" and group.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    result = await db.execute(
+        select(GroupStudent).where(
+            GroupStudent.group_id == group_id,
+            GroupStudent.student_id == student_id,
+            GroupStudent.is_archived == True,
+        )
+    )
+    gs = result.scalar_one_or_none()
+    if not gs:
+        raise HTTPException(status_code=404, detail="Archived student not found")
+
+    # Add history entry
+    history = StudentHistory(
+        student_id=student_id,
+        event_type=HistoryEventType.added_to_group,
+        description=f"Восстановлен в группе: {group.name}",
+    )
+    db.add(history)
+
+    # Restore student
+    gs.is_archived = False
+    await db.commit()
+    return {"detail": "Restored"}
+
+
+@router.get("/{group_id}/students/archived", response_model=list[GroupStudentResponse])
+async def get_archived_students(
+    group_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    # Get group for access check
+    group_result = await db.execute(select(Group).where(Group.id == group_id))
+    group = group_result.scalar_one_or_none()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    # Verify group access for teachers
+    if current_user.role == "teacher" and group.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    result = await db.execute(
+        select(GroupStudent)
+        .options(selectinload(GroupStudent.student))
+        .where(
+            GroupStudent.group_id == group_id,
+            GroupStudent.is_archived == True,
+        )
+    )
+    return result.scalars().all()
 
 
 # --- Lesson Generation ---

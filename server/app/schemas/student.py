@@ -1,9 +1,10 @@
 from uuid import UUID
-from datetime import datetime as datetime_type
+from datetime import datetime as datetime_type, date, time
 from typing import Optional
 from pydantic import BaseModel
 
 from app.models.student import StudentStatus, ParentRelation, HistoryEventType
+from app.models.lesson import AttendanceStatus
 
 
 class ParentContactCreate(BaseModel):
@@ -77,3 +78,25 @@ class StudentResponse(BaseModel):
     history: list[StudentHistoryResponse] = []
 
     model_config = {"from_attributes": True}
+
+
+class StudentPerformanceRecord(BaseModel):
+    lesson_id: UUID
+    lesson_date: date
+    lesson_time: Optional[time]
+    lesson_topic: Optional[str]
+    lesson_homework: Optional[str]
+    group_id: UUID
+    group_name: str
+    subject_name: str
+    attendance: Optional[AttendanceStatus]
+    late_minutes: Optional[int]
+    lesson_grade: Optional[str]
+    homework_grade: Optional[str]
+    comment: Optional[str]
+
+
+class StudentPerformanceResponse(BaseModel):
+    student_id: UUID
+    student_name: str
+    performance_records: list[StudentPerformanceRecord]

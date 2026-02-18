@@ -96,6 +96,28 @@ export interface StudentUpdate {
   }>;
 }
 
+export interface StudentPerformanceRecord {
+  lesson_id: string;
+  lesson_date: string;
+  lesson_time?: string;
+  lesson_topic?: string;
+  lesson_homework?: string;
+  group_id: string;
+  group_name: string;
+  subject_name: string;
+  attendance?: AttendanceStatus;
+  late_minutes?: number;
+  lesson_grade?: string;
+  homework_grade?: string;
+  comment?: string;
+}
+
+export interface StudentPerformanceResponse {
+  student_id: string;
+  student_name: string;
+  performance_records: StudentPerformanceRecord[];
+}
+
 // Group types
 export type ExamType = "ЕГЭ" | "ОГЭ";
 
@@ -179,6 +201,19 @@ export interface ScheduleCreate {
   day_of_week: string;
   start_time: string;
   duration_minutes: number;
+}
+
+export interface GroupStudent {
+  id: string;
+  group_id: string;
+  student_id: string;
+  is_archived: boolean;
+  joined_at: string;
+  student?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+  };
 }
 
 export interface Group {

@@ -6,6 +6,7 @@ import { Checkbox } from "./ui/checkbox";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
+import { getGradeColor, getAttendanceColor } from "../lib/gradeUtils";
 import type { Lesson, LessonAttendance, AttendanceStatus } from "../types/api";
 
 interface StudentPerformanceData {
@@ -28,31 +29,6 @@ interface PerformanceTabProps {
   groupId: string;
   groupName: string;
 }
-
-// Функция для определения цвета фона ДЗ - более приглушенные цвета
-const getGradeColor = (grade?: string, isLessonConducted?: boolean) => {
-  // Если урок не проведен, показываем нейтральный серый цвет
-  if (!isLessonConducted) return "#e2e8f0"; // Светло-серый
-
-  if (!grade || grade === "") return "#e2e8f0";
-  const num = parseInt(grade);
-  if (isNaN(num)) return "#d0db9d"; // Для "pass" и других
-  if (num >= 5) return "#d0db9d"; // Зеленоватый
-  if (num >= 4) return "#fad548"; // Яркий желтый
-  if (num >= 3) return "#f3c23c"; // Желтый/оранжевый
-  return "#ed6c72"; // Красный
-};
-
-// Функция для определения цвета посещения
-const getAttendanceColor = (attendance?: AttendanceStatus, isLessonConducted?: boolean) => {
-  // Если урок не проведен, показываем нейтральный серый цвет
-  if (!isLessonConducted) return "#e2e8f0"; // Светло-серый
-
-  if (attendance === "present") return "#d0db9d"; // Зеленоватый
-  if (attendance === "late") return "#fad548"; // Яркий желтый
-  if (attendance === "trial") return "#a3d9ff"; // Голубой
-  return "#ed6c72"; // Красный (absent)
-};
 
 export function PerformanceTab({ groupId }: PerformanceTabProps) {
   const [lessons, setLessons] = useState<Lesson[]>([]);

@@ -1,6 +1,7 @@
 import { Outlet, useLocation, Link, useNavigate } from "react-router";
 import { Sparkles, Users, GraduationCap, School, BarChart3, Wallet, ClipboardList, LogOut, FileText, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
 import { useAuth } from "../contexts/AuthContext";
 import { useState, useEffect } from "react";
 import {
@@ -11,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import { api } from "../lib/api";
 
 export function Layout() {
   const location = useLocation();
@@ -19,6 +21,7 @@ export function Layout() {
   const isAdmin = user?.role === "admin";
   const isTeacher = user?.role === "teacher";
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [uncompletedLessonsCount, setUncompletedLessonsCount] = useState(0);
 
   const adminNavItems = [
     { path: "/", icon: Users, label: "Группы" },
@@ -64,6 +67,38 @@ export function Layout() {
     getPageTitle();
   }, [location.pathname]);
 
+  // Load uncompleted lessons count for teachers
+  useEffect(() => {
+    if (!isTeacher) return;
+
+    const loadUncompletedLessons = async () => {
+      try {
+        const lessons = await api.getLessons();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Count lessons that are more than 1 day old and not conducted
+        const uncompleted = lessons.filter((lesson) => {
+          const lessonDate = new Date(lesson.date);
+          lessonDate.setHours(0, 0, 0, 0);
+
+          const daysDiff = Math.floor((today.getTime() - lessonDate.getTime()) / (1000 * 60 * 60 * 24));
+
+          return daysDiff > 1 && lesson.status !== "conducted";
+        });
+
+        setUncompletedLessonsCount(uncompleted.length);
+      } catch (error) {
+        console.error("Failed to load lessons:", error);
+      }
+    };
+
+    loadUncompletedLessons();
+    // Reload every 5 minutes
+    const interval = setInterval(loadUncompletedLessons, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [isTeacher, location.pathname]);
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Sidebar */}
@@ -98,7 +133,7 @@ export function Layout() {
               (item.path === "/exams" && location.pathname.startsWith("/exams"));
 
             return (
-              <Link key={item.path} to={item.path}>
+              <Link key={item.path} to={item.path} className="relative">
                 <Button
                   variant="ghost"
                   className={`w-full justify-start gap-3 h-11 ${
@@ -110,9 +145,27 @@ export function Layout() {
                 >
                   <Icon className="w-5 h-5 flex-shrink-0" />
                   {!sidebarCollapsed && (
-                    <span className="font-medium">{item.label}</span>
+                    <div className="flex items-center justify-between flex-1">
+                      <span className="font-medium">{item.label}</span>
+                      {isTeacher && item.path === "/" && uncompletedLessonsCount > 0 && (
+                        <Badge
+                          variant="destructive"
+                          className="ml-auto bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center"
+                        >
+                          {uncompletedLessonsCount}
+                        </Badge>
+                      )}
+                    </div>
                   )}
                 </Button>
+                {sidebarCollapsed && isTeacher && item.path === "/" && uncompletedLessonsCount > 0 && (
+                  <Badge
+                    variant="destructive"
+                    className="absolute top-1/2 -translate-y-1/2 -right-2 bg-red-500 text-white text-xs w-5 h-5 flex items-center justify-center p-0 rounded-full pointer-events-none"
+                  >
+                    {uncompletedLessonsCount > 9 ? '9+' : uncompletedLessonsCount}
+                  </Badge>
+                )}
               </Link>
             );
           })}
@@ -149,7 +202,6 @@ export function Layout() {
               <DropdownMenuLabel>
                 <div className="flex flex-col">
                   <span className="font-medium">{user?.first_name} {user?.last_name}</span>
-                  <span className="text-xs text-slate-500 font-normal">{user?.email}</span>
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
