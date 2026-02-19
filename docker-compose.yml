@@ -1,27 +1,27 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: crm_postgres
-    restart: always
-    environment:
-      POSTGRES_DB: crm_school
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./backups:/backups
-    ports:
-      - "5432:5432"
-    networks:
-      - crm_network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # PostgreSQL Database (running on host, not in Docker)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: crm_postgres
+  #   restart: always
+  #   environment:
+  #     POSTGRES_DB: crm_school
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #     - ./backups:/backups
+  #   ports:
+  #     - "5432:5432"
+  #   networks:
+  #     - crm_network
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U postgres"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
 
   # Backend (FastAPI)
   backend:
@@ -31,14 +31,13 @@ services:
     container_name: crm_backend
     restart: always
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/crm_school
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@host.docker.internal:5432/crm_school
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       SECRET_KEY: ${SECRET_KEY}
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 30
-    depends_on:
-      postgres:
-        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     networks:
@@ -93,9 +92,6 @@ services:
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
-
-volumes:
-  postgres_data:
 
 networks:
   crm_network:
