@@ -26,6 +26,7 @@ import type {
   ExamResult,
   ExamResultCreate,
   ExamResultUpdate,
+  WeeklyReport,
 } from "../types/api";
 
 const API_URL = "http://localhost:8000";
@@ -209,6 +210,31 @@ class ApiClient {
     return this.request<void>(`/students/${studentId}/contacts/${contactId}`, {
       method: "DELETE",
     });
+  }
+
+  async generateWeeklyReport(
+    studentId: string,
+    days: number = 7
+  ): Promise<{
+    report_id: string;
+    report: string;
+    period: { start: string; end: string };
+    stats: {
+      attendance_count: number;
+      absent_count: number;
+      late_count: number;
+      homework_completed: number;
+      homework_total: number;
+    };
+  }> {
+    return this.request(`/students/${studentId}/generate-weekly-report`, {
+      method: "POST",
+      body: JSON.stringify({ days }),
+    });
+  }
+
+  async getWeeklyReports(studentId: string): Promise<WeeklyReport[]> {
+    return this.request(`/students/${studentId}/weekly-reports`);
   }
 
   // Group endpoints

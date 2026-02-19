@@ -30,7 +30,8 @@
       "Bash(npm run build:*)",
       "Bash(npm run dev:*)",
       "Bash(timeout:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(git -C . diff --stat client_crm/src/app/components/StudentPerformanceTab.tsx)"
     ]
   }
 }

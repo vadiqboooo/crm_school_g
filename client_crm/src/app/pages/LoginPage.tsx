@@ -90,13 +90,6 @@ export function LoginPage() {
               {loading ? "Вход..." : "Войти"}
             </Button>
           </form>
-
-          <div className="mt-4 text-center text-sm text-slate-600">
-            <p>Демо данные:</p>
-            <p className="font-mono text-xs mt-1">
-              Логин: admin (пароль: admin)
-            </p>
-          </div>
         </CardContent>
       </Card>
     </div>

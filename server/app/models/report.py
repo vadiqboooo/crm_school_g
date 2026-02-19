@@ -81,3 +81,24 @@ class Task(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     report = relationship("DailyReport", back_populates="tasks")
+
+
+class WeeklyReport(Base):
+    """Недельные репорты студентов для отправки родителям."""
+    __tablename__ = "weekly_reports"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("students.id"), nullable=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id"), nullable=False)
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    attendance_count: Mapped[int] = mapped_column(Integer, default=0)
+    absent_count: Mapped[int] = mapped_column(Integer, default=0)
+    late_count: Mapped[int] = mapped_column(Integer, default=0)
+    homework_completed: Mapped[int] = mapped_column(Integer, default=0)
+    homework_total: Mapped[int] = mapped_column(Integer, default=0)
+    ai_report: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    student = relationship("Student", back_populates="weekly_reports")
+    creator = relationship("Employee", back_populates="created_weekly_reports")

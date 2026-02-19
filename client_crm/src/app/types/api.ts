@@ -496,3 +496,18 @@ export interface ExamResultUpdate {
   student_comment?: string;
   added_by?: string;
 }
+
+export interface WeeklyReport {
+  id: string;
+  student_id: string;
+  created_by: string;
+  period_start: string;
+  period_end: string;
+  attendance_count: number;
+  absent_count: number;
+  late_count: number;
+  homework_completed: number;
+  homework_total: number;
+  ai_report: string;
+  created_at: string;
+}

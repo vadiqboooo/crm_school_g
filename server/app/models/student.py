@@ -50,6 +50,7 @@ class Student(Base):
     lesson_attendances = relationship("LessonAttendance", back_populates="student")
     exam_results = relationship("ExamResult", back_populates="student")
     payments = relationship("Payment", back_populates="student")
+    weekly_reports = relationship("WeeklyReport", back_populates="student", cascade="all, delete-orphan")
 
 
 class ParentContact(Base):

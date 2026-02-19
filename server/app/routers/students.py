@@ -1,11 +1,12 @@
 from uuid import UUID
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+import httpx
 
 from app.database import get_db
 from app.models.student import Student, ParentContact, StudentHistory, HistoryEventType
@@ -13,13 +14,16 @@ from app.models.group import GroupStudent, Group
 from app.models.lesson import Lesson, LessonAttendance
 from app.models.subject import Subject
 from app.models.employee import Employee
+from app.models.report import WeeklyReport
 from app.schemas.student import (
     StudentCreate, StudentUpdate, StudentResponse,
     ParentContactCreate, ParentContactResponse,
     StudentHistoryResponse, GroupInfoResponse,
     StudentPerformanceRecord, StudentPerformanceResponse,
 )
+from app.schemas.report import WeeklyReportResponse
 from app.auth.dependencies import get_current_user
+from app.config import settings
 
 router = APIRouter(prefix="/students", tags=["students"])
 
@@ -370,3 +374,290 @@ async def get_student_performance(
         student_name=f"{student.first_name} {student.last_name}",
         performance_records=performance_records
     )
+
+
+# --- AI Performance Report ---
+
+@router.post("/{student_id}/generate-weekly-report")
+async def generate_weekly_report(
+    student_id: UUID,
+    days: int = Body(7, embed=True),
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Generate AI-powered weekly performance report for a student."""
+    # Verify student exists
+    student_result = await db.execute(
+        select(Student).where(Student.id == student_id)
+    )
+    student = student_result.scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # Calculate date range
+    end_date = datetime.now().date()
+    start_date = end_date - timedelta(days=days)
+
+    # Build query with joins
+    query = (
+        select(
+            LessonAttendance,
+            Lesson,
+            Group,
+            Subject
+        )
+        .join(Lesson, LessonAttendance.lesson_id == Lesson.id)
+        .join(Group, Lesson.group_id == Group.id)
+        .join(Subject, Group.subject_id == Subject.id)
+        .where(
+            LessonAttendance.student_id == student_id,
+            Lesson.status == "conducted",
+            Lesson.is_cancelled == False,
+            Lesson.date >= start_date,
+            Lesson.date <= end_date
+        )
+        .order_by(Lesson.date.desc(), Lesson.time.desc())
+    )
+
+    # Execute query
+    result = await db.execute(query)
+    rows = result.all()
+
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No performance data found for the last {days} days"
+        )
+
+    # Prepare data for AI
+    attendance_count = 0
+    absent_count = 0
+    late_count = 0
+    homework_completed = 0
+    homework_total = 0
+    comments = []
+    subjects_data = {}
+
+    for attendance, lesson, group, subject in rows:
+        # Count attendance
+        if attendance.attendance == "present":
+            attendance_count += 1
+        elif attendance.attendance == "absent":
+            absent_count += 1
+        elif attendance.attendance == "late":
+            late_count += 1
+            attendance_count += 1
+
+        # Count homework
+        if lesson.had_previous_homework:
+            homework_total += 1
+            if attendance.homework_grade and attendance.homework_grade != "0":
+                homework_completed += 1
+
+        # Collect comments
+        if attendance.comment:
+            comments.append({
+                "date": lesson.date.strftime("%d.%m.%Y"),
+                "subject": subject.name,
+                "comment": attendance.comment
+            })
+
+        # Collect subject data
+        subject_name = subject.name
+        if subject_name not in subjects_data:
+            subjects_data[subject_name] = {
+                "lessons": 0,
+                "lesson_grades": [],
+                "homework_grades": []
+            }
+
+        subjects_data[subject_name]["lessons"] += 1
+        if attendance.lesson_grade:
+            subjects_data[subject_name]["lesson_grades"].append(attendance.lesson_grade)
+        if attendance.homework_grade and attendance.homework_grade != "0":
+            subjects_data[subject_name]["homework_grades"].append(attendance.homework_grade)
+
+    # Construct prompt for AI
+    # ===========================================
+    # НАСТРОЙКА ПРОМПТА - РЕДАКТИРУЙТЕ ЗДЕСЬ
+    # ===========================================
+
+    # Формируем данные по предметам
+    subjects_summary = ""
+    for subject_name, data in subjects_data.items():
+        subjects_summary += f"\n{subject_name}: {data['lessons']} урок(ов)"
+        if data["lesson_grades"]:
+            subjects_summary += f", оценки за уроки: {', '.join(data['lesson_grades'])}"
+        if data["homework_grades"]:
+            subjects_summary += f", оценки за ДЗ: {', '.join(data['homework_grades'])}"
+
+    # Формируем комментарии
+    comments_summary = ""
+    if comments:
+        comments_summary = "\n\nКомментарии преподавателей:\n"
+        for c in comments[:3]:  # Берем только первые 3 комментария для краткости
+            comments_summary += f"- {c['date']} ({c['subject']}): {c['comment']}\n"
+
+    # Основной промпт - можно настраивать формат и стиль здесь
+    prompt = f"""Составь подробное сообщение для родителей от администрации школы (150-200 слов).
+
+ДАННЫЕ:
+Студент: {student.first_name} {student.last_name}
+Период: {start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}
+Посещаемость: {attendance_count}/{attendance_count + absent_count}, Пропусков: {absent_count}, Опозданий: {late_count}
+ДЗ: {homework_completed}/{homework_total}
+{subjects_summary}{comments_summary}
+
+ТРЕБОВАНИЯ К СТРУКТУРЕ:
+
+1. ПРИВЕТСТВИЕ (1 предложение):
+   - Начни с эмодзи
+   - Укажи период отчета
+
+2. ПОСЕЩАЕМОСТЬ (2-3 предложения):
+   - ОБЯЗАТЕЛЬНО укажи цифры: "За период посетил(а) X из Y уроков"
+   - Если были пропуски - укажи их количество
+   - Если были опоздания - укажи их количество
+   - Оценить посещаемость (отлично/хорошо/требует внимания)
+
+3. ДОМАШНИЕ ЗАДАНИЯ (2-3 предложения):
+   - ОБЯЗАТЕЛЬНО укажи цифры: "Выполнено X из Y домашних заданий"
+   - Оценить выполнение ДЗ
+   - Если есть невыполненные - отметить это
+
+4. АНАЛИЗ ПО ПРЕДМЕТАМ (2-3 предложения):
+   - Упомянуть успехи по конкретным предметам
+   - Указать проблемные предметы (если есть)
+   - Использовать данные об оценках
+
+5. РЕКОМЕНДАЦИИ (2-3 предложения):
+   - Конкретные рекомендации для улучшения
+   - Что нужно подтянуть
+   - Позитивное завершение
+
+ВАЖНО:
+- ОБЯЗАТЕЛЬНО включи в текст цифры посещаемости и ДЗ
+- Пиши от лица администрации школы
+- Тон: профессиональный, но дружелюбный
+- Объем: 150-200 слов
+
+Пример структуры:
+"📊 Отчет за период 12.02-19.02.2026
+
+Посещаемость: За период {student.first_name} посетила 5 из 6 уроков. Был один пропуск по математике. Опозданий не зафиксировано. В целом, посещаемость на хорошем уровне.
+
+Домашние задания: Выполнено 4 из 5 домашних заданий (80%). Одно задание по русскому языку осталось невыполненным...
+
+[продолжение]"
+"""
+
+    # Call OpenRouter API
+    if not settings.OPENROUTER_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="OpenRouter API key not configured. Please set OPENROUTER_API_KEY in .env file"
+        )
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "qwen/qwen3.5-plus-02-15",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    "max_tokens": 500,  # Увеличено для более подробного отчета (~350 слов)
+                    "temperature": 0.7  # Чуть больше креативности
+                },
+                timeout=30.0
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            if "choices" not in result or len(result["choices"]) == 0:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to generate report from AI"
+                )
+
+            ai_report = result["choices"][0]["message"]["content"]
+
+            # Сохранить репорт в БД
+            weekly_report = WeeklyReport(
+                student_id=student_id,
+                created_by=current_user.id,
+                period_start=start_date,
+                period_end=end_date,
+                attendance_count=attendance_count,
+                absent_count=absent_count,
+                late_count=late_count,
+                homework_completed=homework_completed,
+                homework_total=homework_total,
+                ai_report=ai_report
+            )
+            db.add(weekly_report)
+            await db.commit()
+            await db.refresh(weekly_report)
+
+            return {
+                "report_id": str(weekly_report.id),
+                "report": ai_report,
+                "period": {
+                    "start": start_date.isoformat(),
+                    "end": end_date.isoformat()
+                },
+                "stats": {
+                    "attendance_count": attendance_count,
+                    "absent_count": absent_count,
+                    "late_count": late_count,
+                    "homework_completed": homework_completed,
+                    "homework_total": homework_total
+                }
+            }
+
+    except httpx.HTTPError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to connect to AI service: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating report: {str(e)}"
+        )
+
+
+@router.get("/{student_id}/weekly-reports", response_model=list[WeeklyReportResponse])
+async def get_weekly_reports_history(
+    student_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Получить историю недельных репортов студента."""
+    # Verify student exists
+    student_result = await db.execute(
+        select(Student).where(Student.id == student_id)
+    )
+    student = student_result.scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # Get all weekly reports for this student, ordered by creation date (newest first)
+    query = (
+        select(WeeklyReport)
+        .where(WeeklyReport.student_id == student_id)
+        .order_by(WeeklyReport.created_at.desc())
+    )
+
+    result = await db.execute(query)
+    reports = result.scalars().all()
+
+    return reports

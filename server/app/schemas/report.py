@@ -114,3 +114,21 @@ class TaskResponse(BaseModel):
     created_at: datetime_type
 
     model_config = {"from_attributes": True}
+
+
+class WeeklyReportResponse(BaseModel):
+    """Схема для ответа с недельным репортом студента."""
+    id: UUID
+    student_id: UUID
+    created_by: UUID
+    period_start: date_type
+    period_end: date_type
+    attendance_count: int
+    absent_count: int
+    late_count: int
+    homework_completed: int
+    homework_total: int
+    ai_report: str
+    created_at: datetime_type
+
+    model_config = {"from_attributes": True}

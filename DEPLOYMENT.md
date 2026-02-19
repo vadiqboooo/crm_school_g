@@ -1,174 +1,443 @@
-# Инструкция по переносу CRM системы на другое устройство
+# 🚀 Инструкция по развертыванию CRM School на сервере
 
-## Требования к системе
+## 📋 Оглавление
 
-### Обязательное ПО:
-- **Python** 3.12 или выше
-- **Node.js** 18 или выше
-- **PostgreSQL** 14 или выше
-- **Git** (для клонирования репозитория)
+1. [Требования](#требования)
+2. [Подготовка сервера](#подготовка-сервера)
+3. [Установка Docker](#установка-docker)
+4. [Настройка DNS](#настройка-dns)
+5. [Развертывание приложения](#развертывание-приложения)
+6. [Получение SSL сертификата](#получение-ssl-сертификата)
+7. [Работа с PostgreSQL](#работа-с-postgresql)
+8. [Резервное копирование](#резервное-копирование)
+9. [Управление контейнерами](#управление-контейнерами)
 
 ---
 
-## Шаг 1. Подготовка нового устройства
+## 📌 Требования
 
-### Windows:
-1. Установите Python с [python.org](https://www.python.org/downloads/)
-   - ✅ При установке отметьте "Add Python to PATH"
-2. Установите Node.js с [nodejs.org](https://nodejs.org/)
-3. Установите PostgreSQL с [postgresql.org](https://www.postgresql.org/download/)
+### Минимальные требования сервера:
+- **OS**: Ubuntu 20.04/22.04 LTS или Debian 11/12
+- **CPU**: 2 ядра
+- **RAM**: 4GB
+- **Disk**: 20GB SSD
+- **Network**: Статический IP адрес
 
-### Linux/MacOS:
+### Необходимое ПО:
+- Docker 20.10+
+- Docker Compose 2.0+
+- Git
+
+---
+
+## 🔧 Подготовка сервера
+
+### 1. Обновление системы
+
 ```bash
-# Python
-sudo apt install python3.12 python3-pip  # Ubuntu/Debian
-brew install python@3.12                  # MacOS
+# Обновить пакеты
+sudo apt update && sudo apt upgrade -y
 
-# Node.js
-sudo apt install nodejs npm              # Ubuntu/Debian
-brew install node                        # MacOS
+# Установить необходимые пакеты
+sudo apt install -y curl wget git vim ufw
+```
 
+### 2. Настройка firewall
+
+```bash
+# Разрешить SSH
+sudo ufw allow 22/tcp
+
+# Разрешить HTTP и HTTPS
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+
+# Включить firewall
+sudo ufw enable
+
+# Проверить статус
+sudo ufw status
+```
+
+### 3. Создание пользователя для деплоя (опционально)
+
+```bash
+# Создать пользователя
+sudo adduser deploy
+
+# Добавить в группу sudo
+sudo usermod -aG sudo deploy
+
+# Добавить в группу docker (после установки Docker)
+sudo usermod -aG docker deploy
+```
+
+---
+
+## 🐳 Установка Docker
+
+### Установка Docker Engine
+
+```bash
+# Удалить старые версии (если есть)
+sudo apt remove docker docker-engine docker.io containerd runc
+
+# Установить зависимости
+sudo apt install -y \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release
+
+# Добавить официальный GPG ключ Docker
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+
+# Добавить репозиторий Docker
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Обновить список пакетов
+sudo apt update
+
+# Установить Docker
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Проверить установку
+docker --version
+docker compose version
+```
+
+### Настройка Docker
+
+```bash
+# Запустить Docker при загрузке
+sudo systemctl enable docker
+sudo systemctl start docker
+
+# Проверить статус
+sudo systemctl status docker
+
+# Добавить текущего пользователя в группу docker
+sudo usermod -aG docker $USER
+
+# Применить изменения (или перелогиниться)
+newgrp docker
+
+# Проверить работу без sudo
+docker ps
+```
+
+---
+
+## 🌐 Настройка DNS
+
+### Добавить A-запись для домена
+
+В панели управления вашего DNS провайдера:
+
+```
+Тип: A
+Имя: crm
+Значение: [IP адрес вашего сервера]
+TTL: 3600
+```
+
+Результат: `crm.garryschool.ru` → IP сервера
+
+### Проверить DNS
+
+```bash
+# Проверить разрешение домена
+dig crm.garryschool.ru
+
+# или
+nslookup crm.garryschool.ru
+
+# Дождаться распространения DNS (может занять до 24 часов)
+```
+
+---
+
+## 🚀 Развертывание приложения
+
+### 1. Клонировать репозиторий
+
+```bash
+# Перейти в домашнюю директорию
+cd ~
+
+# Клонировать проект
+git clone <your-repo-url> crm_school
+cd crm_school
+```
+
+### 2. Настроить переменные окружения
+
+```bash
+# Скопировать шаблон
+cp .env.production .env
+
+# Редактировать файл
+nano .env
+```
+
+**Заполните следующие переменные:**
+
+```bash
 # PostgreSQL
-sudo apt install postgresql postgresql-contrib  # Ubuntu/Debian
-brew install postgresql                         # MacOS
+POSTGRES_PASSWORD=ваш_очень_сложный_пароль_для_postgres
+
+# Backend
+SECRET_KEY=ваш_секретный_ключ_для_jwt_токенов
+OPENROUTER_API_KEY=ваш_ключ_openrouter_api
+
+# Domain
+DOMAIN=crm.garryschool.ru
+EMAIL=vadiqbozhko@gmail.com
+```
+
+**Генерация SECRET_KEY:**
+
+```bash
+# Сгенерировать случайный ключ
+openssl rand -hex 32
+```
+
+### 3. Создать необходимые директории
+
+```bash
+# Создать директории для логов и сертификатов
+mkdir -p nginx/logs
+mkdir -p certbot/conf
+mkdir -p certbot/www
+mkdir -p backups
+
+# Установить права
+chmod -R 755 nginx certbot backups
+```
+
+### 4. Собрать и запустить контейнеры
+
+```bash
+# Собрать образы
+docker compose build
+
+# Запустить в фоновом режиме
+docker compose up -d
+
+# Проверить статус
+docker compose ps
+
+# Посмотреть логи
+docker compose logs -f
+```
+
+**Ожидаемый результат:**
+
+```
+NAME                IMAGE                   STATUS
+crm_postgres        postgres:15-alpine      Up
+crm_backend         crm_school-backend      Up
+crm_frontend        crm_school-frontend     Up
+crm_nginx           nginx:alpine            Up
+crm_certbot         certbot/certbot         Up
+```
+
+### 5. Проверить работу без SSL
+
+```bash
+# Проверить доступность через HTTP
+curl http://crm.garryschool.ru
+
+# Проверить API
+curl http://crm.garryschool.ru/api/docs
 ```
 
 ---
 
-## Шаг 2. Копирование проекта
+## 🔒 Получение SSL сертификата
 
-### Вариант A: Через Git (рекомендуется)
+### Метод 1: Автоматический (рекомендуется)
+
 ```bash
-# Если проект на GitHub/GitLab
-git clone <URL_репозитория>
-cd crm_school_g
+# Сделать скрипт исполняемым
+chmod +x init-letsencrypt.sh
+
+# Запустить скрипт
+./init-letsencrypt.sh
 ```
 
-### Вариант Б: Копирование файлов
-1. Скопируйте всю папку `crm_school_g` на новое устройство
-2. Можно использовать USB, облако (Google Drive, Dropbox) или сеть
+Скрипт автоматически:
+1. Использует временную конфигурацию nginx (без SSL)
+2. Запрашивает сертификат через Certbot
+3. Переключает на production конфигурацию (с SSL)
+4. Перезагружает nginx
+
+### Метод 2: Ручной
+
+**Шаг 1: Использовать начальную конфигурацию**
+
+```bash
+# Скопировать временную конфигурацию
+cp nginx/conf.d/crm.conf.initial nginx/conf.d/crm.conf
+
+# Перезапустить nginx
+docker compose restart nginx
+```
+
+**Шаг 2: Получить сертификат**
+
+```bash
+# Запросить сертификат
+docker compose run --rm certbot certonly \
+  --webroot \
+  --webroot-path=/var/www/certbot \
+  --email vadiqbozhko@gmail.com \
+  --agree-tos \
+  --no-eff-email \
+  -d crm.garryschool.ru
+
+# Проверить получение сертификата
+ls -la certbot/conf/live/crm.garryschool.ru/
+```
+
+**Шаг 3: Переключить на production конфигурацию**
+
+```bash
+# Восстановить production конфигурацию с SSL
+cp nginx/conf.d/crm.conf.initial nginx/conf.d/crm.conf.backup
+# Затем вручную отредактировать crm.conf или использовать готовую версию
+
+# Перезапустить nginx
+docker compose restart nginx
+```
+
+### Проверка SSL
+
+```bash
+# Проверить сертификат
+curl https://crm.garryschool.ru
+
+# Проверить оценку SSL
+# Зайдите на: https://www.ssllabs.com/ssltest/
+```
+
+### Автоматическое обновление сертификатов
+
+Certbot автоматически обновляет сертификаты каждые 12 часов (настроено в docker-compose.yml).
+
+**Проверка обновления вручную:**
+
+```bash
+# Проверить обновление
+docker compose run --rm certbot renew --dry-run
+
+# Принудительно обновить
+docker compose run --rm certbot renew --force-renewal
+
+# Перезагрузить nginx после обновления
+docker compose exec nginx nginx -s reload
+```
 
 ---
 
-## Шаг 3. Настройка базы данных PostgreSQL
+## 🗄️ Работа с PostgreSQL
 
-### 3.1. Запустите PostgreSQL
+### Установка PostgreSQL (если используете отдельный сервер)
+
 ```bash
-# Linux
+# Установить PostgreSQL 15
+sudo apt install -y postgresql-15 postgresql-contrib-15
+
+# Запустить сервис
 sudo systemctl start postgresql
 sudo systemctl enable postgresql
 
-# MacOS
-brew services start postgresql
-
-# Windows
-# PostgreSQL запускается автоматически как служба
+# Проверить статус
+sudo systemctl status postgresql
 ```
 
-### 3.2. Создайте базу данных и пользователя
-```bash
-# Подключитесь к PostgreSQL
-sudo -u postgres psql     # Linux/MacOS
-psql -U postgres          # Windows
+### Создание базы данных
 
-# В консоли PostgreSQL выполните:
+#### Через Docker (рекомендуется)
+
+База создается автоматически при запуске контейнера.
+
+**Подключение к PostgreSQL:**
+
+```bash
+# Войти в контейнер
+docker compose exec postgres psql -U postgres -d crm_school
+
+# или напрямую выполнить команду
+docker compose exec postgres psql -U postgres -d crm_school -c "SELECT version();"
+```
+
+#### Вручную (если нужно пересоздать)
+
+```bash
+# Войти в PostgreSQL
+docker compose exec postgres psql -U postgres
+
+# Удалить существующую базу (осторожно!)
+DROP DATABASE IF EXISTS crm_school;
+
+# Создать новую базу
 CREATE DATABASE crm_school;
-CREATE USER crm_user WITH PASSWORD 'your_secure_password';
-GRANT ALL PRIVILEGES ON DATABASE crm_school TO crm_user;
+
+# Дать права пользователю
+GRANT ALL PRIVILEGES ON DATABASE crm_school TO postgres;
+
+# Выйти
 \q
 ```
 
----
+### Применение миграций
 
-## Шаг 4. Настройка серверной части (Backend)
-
-### 4.1. Перейдите в папку сервера
 ```bash
-cd server
-```
+# Миграции применяются автоматически при запуске backend
+# Если нужно применить вручную:
 
-### 4.2. Создайте виртуальное окружение Python
-```bash
-# Windows
-python -m venv venv
-venv\Scripts\activate
+# Войти в контейнер backend
+docker compose exec backend bash
 
-# Linux/MacOS
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### 4.3. Установите зависимости
-```bash
-pip install -r requirements.txt
-```
-
-### 4.4. Настройте переменные окружения
-
-Создайте файл `.env` в папке `server/`:
-```env
-# Database
-DATABASE_URL=postgresql+asyncpg://crm_user:your_secure_password@localhost:5432/crm_school
-
-# Security
-SECRET_KEY=your_very_long_secret_key_here_min_32_characters
-ALGORITHM=HS256
-
-# Tokens
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-REFRESH_TOKEN_EXPIRE_DAYS=7
-```
-
-**Важно:** Замените `your_secure_password` и `SECRET_KEY` на свои значения!
-
-Для генерации SECRET_KEY:
-```bash
-# Python
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-
-# или
-openssl rand -base64 32
-```
-
-### 4.5. Примените миграции базы данных
-```bash
+# Применить миграции
 alembic upgrade head
+
+# Посмотреть текущую версию
+alembic current
+
+# Выйти
+exit
 ```
 
-### 4.6. Создайте первого пользователя (admin)
+### Создание первого администратора
 
-Запустите Python консоль:
 ```bash
-python
-```
+# Войти в backend контейнер
+docker compose exec backend python
 
-В консоли выполните:
-```python
+# В Python консоли:
+from app.database import AsyncSessionLocal
+from app.models.employee import Employee
+from app.auth.password import get_password_hash
 import asyncio
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from app.models.employee import Employee, EmployeeRole
-from app.auth.security import hash_password
-
-# Настройки БД (используйте ваш DATABASE_URL)
-DATABASE_URL = "postgresql+asyncpg://crm_user:your_secure_password@localhost:5432/crm_school"
 
 async def create_admin():
-    engine = create_async_engine(DATABASE_URL)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    async with async_session() as session:
+    async with AsyncSessionLocal() as db:
         admin = Employee(
             email="admin@crm-school.com",
-            hashed_password=hash_password("admin"),
-            first_name="Admin",
-            last_name="User",
-            role=EmployeeRole.admin,
+            hashed_password=get_password_hash("admin"),
+            first_name="Администратор",
+            last_name="Системы",
+            role="admin",
             is_active=True
         )
-        session.add(admin)
-        await session.commit()
-        print("Admin created successfully!")
+        db.add(admin)
+        await db.commit()
+        print("Admin created!")
 
 asyncio.run(create_admin())
 exit()
@@ -176,204 +445,277 @@ exit()
 
 ---
 
-## Шаг 5. Настройка клиентской части (Frontend)
+## 💾 Резервное копирование
 
-### 5.1. Перейдите в папку клиента
+### Создание backup
+
 ```bash
-cd ../client_crm
+# Создать backup базы данных
+docker compose exec postgres pg_dump -U postgres crm_school > backups/backup_$(date +%Y%m%d_%H%M%S).sql
+
+# С сжатием
+docker compose exec postgres pg_dump -U postgres crm_school | gzip > backups/backup_$(date +%Y%m%d_%H%M%S).sql.gz
+
+# Проверить размер backup
+ls -lh backups/
 ```
 
-### 5.2. Установите зависимости
+### Восстановление из backup
+
+#### Восстановление обычного backup (.sql)
+
 ```bash
-npm install
+# Остановить backend (чтобы не было активных подключений)
+docker compose stop backend
+
+# Войти в PostgreSQL и пересоздать базу
+docker compose exec postgres psql -U postgres << EOF
+DROP DATABASE IF EXISTS crm_school;
+CREATE DATABASE crm_school;
+EOF
+
+# Восстановить данные
+cat backups/backup_20260219_143000.sql | docker compose exec -T postgres psql -U postgres -d crm_school
+
+# Запустить backend
+docker compose start backend
 ```
 
-### 5.3. Настройте API URL (если нужно)
+#### Восстановление сжатого backup (.sql.gz)
 
-Если сервер будет на другом хосте, измените `API_URL` в файле:
-`client_crm/src/app/lib/api.ts`
+```bash
+# Остановить backend
+docker compose stop backend
 
-```typescript
-const API_URL = "http://localhost:8000";  // Измените на нужный URL
+# Пересоздать базу
+docker compose exec postgres psql -U postgres -c "DROP DATABASE IF EXISTS crm_school;"
+docker compose exec postgres psql -U postgres -c "CREATE DATABASE crm_school;"
+
+# Восстановить из сжатого архива
+gunzip < backups/backup_20260219_143000.sql.gz | docker compose exec -T postgres psql -U postgres -d crm_school
+
+# Запустить backend
+docker compose start backend
+```
+
+### Автоматическое резервное копирование
+
+**Создать скрипт backup:**
+
+```bash
+# Создать файл
+nano /home/deploy/backup_crm.sh
+```
+
+```bash
+#!/bin/bash
+
+BACKUP_DIR="/home/deploy/crm_school/backups"
+DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_FILE="$BACKUP_DIR/backup_$DATE.sql.gz"
+
+# Создать backup
+cd /home/deploy/crm_school
+docker compose exec -T postgres pg_dump -U postgres crm_school | gzip > "$BACKUP_FILE"
+
+# Удалить старые backup (старше 30 дней)
+find $BACKUP_DIR -name "backup_*.sql.gz" -mtime +30 -delete
+
+echo "Backup created: $BACKUP_FILE"
+```
+
+```bash
+# Сделать исполняемым
+chmod +x /home/deploy/backup_crm.sh
+```
+
+**Настроить cron:**
+
+```bash
+# Открыть crontab
+crontab -e
+
+# Добавить строку (backup каждый день в 2:00 ночи)
+0 2 * * * /home/deploy/backup_crm.sh >> /home/deploy/backup_crm.log 2>&1
 ```
 
 ---
 
-## Шаг 6. Запуск приложения
+## 🔧 Управление контейнерами
 
-### 6.1. Запустите сервер (Backend)
+### Основные команды
 
-Откройте новый терминал:
 ```bash
-cd server
+# Запустить все контейнеры
+docker compose up -d
 
-# Активируйте виртуальное окружение
-# Windows:
-venv\Scripts\activate
-# Linux/MacOS:
-source venv/bin/activate
+# Остановить все контейнеры
+docker compose down
 
-# Запустите сервер
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# Перезапустить все контейнеры
+docker compose restart
+
+# Пересобрать образы и запустить
+docker compose up -d --build
+
+# Просмотр логов
+docker compose logs -f
+
+# Логи конкретного сервиса
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose logs -f postgres
+docker compose logs -f nginx
+
+# Статус контейнеров
+docker compose ps
+
+# Использование ресурсов
+docker stats
 ```
 
-Сервер запустится на: `http://localhost:8000`
+### Обновление приложения
 
-### 6.2. Запустите клиент (Frontend)
-
-Откройте второй терминал:
 ```bash
-cd client_crm
-npm run dev
+# Остановить контейнеры
+docker compose down
+
+# Получить последние изменения из git
+git pull origin main
+
+# Пересобрать образы
+docker compose build
+
+# Запустить контейнеры
+docker compose up -d
+
+# Проверить логи
+docker compose logs -f
 ```
 
-Клиент запустится на: `http://localhost:5173`
+### Очистка Docker
 
----
-
-## Шаг 7. Вход в систему
-
-1. Откройте браузер: `http://localhost:5173`
-2. Введите данные для входа:
-   - **Логин:** `admin`
-   - **Пароль:** `admin`
-
----
-
-## Решение типичных проблем
-
-### Ошибка подключения к базе данных
-```
-SQLALCHEMY_DATABASE_URI is incorrect
-```
-**Решение:**
-- Проверьте DATABASE_URL в файле `.env`
-- Убедитесь, что PostgreSQL запущен
-- Проверьте пароль и имя базы данных
-
-### Ошибка миграций
-```
-alembic: command not found
-```
-**Решение:**
 ```bash
-pip install alembic
+# Удалить неиспользуемые образы
+docker image prune -a
+
+# Удалить неиспользуемые volumes
+docker volume prune
+
+# Удалить неиспользуемые контейнеры
+docker container prune
+
+# Полная очистка (осторожно!)
+docker system prune -a --volumes
 ```
 
-### Ошибка импорта модулей Python
-```
-ModuleNotFoundError: No module named 'fastapi'
-```
-**Решение:**
+### Мониторинг
+
 ```bash
-# Убедитесь, что виртуальное окружение активировано
-pip install -r requirements.txt
-```
+# Посмотреть использование ресурсов
+docker stats
 
-### Порт уже занят
-```
-Address already in use
-```
-**Решение:**
-```bash
-# Измените порт при запуске
-uvicorn app.main:app --reload --port 8001
+# Посмотреть логи nginx
+tail -f nginx/logs/access.log
+tail -f nginx/logs/error.log
 
-# Или найдите и остановите процесс:
-# Windows:
-netstat -ano | findstr :8000
-taskkill /PID <PID> /F
-
-# Linux/MacOS:
-lsof -i :8000
-kill -9 <PID>
+# Посмотреть размер volumes
+docker system df -v
 ```
 
 ---
 
-## Резервное копирование данных
+## 🔍 Troubleshooting
 
-### Экспорт базы данных
+### Backend не запускается
+
 ```bash
-pg_dump -U crm_user crm_school > backup.sql
+# Проверить логи
+docker compose logs backend
+
+# Проверить подключение к БД
+docker compose exec backend python -c "from app.database import engine; print('DB OK')"
+
+# Проверить миграции
+docker compose exec backend alembic current
 ```
 
-### Импорт базы данных
+### Frontend не доступен
+
 ```bash
-psql -U crm_user crm_school < backup.sql
+# Проверить логи
+docker compose logs frontend
+
+# Проверить nginx конфиг
+docker compose exec nginx nginx -t
+
+# Перезапустить nginx
+docker compose restart nginx
 ```
 
----
+### PostgreSQL проблемы
 
-## Производственное развертывание (Production)
-
-Для production окружения рекомендуется:
-
-1. **Использовать HTTPS**
-2. **Настроить Nginx/Apache** как reverse proxy
-3. **Использовать systemd/supervisor** для автозапуска
-4. **Настроить резервное копирование БД**
-5. **Использовать сильные пароли**
-6. **Отключить режим разработки** (`--reload`)
-
-### Пример запуска в production:
 ```bash
-# Backend
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+# Проверить логи
+docker compose logs postgres
 
-# Frontend (собрать для production)
-npm run build
-# Затем настроить веб-сервер для раздачи статики из dist/
+# Проверить подключение
+docker compose exec postgres pg_isready -U postgres
+
+# Войти в psql
+docker compose exec postgres psql -U postgres -d crm_school
 ```
 
----
-
-## Контрольный список переноса
-
-- [ ] Установлен Python 3.12+
-- [ ] Установлен Node.js 18+
-- [ ] Установлен PostgreSQL 14+
-- [ ] Скопированы файлы проекта
-- [ ] Создана база данных PostgreSQL
-- [ ] Создан файл `.env` с правильными настройками
-- [ ] Установлены Python зависимости
-- [ ] Установлены Node.js зависимости
-- [ ] Применены миграции БД
-- [ ] Создан admin пользователь
-- [ ] Запущен сервер
-- [ ] Запущен клиент
-- [ ] Успешный вход в систему
-
----
-
-## Полезные команды
+### SSL не работает
 
 ```bash
-# Проверка версий
-python --version
-node --version
-psql --version
+# Проверить сертификаты
+ls -la certbot/conf/live/crm.garryschool.ru/
 
-# Просмотр логов сервера
-# В терминале где запущен uvicorn
+# Проверить nginx конфиг
+docker compose exec nginx nginx -t
 
-# Просмотр таблиц в БД
-psql -U crm_user -d crm_school -c "\dt"
+# Проверить логи certbot
+docker compose logs certbot
 
-# Очистка кэша Python
-find . -type d -name __pycache__ -exec rm -r {} +
-
-# Обновление зависимостей
-pip install --upgrade -r requirements.txt
-npm update
+# Запросить сертификат заново
+docker compose run --rm certbot certonly --webroot --webroot-path=/var/www/certbot --email vadiqbozhko@gmail.com --agree-tos --no-eff-email -d crm.garryschool.ru
 ```
 
 ---
 
-## Поддержка
+## ✅ Проверка успешного развертывания
+
+После завершения всех шагов проверьте:
+
+- ✅ Сайт доступен по адресу: https://crm.garryschool.ru
+- ✅ SSL сертификат валиден (зеленый замок в браузере)
+- ✅ API доступен: https://crm.garryschool.ru/api/docs
+- ✅ Авторизация работает
+- ✅ База данных отвечает
+- ✅ Логи не содержат критических ошибок
+
+**Тестовая команда:**
+
+```bash
+# Проверить все компоненты
+curl -I https://crm.garryschool.ru && \
+curl -I https://crm.garryschool.ru/api/docs && \
+docker compose ps && \
+echo "✅ Все работает!"
+```
+
+---
+
+## 📞 Поддержка
 
 При возникновении проблем:
-1. Проверьте логи сервера и клиента
-2. Убедитесь, что все зависимости установлены
-3. Проверьте настройки `.env`
-4. Убедитесь, что PostgreSQL запущен
+
+1. Проверьте логи: `docker compose logs -f`
+2. Проверьте статус: `docker compose ps`
+3. Проверьте ресурсы: `docker stats`
+4. Проверьте документацию выше
+
+---
+
+**Готово! Ваша CRM система развернута и готова к работе!** 🎉
