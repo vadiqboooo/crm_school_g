@@ -3,11 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import auth, employees, subjects, groups, students, lessons, exams, exam_templates, finances, reports, settings, schedules, school_locations
 
-app = FastAPI(title="CRM School API", version="1.0.0")
+app = FastAPI(title="CRM School API", version="1.0.0", redirect_slashes=False)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://crm.garryschool.ru",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
