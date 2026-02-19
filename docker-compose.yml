@@ -44,7 +44,7 @@ services:
       - crm_network
     volumes:
       - ./server:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --root-path /api
 
   # Frontend (React/Vite)
   frontend:
