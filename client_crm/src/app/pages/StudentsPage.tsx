@@ -99,8 +99,9 @@ export function StudentsPage() {
     parent_contacts: [],
   });
 
-  // Edit mode in student card
-  const [isEditMode, setIsEditMode] = useState(false);
+  // Edit mode in student card - separate for each section
+  const [isEditingBasicInfo, setIsEditingBasicInfo] = useState(false);
+  const [isEditingParentContacts, setIsEditingParentContacts] = useState(false);
   const [editFormData, setEditFormData] = useState<Student | null>(null);
   const [updating, setUpdating] = useState(false);
 
@@ -196,19 +197,31 @@ export function StudentsPage() {
     }
   };
 
-  const handleStartEdit = () => {
+  const handleStartEditBasicInfo = () => {
     if (selectedStudent) {
       setEditFormData({ ...selectedStudent });
-      setIsEditMode(true);
+      setIsEditingBasicInfo(true);
     }
   };
 
-  const handleCancelEdit = () => {
-    setIsEditMode(false);
+  const handleStartEditParentContacts = () => {
+    if (selectedStudent) {
+      setEditFormData({ ...selectedStudent });
+      setIsEditingParentContacts(true);
+    }
+  };
+
+  const handleCancelEditBasicInfo = () => {
+    setIsEditingBasicInfo(false);
     setEditFormData(null);
   };
 
-  const handleSaveEdit = async () => {
+  const handleCancelEditParentContacts = () => {
+    setIsEditingParentContacts(false);
+    setEditFormData(null);
+  };
+
+  const handleSaveBasicInfo = async () => {
     if (!editFormData) return;
 
     try {
@@ -229,7 +242,38 @@ export function StudentsPage() {
         })),
       });
       await loadStudents();
-      setIsEditMode(false);
+      setIsEditingBasicInfo(false);
+      setEditFormData(null);
+    } catch (error) {
+      console.error("Failed to update student:", error);
+      alert("Ошибка при обновлении студента");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleSaveParentContacts = async () => {
+    if (!editFormData) return;
+
+    try {
+      setUpdating(true);
+      await api.updateStudent(editFormData.id, {
+        first_name: editFormData.first_name,
+        last_name: editFormData.last_name,
+        phone: editFormData.phone,
+        telegram_id: editFormData.telegram_id,
+        current_school: editFormData.current_school,
+        class_number: editFormData.class_number,
+        status: editFormData.status,
+        parent_contacts: editFormData.parent_contacts.map((contact) => ({
+          name: contact.name,
+          relation: contact.relation,
+          phone: contact.phone,
+          telegram_id: contact.telegram_id,
+        })),
+      });
+      await loadStudents();
+      setIsEditingParentContacts(false);
       setEditFormData(null);
     } catch (error) {
       console.error("Failed to update student:", error);
@@ -341,64 +385,6 @@ export function StudentsPage() {
                   </Badge>
                 </div>
               </div>
-              <div className="flex gap-2">
-                {isEditMode ? (
-                  <>
-                    <Button
-                      variant="outline"
-                      onClick={handleCancelEdit}
-                      disabled={updating}
-                    >
-                      Отмена
-                    </Button>
-                    <Button
-                      onClick={handleSaveEdit}
-                      disabled={updating}
-                      className="bg-blue-600 hover:bg-blue-700 gap-2"
-                    >
-                      {updating ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Сохранение...
-                        </>
-                      ) : (
-                        <>
-                          <Check className="w-4 h-4" />
-                          Сохранить
-                        </>
-                      )}
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      variant="outline"
-                      className="gap-2"
-                      onClick={handleStartEdit}
-                    >
-                      <Edit className="w-4 h-4" />
-                      Редактировать
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="gap-2"
-                      onClick={handleShareLink}
-                    >
-                      {linkCopied ? (
-                        <>
-                          <Check className="w-4 h-4" />
-                          Ссылка скопирована
-                        </>
-                      ) : (
-                        <>
-                          <Share2 className="w-4 h-4" />
-                          Поделиться ссылкой
-                        </>
-                      )}
-                    </Button>
-                  </>
-                )}
-              </div>
             </div>
           </div>
 
@@ -418,13 +404,75 @@ export function StudentsPage() {
               {/* Basic Info - Left */}
               <Card>
                 <CardContent className="pt-6">
-                  <h3 className="text-lg font-semibold mb-4">
-                    Основная информация
-                  </h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold">
+                      Основная информация
+                    </h3>
+                    {isEditingBasicInfo ? (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleCancelEditBasicInfo}
+                          disabled={updating}
+                        >
+                          Отмена
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={handleSaveBasicInfo}
+                          disabled={updating}
+                          className="bg-blue-600 hover:bg-blue-700 gap-2"
+                        >
+                          {updating ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Сохранение...
+                            </>
+                          ) : (
+                            <>
+                              <Check className="w-4 h-4" />
+                              Сохранить
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={handleShareLink}
+                        >
+                          {linkCopied ? (
+                            <>
+                              <Check className="w-4 h-4" />
+                              Скопирована
+                            </>
+                          ) : (
+                            <>
+                              <Share2 className="w-4 h-4" />
+                              Поделиться
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={handleStartEditBasicInfo}
+                        >
+                          <Edit className="w-4 h-4" />
+                          Редактировать
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <Label className="text-slate-600">Фамилия</Label>
-                      {isEditMode && editFormData ? (
+                      {isEditingBasicInfo && editFormData ? (
                         <Input
                           value={editFormData.last_name}
                           onChange={(e) =>
@@ -441,7 +489,7 @@ export function StudentsPage() {
                     </div>
                     <div>
                       <Label className="text-slate-600">Имя</Label>
-                      {isEditMode && editFormData ? (
+                      {isEditingBasicInfo && editFormData ? (
                         <Input
                           value={editFormData.first_name}
                           onChange={(e) =>
@@ -458,7 +506,7 @@ export function StudentsPage() {
                     </div>
                     <div>
                       <Label className="text-slate-600">Класс</Label>
-                      {isEditMode && editFormData ? (
+                      {isEditingBasicInfo && editFormData ? (
                         <Input
                           type="number"
                           min="1"
@@ -481,7 +529,7 @@ export function StudentsPage() {
                     </div>
                     <div>
                       <Label className="text-slate-600">Школа обучения</Label>
-                      {isEditMode && editFormData ? (
+                      {isEditingBasicInfo && editFormData ? (
                         <Input
                           value={editFormData.current_school || ""}
                           onChange={(e) =>
@@ -498,7 +546,7 @@ export function StudentsPage() {
                     </div>
                     <div>
                       <Label className="text-slate-600">Телефон</Label>
-                      {isEditMode && editFormData ? (
+                      {isEditingBasicInfo && editFormData ? (
                         <Input
                           value={editFormData.phone || ""}
                           onChange={(e) =>
@@ -522,7 +570,7 @@ export function StudentsPage() {
                     </div>
                     <div>
                       <Label className="text-slate-600">Telegram ID</Label>
-                      {isEditMode && editFormData ? (
+                      {isEditingBasicInfo && editFormData ? (
                         <Input
                           value={editFormData.telegram_id || ""}
                           onChange={(e) =>
@@ -562,7 +610,7 @@ export function StudentsPage() {
                     </div>
                     <div className="col-span-2">
                       <Label className="text-slate-600">Статус</Label>
-                      {isEditMode && editFormData ? (
+                      {isEditingBasicInfo && editFormData ? (
                         <Select
                           value={editFormData.status}
                           onValueChange={(value: "active" | "inactive") =>
@@ -604,12 +652,53 @@ export function StudentsPage() {
                     <h3 className="text-lg font-semibold">
                       Контакты родителей
                     </h3>
-                    {isEditMode && editFormData && (
+                    {isEditingParentContacts ? (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleCancelEditParentContacts}
+                          disabled={updating}
+                        >
+                          Отмена
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={handleSaveParentContacts}
+                          disabled={updating}
+                          className="bg-blue-600 hover:bg-blue-700 gap-2"
+                        >
+                          {updating ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Сохранение...
+                            </>
+                          ) : (
+                            <>
+                              <Check className="w-4 h-4" />
+                              Сохранить
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    ) : (
                       <Button
                         variant="outline"
                         size="sm"
                         className="gap-2"
-                        onClick={() => {
+                        onClick={handleStartEditParentContacts}
+                      >
+                        <Edit className="w-4 h-4" />
+                        Редактировать
+                      </Button>
+                    )}
+                  </div>
+                  {isEditingParentContacts && editFormData && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 mb-4"
+                      onClick={() => {
                           setEditFormData({
                             ...editFormData,
                             parent_contacts: [
@@ -629,9 +718,8 @@ export function StudentsPage() {
                         <Plus className="w-4 h-4" />
                         Добавить контакт
                       </Button>
-                    )}
-                  </div>
-                  {isEditMode && editFormData ? (
+                  )}
+                  {isEditingParentContacts && editFormData ? (
                     <div className="space-y-4">
                       {editFormData.parent_contacts.length > 0 ? (
                         editFormData.parent_contacts.map((parent, index) => (
@@ -775,6 +863,7 @@ export function StudentsPage() {
                 <StudentPerformanceTab
                   studentId={selectedStudent.id}
                   studentGroups={selectedStudent.groups}
+                  studentName={`${selectedStudent.last_name} ${selectedStudent.first_name}`}
                 />
               </TabsContent>
             )}

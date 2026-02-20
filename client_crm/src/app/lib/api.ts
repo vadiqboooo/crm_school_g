@@ -237,6 +237,12 @@ class ApiClient {
     return this.request(`/students/${studentId}/weekly-reports`);
   }
 
+  async deleteWeeklyReport(reportId: string): Promise<void> {
+    return this.request(`/students/weekly-reports/${reportId}`, {
+      method: "DELETE",
+    });
+  }
+
   // Group endpoints
   async getGroups(): Promise<Group[]> {
     return this.request<Group[]>("/groups");
