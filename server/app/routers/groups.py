@@ -94,7 +94,7 @@ async def create_group(
     group = Group(**data.model_dump())
     db.add(group)
     await db.commit()
-    await db.refresh(group, ["subject", "teacher", "students", "schedules"])
+    await db.refresh(group, ["subject", "teacher", "students", "schedules", "location"])
     return group
 
 

@@ -55,6 +55,7 @@ export function HomePage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const isManager = user?.role === "manager";
   const isTeacher = user?.role === "teacher";
   const canUseTableView = user?.role === "admin" || user?.role === "manager";
 
@@ -181,6 +182,7 @@ export function HomePage() {
 
       await loadData();
       setIsCreateDialogOpen(false);
+      const managerLocation = isManager ? locations.find(loc => loc.manager_id === user?.id) : undefined;
       setNewGroup({
         name: "",
         subject_id: "",
@@ -189,7 +191,7 @@ export function HomePage() {
         schedule_day: "",
         schedule_time: "",
         schedule_duration: 90,
-        school_location_id: undefined,
+        school_location_id: managerLocation?.id,
         description: "",
         comment: "",
       });
@@ -423,10 +425,19 @@ export function HomePage() {
                 </div>
               )}
 
-              {isAdmin && (
+              {(isAdmin || isManager) && (
                 <Button
                   className="bg-blue-600 hover:bg-blue-700 gap-2"
-                  onClick={() => setIsCreateDialogOpen(true)}
+                  onClick={() => {
+                    // For managers, auto-set their location
+                    if (isManager) {
+                      const managerLocation = locations.find(loc => loc.manager_id === user?.id);
+                      if (managerLocation) {
+                        setNewGroup(prev => ({ ...prev, school_location_id: managerLocation.id }));
+                      }
+                    }
+                    setIsCreateDialogOpen(true);
+                  }}
                 >
                   <Plus className="w-4 h-4" />
                   Создать группу
@@ -920,12 +931,13 @@ export function HomePage() {
                   onValueChange={(value) =>
                     setNewGroup({ ...newGroup, school_location_id: value === "none" ? undefined : value })
                   }
+                  disabled={isManager}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Выберите филиал" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Не указан</SelectItem>
+                    {!isManager && <SelectItem value="none">Не указан</SelectItem>}
                     {locations.map((location) => (
                       <SelectItem key={location.id} value={location.id}>
                         {location.name}
