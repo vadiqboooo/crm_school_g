@@ -38,6 +38,7 @@ import {
   Plus,
   Edit,
   Trash2,
+  ChevronUp,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
@@ -51,6 +52,17 @@ interface StudentWithResults {
 export function ExamsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrolled = window.scrollY || document.documentElement.scrollTop;
+      setShowScrollTop(scrolled > 200);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   const [exams, setExams] = useState<Exam[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -1325,6 +1337,15 @@ export function ExamsPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <button
+        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        className={`fixed bottom-6 right-6 z-50 w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg flex items-center justify-center transition-all duration-300 ${
+          showScrollTop ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"
+        }`}
+      >
+        <ChevronUp className="w-5 h-5" />
+      </button>
     </div>
   );
 }
