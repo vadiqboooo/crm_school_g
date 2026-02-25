@@ -181,8 +181,8 @@ async def update_group(
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
 
-    # Если пользователь - учитель (не админ), проверяем что это его группа
-    if current_user.role == "teacher" and group.teacher_id != current_user.id:
+    # Учителя не могут редактировать группы
+    if current_user.role == "teacher":
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Use exclude_none=False to include explicitly set None values
@@ -206,8 +206,8 @@ async def delete_group(
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
 
-    # Только администратор может удалять группы
-    if current_user.role != "admin":
+    # Учителя не могут удалять группы
+    if current_user.role == "teacher":
         raise HTTPException(status_code=403, detail="Access denied")
 
     await db.delete(group)

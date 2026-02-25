@@ -34,6 +34,7 @@ interface GroupInfoTabProps {
 export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const isManager = user?.role === "manager";
 
   const [comment, setComment] = useState(group.comment || "");
   const [startDate, setStartDate] = useState(group.start_date || "");
@@ -306,13 +307,13 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold">Информация о группе</h2>
-        {isAdmin && !isEditMode && (
+        {(isAdmin || isManager) && !isEditMode && (
           <Button onClick={handleEnterEditMode} variant="outline">
             <Edit className="w-4 h-4 mr-2" />
             Редактировать
           </Button>
         )}
-        {isAdmin && isEditMode && (
+        {(isAdmin || isManager) && isEditMode && (
           <div className="flex gap-2">
             <Button onClick={handleCancelEdit} variant="outline">
               <X className="w-4 h-4 mr-2" />
@@ -325,7 +326,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                 !editFormData.name ||
                 !editFormData.subject_id ||
                 !editFormData.teacher_id ||
-                (isAdmin && !editFormData.level)
+                ((isAdmin || isManager) && !editFormData.level)
               }
             >
               <Save className="w-4 h-4 mr-2" />
@@ -391,8 +392,8 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                   )}
                 </div>
 
-                {/* Тип подготовки - только для админов */}
-                {isAdmin && (
+                {/* Тип подготовки */}
+                {(isAdmin || isManager) && (
                   <div>
                     <label className="text-sm font-medium text-slate-600">
                       Тип подготовки
@@ -495,7 +496,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                     <label className="text-sm font-medium text-slate-600">
                       Расписание
                     </label>
-                    {isAdmin && (
+                    {(isAdmin || isManager) && (
                       <Button
                         size="sm"
                         variant="ghost"
@@ -518,7 +519,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                             <Clock className="w-4 h-4 ml-2" />
                             <span>{formatScheduleTime(schedule.start_time, schedule.duration_minutes)}</span>
                           </div>
-                          {isAdmin && (
+                          {(isAdmin || isManager) && (
                             <Button
                               size="icon"
                               variant="ghost"
@@ -545,10 +546,10 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                       type="date"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
-                      disabled={!isAdmin}
+                      disabled={!(isAdmin || isManager)}
                       className="flex-1"
                     />
-                    {isAdmin && startDate !== (group.start_date || "") && (
+                    {(isAdmin || isManager) && startDate !== (group.start_date || "") && (
                       <Button
                         onClick={handleSaveStartDate}
                         disabled={isSaving}
@@ -558,7 +559,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                       </Button>
                     )}
                   </div>
-                  {isAdmin && group.start_date && group.schedules.length > 0 && (
+                  {(isAdmin || isManager) && group.start_date && group.schedules.length > 0 && (
                     <Button
                       onClick={() => setIsGenerateLessonsOpen(true)}
                       className="mt-2 bg-green-600 hover:bg-green-700 w-full"
@@ -651,7 +652,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                     Студенты ({group.students?.length || 0})
                   </h3>
                 </div>
-                {isAdmin && (
+                {(isAdmin || isManager) && (
                   <div className="flex items-center gap-2">
                     <Button
                       size="sm"
@@ -687,7 +688,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                           {student.first_name} {student.last_name}
                         </p>
                       </div>
-                      {isAdmin && (
+                      {(isAdmin || isManager) && (
                         <Button
                           size="icon"
                           variant="ghost"

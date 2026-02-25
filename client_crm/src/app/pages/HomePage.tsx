@@ -499,7 +499,7 @@ export function HomePage() {
                     <span className="text-base font-medium text-slate-700">
                       {group.studentsCount || 0}
                     </span>
-                    {isAdmin && (
+                    {(isAdmin || isManager) && (
                       <DropdownMenu>
                         <DropdownMenuTrigger
                           asChild
@@ -745,13 +745,13 @@ export function HomePage() {
                       </Popover>
                     </TableHead>
 
-                    {isAdmin && <TableHead>Действия</TableHead>}
+                    {(isAdmin || isManager) && <TableHead>Действия</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredGroups.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={isAdmin ? 7 : 6} className="text-center py-12">
+                      <TableCell colSpan={(isAdmin || isManager) ? 7 : 6} className="text-center py-12">
                         <div className="flex flex-col items-center text-slate-500">
                           <Filter className="w-12 h-12 mb-3 opacity-50" />
                           <p>Нет групп, соответствующих выбранным фильтрам</p>
@@ -789,7 +789,7 @@ export function HomePage() {
                           <span className="text-slate-400">Не указан</span>
                         )}
                       </TableCell>
-                      {isAdmin && (
+                      {(isAdmin || isManager) && (
                         <TableCell>
                           <DropdownMenu>
                             <DropdownMenuTrigger
