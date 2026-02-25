@@ -77,8 +77,11 @@ export function ExamsTab({ groupId, groupName, groupSubject }: ExamsTabProps) {
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   useEffect(() => {
-    const handleScroll = () => setShowScrollTop(window.scrollY > 300);
-    window.addEventListener("scroll", handleScroll);
+    const handleScroll = () => {
+      const scrolled = window.scrollY || document.documentElement.scrollTop;
+      setShowScrollTop(scrolled > 200);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
@@ -1284,14 +1287,14 @@ export function ExamsTab({ groupId, groupName, groupSubject }: ExamsTabProps) {
       </Dialog>
 
       {/* Scroll to top button */}
-      {showScrollTop && (
-        <button
-          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          className="fixed bottom-6 right-6 z-50 w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg flex items-center justify-center transition-opacity"
-        >
-          <ChevronUp className="w-5 h-5" />
-        </button>
-      )}
+      <button
+        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        className={`fixed bottom-6 right-6 z-50 w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg flex items-center justify-center transition-all duration-300 ${
+          showScrollTop ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"
+        }`}
+      >
+        <ChevronUp className="w-5 h-5" />
+      </button>
     </div>
   );
 }
