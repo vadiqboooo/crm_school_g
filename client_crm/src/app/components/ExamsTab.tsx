@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { FileText, ArrowLeft, MessageSquare, Loader2, User, Check, Trash2, Edit2 } from "lucide-react";
+import { FileText, ArrowLeft, MessageSquare, Loader2, User, Check, Trash2, Edit2, ChevronUp } from "lucide-react";
 import {
   HoverCard,
   HoverCardContent,
@@ -72,6 +72,15 @@ export function ExamsTab({ groupId, groupName, groupSubject }: ExamsTabProps) {
   const [updatingExam, setUpdatingExam] = useState(false);
   const [editingExam, setEditingExam] = useState<Exam | null>(null);
   const [editingExamSubjectId, setEditingExamSubjectId] = useState<string>("");
+
+  // Scroll to top button
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => setShowScrollTop(window.scrollY > 300);
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   // Result editing
   const [editingResults, setEditingResults] = useState<{[studentId: string]: ExamResultUpdate}>({});
@@ -1273,6 +1282,16 @@ export function ExamsTab({ groupId, groupName, groupSubject }: ExamsTabProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Scroll to top button */}
+      {showScrollTop && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="fixed bottom-6 right-6 z-50 w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg flex items-center justify-center transition-opacity"
+        >
+          <ChevronUp className="w-5 h-5" />
+        </button>
+      )}
     </div>
   );
 }
