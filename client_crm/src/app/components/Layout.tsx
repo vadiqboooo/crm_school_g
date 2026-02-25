@@ -255,9 +255,6 @@ export function Layout() {
                       <span className="text-sm font-medium text-slate-900 truncate w-full">
                         {user?.first_name} {user?.last_name}
                       </span>
-                      <span className="text-xs text-slate-500 truncate w-full">
-                        {user?.email}
-                      </span>
                     </div>
                   )}
                 </div>
