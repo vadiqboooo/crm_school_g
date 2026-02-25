@@ -86,9 +86,6 @@ export function HomePage() {
     subject_id: "",
     teacher_id: "",
     level: "",
-    schedule_day: "",
-    schedule_time: "",
-    schedule_duration: 90,
     school_location_id: undefined,
     description: "",
     comment: "",
@@ -188,9 +185,6 @@ export function HomePage() {
         subject_id: "",
         teacher_id: "",
         level: "",
-        schedule_day: "",
-        schedule_time: "",
-        schedule_duration: 90,
         school_location_id: managerLocation?.id,
         description: "",
         comment: "",
@@ -783,7 +777,10 @@ export function HomePage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {group.teacher.first_name} {group.teacher.last_name}
+                        {group.teacher
+                          ? `${group.teacher.first_name} ${group.teacher.last_name}`
+                          : <span className="text-slate-400">Не назначен</span>
+                        }
                       </TableCell>
                       <TableCell>{group.studentsCount || 0}</TableCell>
                       <TableCell>{formatSchedules(group.schedules)}</TableCell>

@@ -32,7 +32,8 @@
       "Bash(timeout:*)",
       "Bash(npx tsc:*)",
       "Bash(git -C . diff --stat client_crm/src/app/components/StudentPerformanceTab.tsx)",
-      "Bash(npm run type-check:*)"
+      "Bash(npm run type-check:*)",
+      "Bash(docker ps:*)"
     ]
   }
 }

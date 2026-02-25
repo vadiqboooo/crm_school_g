@@ -224,7 +224,7 @@ export interface Group {
     id: string;
     first_name: string;
     last_name: string;
-  };
+  } | null;
   level?: string;
   schedule_day?: string; // Deprecated
   schedule_time?: string; // Deprecated

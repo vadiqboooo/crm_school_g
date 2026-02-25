@@ -1,7 +1,14 @@
 from uuid import UUID
 from datetime import datetime as datetime_type, time as time_type, date as date_type
-from typing import Optional
-from pydantic import BaseModel
+from typing import Optional, Any
+from pydantic import BaseModel, model_validator
+
+
+def _empty_str_to_none(data: Any) -> Any:
+    """Convert empty strings to None for all fields."""
+    if isinstance(data, dict):
+        return {k: None if v == "" else v for k, v in data.items()}
+    return data
 
 
 class GroupCreate(BaseModel):
@@ -17,6 +24,11 @@ class GroupCreate(BaseModel):
     description: Optional[str] = None
     comment: Optional[str] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def empty_strings_to_none(cls, values: Any) -> Any:
+        return _empty_str_to_none(values)
+
 
 class GroupUpdate(BaseModel):
     name: Optional[str] = None
@@ -30,6 +42,11 @@ class GroupUpdate(BaseModel):
     school_location_id: Optional[UUID] = None
     description: Optional[str] = None
     comment: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def empty_strings_to_none(cls, values: Any) -> Any:
+        return _empty_str_to_none(values)
 
 
 # Nested schemas for relationships
@@ -78,7 +95,7 @@ class GroupResponse(BaseModel):
     id: UUID
     name: str
     subject: SubjectInGroup
-    teacher: TeacherInGroup
+    teacher: Optional[TeacherInGroup]
     level: Optional[str]
     schedule_day: Optional[str]  # Deprecated, kept for backwards compatibility
     schedule_time: Optional[time_type]  # Deprecated

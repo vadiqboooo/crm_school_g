@@ -60,7 +60,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
   const [editFormData, setEditFormData] = useState({
     name: group.name,
     subject_id: group.subject.id,
-    teacher_id: group.teacher.id,
+    teacher_id: group.teacher?.id || "",
     level: group.level || "",
     description: group.description || "",
     school_location_id: group.school_location_id || undefined,
@@ -122,7 +122,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
     setEditFormData({
       name: group.name,
       subject_id: group.subject.id,
-      teacher_id: group.teacher.id,
+      teacher_id: group.teacher?.id || "",
       level: group.level || "",
       description: group.description || "",
       school_location_id: group.school_location_id || undefined,
@@ -628,14 +628,18 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                 <GraduationCap className="w-4 h-4 text-slate-700" />
                 <h3 className="text-sm font-semibold text-slate-900">Преподаватель</h3>
               </div>
-              <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-semibold">
-                  {group.teacher.first_name[0]}{group.teacher.last_name[0]}
+              {group.teacher ? (
+                <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-semibold">
+                    {group.teacher.first_name[0]}{group.teacher.last_name[0]}
+                  </div>
+                  <p className="font-medium text-sm">
+                    {group.teacher.first_name} {group.teacher.last_name}
+                  </p>
                 </div>
-                <p className="font-medium text-sm">
-                  {group.teacher.first_name} {group.teacher.last_name}
-                </p>
-              </div>
+              ) : (
+                <p className="text-sm text-slate-400 italic">Преподаватель не назначен</p>
+              )}
             </div>
 
             {/* Students List */}
