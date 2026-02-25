@@ -275,6 +275,16 @@ class ApiClient {
     });
   }
 
+  async updateWeeklyReportParentComment(
+    reportId: string,
+    data: { parent_feedback?: string; parent_reaction?: string }
+  ): Promise<WeeklyReport> {
+    return this.request(`/students/weekly-reports/${reportId}/parent-comment`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
   // Group endpoints
   async getGroups(): Promise<Group[]> {
     return this.request<Group[]>("/groups");

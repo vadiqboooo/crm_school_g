@@ -78,6 +78,7 @@ export function StudentsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const isManager = user?.role === "manager";
 
   const [students, setStudents] = useState<Student[]>([]);
   const [activeTab, setActiveTab] = useState("info"); // Student detail tabs
@@ -467,7 +468,7 @@ export function StudentsPage() {
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="bg-white border mb-6">
               <TabsTrigger value="info">Информация</TabsTrigger>
-              {isAdmin && <TabsTrigger value="performance">Успеваемость</TabsTrigger>}
+              {(isAdmin || isManager) && <TabsTrigger value="performance">Успеваемость</TabsTrigger>}
               <TabsTrigger value="history">История</TabsTrigger>
             </TabsList>
 
@@ -933,7 +934,7 @@ export function StudentsPage() {
             </TabsContent>
 
             {/* Performance Tab */}
-            {isAdmin && (
+            {(isAdmin || isManager) && (
               <TabsContent value="performance">
                 <StudentPerformanceTab
                   studentId={selectedStudent.id}

@@ -21,7 +21,7 @@ from app.schemas.student import (
     StudentHistoryResponse, GroupInfoResponse,
     StudentPerformanceRecord, StudentPerformanceResponse,
 )
-from app.schemas.report import WeeklyReportResponse, WeeklyReportUpdate
+from app.schemas.report import WeeklyReportResponse, WeeklyReportUpdate, WeeklyReportParentCommentUpdate
 from app.auth.dependencies import get_current_user, get_manager_location_id
 from app.config import settings
 
@@ -316,10 +316,9 @@ async def get_student_performance(
     db: AsyncSession = Depends(get_db),
     current_user: Employee = Depends(get_current_user),
 ):
-    """Get performance data for a specific student (admin only)."""
-    # Admin-only access
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Access denied. Admin only.")
+    """Get performance data for a specific student (admin and manager)."""
+    if current_user.role not in ("admin", "manager"):
+        raise HTTPException(status_code=403, detail="Access denied.")
 
     # Verify student exists
     student_result = await db.execute(
@@ -756,6 +755,29 @@ async def update_weekly_report(
     await db.commit()
     await db.refresh(report)
 
+    return report
+
+
+@router.patch("/weekly-reports/{report_id}/parent-comment", response_model=WeeklyReportResponse)
+async def update_parent_comment(
+    report_id: UUID,
+    data: WeeklyReportParentCommentUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Добавить/обновить комментарий о реакции родителя на отчёт."""
+    result = await db.execute(select(WeeklyReport).where(WeeklyReport.id == report_id))
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="Weekly report not found")
+
+    if data.parent_feedback is not None:
+        report.parent_feedback = data.parent_feedback
+    if data.parent_reaction is not None:
+        report.parent_reaction = data.parent_reaction
+
+    await db.commit()
+    await db.refresh(report)
     return report
 
 

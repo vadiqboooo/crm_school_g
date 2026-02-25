@@ -1,8 +1,11 @@
 import { Card, CardContent } from "./ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Button } from "./ui/button";
+import { Textarea } from "./ui/textarea";
+import { Label } from "./ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "./ui/dialog";
 import { useState, useEffect, useMemo } from "react";
-import { Loader2, Calendar, FileText, Copy, Send, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import { Loader2, Calendar, FileText, Copy, Send, ChevronDown, ChevronUp, Trash2, MessageSquarePlus } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { StudentPerformanceResponse, StudentPerformanceRecord, GroupInfo, WeeklyReport } from "../types/api";
@@ -52,6 +55,11 @@ export function StudentPerformanceTab({ studentId, studentGroups, studentName }:
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [expandedReports, setExpandedReports] = useState<Set<string>>(new Set());
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
+  const [parentCommentDialogOpen, setParentCommentDialogOpen] = useState(false);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [parentFeedback, setParentFeedback] = useState("");
+  const [parentReaction, setParentReaction] = useState("");
+  const [savingComment, setSavingComment] = useState(false);
 
   useEffect(() => {
     loadPerformanceData();
@@ -148,6 +156,32 @@ export function StudentPerformanceTab({ studentId, studentGroups, studentName }:
       toast.success("Отчет скопирован в буфер обмена");
     } catch (err) {
       toast.error("Не удалось скопировать отчет");
+    }
+  };
+
+  const openParentCommentDialog = (report: WeeklyReport, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedReportId(report.id);
+    setParentFeedback(report.parent_feedback || "");
+    setParentReaction(report.parent_reaction || "");
+    setParentCommentDialogOpen(true);
+  };
+
+  const saveParentComment = async () => {
+    if (!selectedReportId) return;
+    try {
+      setSavingComment(true);
+      const updated = await api.updateWeeklyReportParentComment(selectedReportId, {
+        parent_feedback: parentFeedback,
+        parent_reaction: parentReaction,
+      });
+      setReportsHistory(prev => prev.map(r => r.id === selectedReportId ? updated : r));
+      setParentCommentDialogOpen(false);
+      toast.success("Комментарий сохранён");
+    } catch (err) {
+      toast.error("Не удалось сохранить комментарий");
+    } finally {
+      setSavingComment(false);
     }
   };
 
@@ -568,6 +602,15 @@ export function StudentPerformanceTab({ studentId, studentGroups, studentName }:
                         <Send className="w-3 h-3 text-[#7A7A7A]" />
                       </Button>
                       <Button
+                        onClick={(e) => openParentCommentDialog(report, e)}
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-3"
+                        title="Добавить комментарий родителя"
+                      >
+                        <MessageSquarePlus className={`w-3 h-3 ${report.parent_feedback || report.parent_reaction ? "text-blue-600" : "text-[#7A7A7A]"}`} />
+                      </Button>
+                      <Button
                         onClick={(e) => {
                           e.stopPropagation();
                           deleteReport(report.id);
@@ -586,12 +629,29 @@ export function StudentPerformanceTab({ studentId, studentGroups, studentName }:
                     </div>
                   </div>
                   {expandedReports.has(report.id) && (
-                    <div className="p-6 bg-white border-t border-[#E8E8E8]">
+                    <div className="p-6 bg-white border-t border-[#E8E8E8] space-y-4">
                       <div className="bg-[#FAFAFA] border border-[#E8E8E8] rounded-lg p-6">
                         <div className="text-[13px] text-[#0D0D0D] leading-relaxed whitespace-pre-wrap" style={{ fontFamily: 'Inter, sans-serif' }}>
                           {report.ai_report}
                         </div>
                       </div>
+                      {(report.parent_feedback || report.parent_reaction) && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+                          <div className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Обратная связь с родителем</div>
+                          {report.parent_feedback && (
+                            <div>
+                              <div className="text-xs text-[#7A7A7A] mb-1">Обратная связь от родителя</div>
+                              <div className="text-sm text-[#0D0D0D] whitespace-pre-wrap">{report.parent_feedback}</div>
+                            </div>
+                          )}
+                          {report.parent_reaction && (
+                            <div>
+                              <div className="text-xs text-[#7A7A7A] mb-1">Как родитель принял обратную связь</div>
+                              <div className="text-sm text-[#0D0D0D] whitespace-pre-wrap">{report.parent_reaction}</div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -601,6 +661,42 @@ export function StudentPerformanceTab({ studentId, studentGroups, studentName }:
         </div>
       </div>
 
+      {/* Parent comment dialog */}
+      <Dialog open={parentCommentDialogOpen} onOpenChange={setParentCommentDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Обратная связь с родителем</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Обратная связь от родителя</Label>
+              <Textarea
+                placeholder="Напишите что сообщил родитель..."
+                value={parentFeedback}
+                onChange={(e) => setParentFeedback(e.target.value)}
+                rows={3}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Как родитель принял обратную связь</Label>
+              <Textarea
+                placeholder="Опишите реакцию родителя..."
+                value={parentReaction}
+                onChange={(e) => setParentReaction(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setParentCommentDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button onClick={saveParentComment} disabled={savingComment}>
+              {savingComment ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Сохранение...</> : "Сохранить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

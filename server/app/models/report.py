@@ -102,6 +102,8 @@ class WeeklyReport(Base):
     homework_total: Mapped[int] = mapped_column(Integer, default=0)
     ai_report: Mapped[str] = mapped_column(Text, nullable=False)
     is_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    parent_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parent_reaction: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     student = relationship("Student", back_populates="weekly_reports")

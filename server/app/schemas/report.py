@@ -149,6 +149,12 @@ class WeeklyReportUpdate(BaseModel):
     ai_report: str
 
 
+class WeeklyReportParentCommentUpdate(BaseModel):
+    """Схема для добавления комментария родителя."""
+    parent_feedback: Optional[str] = None
+    parent_reaction: Optional[str] = None
+
+
 class WeeklyReportResponse(BaseModel):
     """Схема для ответа с недельным репортом студента."""
     id: UUID
@@ -163,6 +169,8 @@ class WeeklyReportResponse(BaseModel):
     homework_total: int
     ai_report: str
     is_approved: bool
+    parent_feedback: Optional[str] = None
+    parent_reaction: Optional[str] = None
     created_at: datetime_type
 
     model_config = {"from_attributes": True}

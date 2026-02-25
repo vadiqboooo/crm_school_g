@@ -524,6 +524,8 @@ export interface WeeklyReport {
   homework_total: number;
   ai_report: string;
   is_approved: boolean;
+  parent_feedback?: string | null;
+  parent_reaction?: string | null;
   created_at: string;
 }
 
