@@ -206,8 +206,8 @@ async def delete_group(
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
 
-    # Если пользователь - учитель (не админ), проверяем что это его группа
-    if current_user.role == "teacher" and group.teacher_id != current_user.id:
+    # Только администратор может удалять группы
+    if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Access denied")
 
     await db.delete(group)
