@@ -21,8 +21,8 @@ from app.schemas.student import (
     StudentHistoryResponse, GroupInfoResponse,
     StudentPerformanceRecord, StudentPerformanceResponse,
 )
-from app.schemas.report import WeeklyReportResponse
-from app.auth.dependencies import get_current_user
+from app.schemas.report import WeeklyReportResponse, WeeklyReportUpdate
+from app.auth.dependencies import get_current_user, get_manager_location_id
 from app.config import settings
 
 router = APIRouter(prefix="/students", tags=["students"])
@@ -32,20 +32,40 @@ router = APIRouter(prefix="/students", tags=["students"])
 async def list_students(
     db: AsyncSession = Depends(get_db),
     _: Employee = Depends(get_current_user),
+    manager_location_id: Optional[UUID] = Depends(get_manager_location_id),
 ):
-    result = await db.execute(
-        select(Student)
-        .options(
-            selectinload(Student.parent_contacts),
-            selectinload(Student.groups).selectinload(GroupStudent.group)
-        )
-        .order_by(Student.last_name)
+    # Build query with location filter if manager
+    query = select(Student).options(
+        selectinload(Student.parent_contacts),
+        selectinload(Student.groups).selectinload(GroupStudent.group)
     )
+
+    # If manager, filter students by location through their groups
+    if manager_location_id is not None:
+        query = query.join(Student.groups).join(GroupStudent.group).where(
+            Group.school_location_id == manager_location_id
+        ).distinct()
+
+    result = await db.execute(query.order_by(Student.last_name))
     students = result.scalars().all()
 
     # Manually construct response to include groups
     students_data = []
     for student in students:
+        # Filter groups by location for managers
+        groups_to_show = [
+            GroupInfoResponse(
+                id=gs.group.id,
+                name=gs.group.name,
+                school_location=None  # Deprecated field, will be removed
+            )
+            for gs in student.groups
+            if not gs.is_archived and (
+                manager_location_id is None or
+                gs.group.school_location_id == manager_location_id
+            )
+        ]
+
         student_dict = {
             "id": student.id,
             "first_name": student.first_name,
@@ -57,15 +77,7 @@ async def list_students(
             "status": student.status,
             "created_at": student.created_at,
             "parent_contacts": student.parent_contacts,
-            "groups": [
-                GroupInfoResponse(
-                    id=gs.group.id,
-                    name=gs.group.name,
-                    school_location=gs.group.school_location
-                )
-                for gs in student.groups
-                if not gs.is_archived
-            ],
+            "groups": groups_to_show,
             "history": []
         }
         students_data.append(StudentResponse(**student_dict))
@@ -649,6 +661,51 @@ async def generate_weekly_report(
         )
 
 
+@router.get("/weekly-reports/latest-all", response_model=dict[str, WeeklyReportResponse])
+async def get_all_students_latest_reports(
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Получить последний отчет для каждого активного студента."""
+    # Get all active students
+    students_result = await db.execute(
+        select(Student).where(Student.status == "active")
+    )
+    students = students_result.scalars().all()
+
+    # Get latest report for each student using a subquery
+    from sqlalchemy import func
+    from sqlalchemy.orm import aliased
+
+    # Subquery to get max created_at for each student
+    subq = (
+        select(
+            WeeklyReport.student_id,
+            func.max(WeeklyReport.created_at).label('max_created_at')
+        )
+        .group_by(WeeklyReport.student_id)
+        .subquery()
+    )
+
+    # Join to get the full report rows
+    query = (
+        select(WeeklyReport)
+        .join(
+            subq,
+            (WeeklyReport.student_id == subq.c.student_id) &
+            (WeeklyReport.created_at == subq.c.max_created_at)
+        )
+    )
+
+    result = await db.execute(query)
+    reports = result.scalars().all()
+
+    # Build dict with student_id as key
+    reports_dict = {str(report.student_id): report for report in reports}
+
+    return reports_dict
+
+
 @router.get("/{student_id}/weekly-reports", response_model=list[WeeklyReportResponse])
 async def get_weekly_reports_history(
     student_id: UUID,
@@ -675,6 +732,79 @@ async def get_weekly_reports_history(
     reports = result.scalars().all()
 
     return reports
+
+
+@router.patch("/weekly-reports/{report_id}", response_model=WeeklyReportResponse)
+async def update_weekly_report(
+    report_id: UUID,
+    update_data: WeeklyReportUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Обновить недельный репорт."""
+    # Find the report
+    result = await db.execute(
+        select(WeeklyReport).where(WeeklyReport.id == report_id)
+    )
+    report = result.scalar_one_or_none()
+
+    if not report:
+        raise HTTPException(status_code=404, detail="Weekly report not found")
+
+    # Update the report
+    report.ai_report = update_data.ai_report
+    await db.commit()
+    await db.refresh(report)
+
+    return report
+
+
+@router.post("/weekly-reports/{report_id}/approve", response_model=WeeklyReportResponse)
+async def approve_weekly_report(
+    report_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Подтвердить недельный репорт."""
+    # Find the report
+    result = await db.execute(
+        select(WeeklyReport).where(WeeklyReport.id == report_id)
+    )
+    report = result.scalar_one_or_none()
+
+    if not report:
+        raise HTTPException(status_code=404, detail="Weekly report not found")
+
+    # Approve the report
+    report.is_approved = True
+    await db.commit()
+    await db.refresh(report)
+
+    return report
+
+
+@router.post("/weekly-reports/{report_id}/unapprove", response_model=WeeklyReportResponse)
+async def unapprove_weekly_report(
+    report_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Отменить подтверждение недельного репорта."""
+    # Find the report
+    result = await db.execute(
+        select(WeeklyReport).where(WeeklyReport.id == report_id)
+    )
+    report = result.scalar_one_or_none()
+
+    if not report:
+        raise HTTPException(status_code=404, detail="Weekly report not found")
+
+    # Unapprove the report
+    report.is_approved = False
+    await db.commit()
+    await db.refresh(report)
+
+    return report
 
 
 @router.delete("/weekly-reports/{report_id}")

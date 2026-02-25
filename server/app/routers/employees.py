@@ -1,6 +1,7 @@
 from uuid import UUID
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,10 +16,27 @@ router = APIRouter(prefix="/employees", tags=["employees"])
 
 @router.get("/", response_model=list[EmployeeResponse])
 async def list_employees(
+    roles: Optional[str] = Query(None, description="Comma-separated list of roles to filter by (e.g., 'admin,manager')"),
     db: AsyncSession = Depends(get_db),
     _: Employee = Depends(get_current_user),
 ):
-    result = await db.execute(select(Employee).order_by(Employee.last_name))
+    """List all employees, optionally filtered by roles.
+
+    Args:
+        roles: Comma-separated list of roles (e.g., 'admin,manager')
+    """
+    query = select(Employee)
+
+    # Filter by roles if provided
+    if roles:
+        role_list = [role.strip() for role in roles.split(',')]
+        # Validate roles
+        valid_roles = [role for role in role_list if role in [r.value for r in EmployeeRole]]
+        if valid_roles:
+            query = query.where(Employee.role.in_(valid_roles))
+
+    query = query.order_by(Employee.last_name)
+    result = await db.execute(query)
     return result.scalars().all()
 
 

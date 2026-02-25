@@ -88,7 +88,7 @@ export function HomePage() {
     schedule_day: "",
     schedule_time: "",
     schedule_duration: 90,
-    school_location: "",
+    school_location_id: undefined,
     description: "",
     comment: "",
   });
@@ -189,7 +189,7 @@ export function HomePage() {
         schedule_day: "",
         schedule_time: "",
         schedule_duration: 90,
-        school_location: "",
+        school_location_id: undefined,
         description: "",
         comment: "",
       });
@@ -276,7 +276,7 @@ export function HomePage() {
       return false;
     }
     if (selectedLocations.length > 0) {
-      if (!group.school_location || !selectedLocations.includes(group.school_location)) {
+      if (!group.location?.id || !selectedLocations.includes(group.location.id)) {
         return false;
       }
     }
@@ -289,9 +289,9 @@ export function HomePage() {
   });
 
   // Get unique locations from groups
-  const uniqueLocations = Array.from(
-    new Set(groups.map((g) => g.school_location).filter((l): l is string => !!l))
-  ).sort();
+  const uniqueLocations = locations.filter(loc =>
+    groups.some(g => g.location?.id === loc.id)
+  );
 
   const hasActiveFilters = selectedSubjects.length > 0 || selectedTeachers.length > 0 || selectedLocations.length > 0 || selectedExamTypes.length > 0;
 
@@ -534,9 +534,9 @@ export function HomePage() {
                     )}
                   </div>
                 </div>
-                {group.school_location && (
+                {group.location && (
                   <p className="text-sm text-slate-600">
-                    Школа: {group.school_location}
+                    Филиал: {group.location.name}
                   </p>
                 )}
               </div>
@@ -714,23 +714,23 @@ export function HomePage() {
                             </div>
                             <div className="space-y-2 max-h-64 overflow-y-auto">
                               {uniqueLocations.map((location) => (
-                                <div key={location} className="flex items-center space-x-2">
+                                <div key={location.id} className="flex items-center space-x-2">
                                   <Checkbox
-                                    id={`location-${location}`}
-                                    checked={selectedLocations.includes(location)}
+                                    id={`location-${location.id}`}
+                                    checked={selectedLocations.includes(location.id)}
                                     onCheckedChange={(checked) => {
                                       setSelectedLocations(
                                         checked
-                                          ? [...selectedLocations, location]
-                                          : selectedLocations.filter((l) => l !== location)
+                                          ? [...selectedLocations, location.id]
+                                          : selectedLocations.filter((l) => l !== location.id)
                                       );
                                     }}
                                   />
                                   <label
-                                    htmlFor={`location-${location}`}
+                                    htmlFor={`location-${location.id}`}
                                     className="text-sm font-normal cursor-pointer flex-1"
                                   >
-                                    {location}
+                                    {location.name}
                                   </label>
                                 </div>
                               ))}
@@ -777,8 +777,8 @@ export function HomePage() {
                       <TableCell>{group.studentsCount || 0}</TableCell>
                       <TableCell>{formatSchedules(group.schedules)}</TableCell>
                       <TableCell>
-                        {group.school_location || (
-                          <span className="text-slate-400">Не указана</span>
+                        {group.location?.name || (
+                          <span className="text-slate-400">Не указан</span>
                         )}
                       </TableCell>
                       {isAdmin && (
@@ -916,17 +916,18 @@ export function HomePage() {
               <div className="space-y-2">
                 <Label htmlFor="school_location">Филиал</Label>
                 <Select
-                  value={newGroup.school_location}
+                  value={newGroup.school_location_id || "none"}
                   onValueChange={(value) =>
-                    setNewGroup({ ...newGroup, school_location: value })
+                    setNewGroup({ ...newGroup, school_location_id: value === "none" ? undefined : value })
                   }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Выберите филиал" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">Не указан</SelectItem>
                     {locations.map((location) => (
-                      <SelectItem key={location.id} value={location.name}>
+                      <SelectItem key={location.id} value={location.id}>
                         {location.name}
                       </SelectItem>
                     ))}

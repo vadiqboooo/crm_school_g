@@ -35,6 +35,8 @@ import {
   Check,
   Loader2,
   ArrowUp,
+  FileText,
+  X as CloseIcon,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -59,7 +61,8 @@ import { useParams, useNavigate } from "react-router";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { StudentPerformanceTab } from "../components/StudentPerformanceTab";
-import type { Student, StudentCreate, StudentHistory, ParentRelation } from "../types/api";
+import { StudentReportsPanel } from "../components/StudentReportsPanel";
+import type { Student, StudentCreate, StudentHistory, ParentRelation, WeeklyReport } from "../types/api";
 
 const parentRelations: { value: ParentRelation; label: string }[] = [
   { value: "мама", label: "Мама" },
@@ -77,13 +80,16 @@ export function StudentsPage() {
   const isAdmin = user?.role === "admin";
 
   const [students, setStudents] = useState<Student[]>([]);
-  const [activeTab, setActiveTab] = useState("info");
+  const [activeTab, setActiveTab] = useState("info"); // Student detail tabs
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [studentHistory, setStudentHistory] = useState<StudentHistory[]>([]);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [showReportsView, setShowReportsView] = useState(false);
+  const [selectedStudentForReport, setSelectedStudentForReport] = useState<Student | null>(null);
+  const [studentLatestReports, setStudentLatestReports] = useState<Map<string, WeeklyReport>>(new Map());
 
   // Create student dialog
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -112,6 +118,13 @@ export function StudentsPage() {
   useEffect(() => {
     loadStudents();
   }, []);
+
+  // Load latest reports when entering reports view
+  useEffect(() => {
+    if (showReportsView) {
+      loadLatestReports();
+    }
+  }, [showReportsView]);
 
   // Track scroll position for "scroll to top" button
   useEffect(() => {
@@ -155,6 +168,21 @@ export function StudentsPage() {
       setStudentHistory(history);
     } catch (error) {
       console.error("Failed to load student history:", error);
+    }
+  };
+
+  const loadLatestReports = async () => {
+    try {
+      const reportsDict = await api.getAllStudentsLatestReports();
+      const reportsMap = new Map<string, WeeklyReport>();
+
+      Object.entries(reportsDict).forEach(([studentId, report]) => {
+        reportsMap.set(studentId, report);
+      });
+
+      setStudentLatestReports(reportsMap);
+    } catch (error) {
+      console.error("Failed to load latest reports:", error);
     }
   };
 
@@ -340,24 +368,71 @@ export function StudentsPage() {
 
   return (
     <div className="container mx-auto px-6 py-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-semibold text-slate-900">Студенты</h1>
-          <p className="text-slate-600 mt-1">
-            Управление студентами и их данными
-          </p>
+      {/* Sticky Header & Filters */}
+      {!selectedStudent && (
+        <div className="sticky top-0 z-20 bg-white pb-6 mb-6 -mx-6 px-6 pt-8 -mt-8">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-3xl font-semibold text-slate-900">Студенты</h1>
+              <p className="text-slate-600 mt-1">
+                Управление студентами и их данными
+              </p>
+            </div>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700 gap-2"
+              onClick={() => setCreateDialogOpen(true)}
+            >
+              <Plus className="w-4 h-4" />
+              Добавить студента
+            </Button>
+          </div>
+
+          {/* Filters */}
+          <Card>
+            <CardContent className="py-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="relative md:col-span-2">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                  <Input
+                    placeholder="Поиск по имени..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Все статусы" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Все статусы</SelectItem>
+                    <SelectItem value="active">Активные</SelectItem>
+                    <SelectItem value="inactive">Неактивные</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant={showReportsView ? "default" : "outline"}
+                  className={showReportsView ? "bg-blue-600 hover:bg-blue-700 gap-2" : "gap-2"}
+                  onClick={() => setShowReportsView(!showReportsView)}
+                >
+                  {showReportsView ? (
+                    <>
+                      <CloseIcon className="w-4 h-4" />
+                      Закрыть отчеты
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="w-4 h-4" />
+                      Отчеты
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
-        {!selectedStudent && (
-          <Button
-            className="bg-blue-600 hover:bg-blue-700 gap-2"
-            onClick={() => setCreateDialogOpen(true)}
-          >
-            <Plus className="w-4 h-4" />
-            Добавить студента
-          </Button>
-        )}
-      </div>
+      )}
 
       {selectedStudent ? (
         // Student Detail View
@@ -909,217 +984,232 @@ export function StudentsPage() {
           </Tabs>
         </div>
       ) : (
-        // Students Table
+        // Main Page
         <>
-          {/* Filters */}
-          <Card className="mb-6">
-            <CardContent className="py-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="relative md:col-span-2">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-                  <Input
-                    placeholder="Поиск по имени..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Все статусы" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Все статусы</SelectItem>
-                    <SelectItem value="active">Активные</SelectItem>
-                    <SelectItem value="inactive">Неактивные</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>ФИО</TableHead>
-                      <TableHead>Класс</TableHead>
-                      <TableHead>Школа</TableHead>
-                      <TableHead>Группы</TableHead>
-                      <TableHead>Телефон студента</TableHead>
-                      <TableHead>Телефоны родителей</TableHead>
-                      <TableHead>Telegram</TableHead>
-                      <TableHead>Статус</TableHead>
-                      <TableHead>Действия</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredStudents.map((student) => (
-                      <TableRow
-                        key={student.id}
-                        className="cursor-pointer"
-                        onClick={() => handleViewDetails(student)}
-                      >
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-semibold text-sm">
-                              {student.last_name.charAt(0)}
-                              {student.first_name.charAt(0)}
-                            </div>
-                            <div>
-                              <div className="font-medium text-slate-900">
-                                {student.last_name} {student.first_name}
-                              </div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {student.class_number ? (
-                            <span className="font-medium">{student.class_number}</span>
-                          ) : (
-                            <span className="text-slate-400">—</span>
+          <div className={`grid gap-6 transition-all duration-500 ease-out ${showReportsView ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            {/* Students Table */}
+            <div className="transition-all duration-500 ease-out">
+              <Card>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>ФИО</TableHead>
+                          {!showReportsView && (
+                            <>
+                              <TableHead>Класс</TableHead>
+                              <TableHead>Школа</TableHead>
+                              <TableHead>Группы</TableHead>
+                              <TableHead>Телефон студента</TableHead>
+                              <TableHead>Телефоны родителей</TableHead>
+                              <TableHead>Telegram</TableHead>
+                              <TableHead>Статус</TableHead>
+                            </>
                           )}
-                        </TableCell>
-                        <TableCell>
-                          {student.current_school || (
-                            <span className="text-slate-400">Не указана</span>
+                          {showReportsView && (
+                            <TableHead className="w-32 text-center">Отчет</TableHead>
                           )}
-                        </TableCell>
-                        <TableCell>
-                          {student.groups && student.groups.length > 0 ? (
-                            <HoverCard>
-                              <HoverCardTrigger asChild>
-                                <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-800 font-semibold text-sm cursor-pointer hover:bg-blue-200 transition-colors">
-                                  {student.groups.length}
+                          <TableHead>Действия</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredStudents.map((student) => (
+                          <TableRow
+                            key={student.id}
+                            className={`cursor-pointer transition-colors ${
+                              showReportsView && selectedStudentForReport?.id === student.id
+                                ? "bg-blue-50 hover:bg-blue-100"
+                                : "hover:bg-slate-50"
+                            }`}
+                            onClick={() => showReportsView ? setSelectedStudentForReport(student) : handleViewDetails(student)}
+                          >
+                            <TableCell className="py-2">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-semibold text-sm">
+                                  {student.last_name.charAt(0)}
+                                  {student.first_name.charAt(0)}
                                 </div>
-                              </HoverCardTrigger>
-                              <HoverCardContent className="w-64" align="start">
-                                <div className="space-y-2">
-                                  <h4 className="font-semibold text-sm text-slate-900">
-                                    Группы студента
-                                  </h4>
-                                  <div className="flex flex-col gap-2">
-                                    {student.groups.map((group) => (
-                                      <div
-                                        key={group.id}
-                                        className="flex items-center gap-2 text-sm"
-                                      >
-                                        <Badge className="bg-blue-600">
-                                          {group.name}
-                                        </Badge>
-                                        {group.school_location && (
-                                          <span className="text-xs text-slate-500">
-                                            {group.school_location}
-                                          </span>
-                                        )}
-                                      </div>
-                                    ))}
+                                <div>
+                                  <div className="font-medium text-slate-900">
+                                    {student.last_name} {student.first_name}
                                   </div>
                                 </div>
-                              </HoverCardContent>
-                            </HoverCard>
-                          ) : (
-                            <span className="text-sm text-slate-400">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {student.phone ? (
-                            <div className="flex items-center gap-2 text-sm text-slate-900">
-                              <Phone className="w-4 h-4 text-slate-400" />
-                              {student.phone}
-                            </div>
-                          ) : (
-                            <span className="text-sm text-slate-400">Нет</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            {student.parent_contacts.length > 0 ? (
-                              student.parent_contacts.map((parent) => (
-                                <div
-                                  key={parent.id}
-                                  className="flex items-center gap-2 text-sm"
+                              </div>
+                            </TableCell>
+                            {!showReportsView && (
+                              <>
+                                <TableCell>
+                                  {student.class_number ? (
+                                    <span className="font-medium">{student.class_number}</span>
+                                  ) : (
+                                    <span className="text-slate-400">—</span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {student.current_school || (
+                                    <span className="text-slate-400">Не указана</span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {student.groups && student.groups.length > 0 ? (
+                                    <HoverCard>
+                                      <HoverCardTrigger asChild>
+                                        <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-800 font-semibold text-sm cursor-pointer hover:bg-blue-200 transition-colors">
+                                          {student.groups.length}
+                                        </div>
+                                      </HoverCardTrigger>
+                                      <HoverCardContent className="w-64" align="start">
+                                        <div className="space-y-2">
+                                          <h4 className="font-semibold text-sm text-slate-900">
+                                            Группы студента
+                                          </h4>
+                                          <div className="flex flex-col gap-2">
+                                            {student.groups.map((group) => (
+                                              <div
+                                                key={group.id}
+                                                className="flex items-center gap-2 text-sm"
+                                              >
+                                                <Badge className="bg-blue-600">
+                                                  {group.name}
+                                                </Badge>
+                                                {group.school_location && (
+                                                  <span className="text-xs text-slate-500">
+                                                    {group.school_location}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      </HoverCardContent>
+                                    </HoverCard>
+                                  ) : (
+                                    <span className="text-sm text-slate-400">—</span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {student.phone ? (
+                                    <div className="flex items-center gap-2 text-sm text-slate-900">
+                                      <Phone className="w-4 h-4 text-slate-400" />
+                                      {student.phone}
+                                    </div>
+                                  ) : (
+                                    <span className="text-sm text-slate-400">Нет</span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="space-y-1">
+                                    {student.parent_contacts.length > 0 ? (
+                                      student.parent_contacts.map((parent) => (
+                                        <div
+                                          key={parent.id}
+                                          className="flex items-center gap-2 text-sm"
+                                        >
+                                          <Phone className="w-3 h-3 text-slate-400" />
+                                          <span className="text-slate-600">
+                                            {parent.phone}
+                                          </span>
+                                          <span className="text-xs text-slate-400">
+                                            ({parent.relation})
+                                          </span>
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <span className="text-sm text-slate-400">
+                                        Нет контактов
+                                      </span>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    {student.telegram_id ? (
+                                      <Badge className="bg-green-100 text-green-700 gap-1">
+                                        <MessageCircle className="w-3 h-3" />
+                                        Привязан
+                                      </Badge>
+                                    ) : (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-slate-500 gap-1"
+                                      >
+                                        <MessageCircle className="w-3 h-3" />
+                                        Нет
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge
+                                    className={
+                                      student.status === "active"
+                                        ? "bg-green-100 text-green-800"
+                                        : "bg-slate-100 text-slate-800"
+                                    }
+                                  >
+                                    {student.status === "active"
+                                      ? "Активен"
+                                      : "Неактивен"}
+                                  </Badge>
+                                </TableCell>
+                              </>
+                            )}
+                            {showReportsView && (
+                              <TableCell className="py-2 text-center">
+                                {(() => {
+                                  const latestReport = studentLatestReports.get(student.id);
+                                  if (latestReport) {
+                                    return latestReport.is_approved ? (
+                                      <Check className="w-5 h-5 text-green-600 inline-block" />
+                                    ) : (
+                                      <CloseIcon className="w-5 h-5 text-slate-400 inline-block" />
+                                    );
+                                  }
+                                  return <span className="text-xs text-slate-400">Нет</span>;
+                                })()}
+                              </TableCell>
+                            )}
+                            <TableCell>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger
+                                  asChild
+                                  onClick={(e) => e.stopPropagation()}
                                 >
-                                  <Phone className="w-3 h-3 text-slate-400" />
-                                  <span className="text-slate-600">
-                                    {parent.phone}
-                                  </span>
-                                  <span className="text-xs text-slate-400">
-                                    ({parent.relation})
-                                  </span>
-                                </div>
-                              ))
-                            ) : (
-                              <span className="text-sm text-slate-400">
-                                Нет контактов
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {student.telegram_id ? (
-                              <Badge className="bg-green-100 text-green-700 gap-1">
-                                <MessageCircle className="w-3 h-3" />
-                                Привязан
-                              </Badge>
-                            ) : (
-                              <Badge
-                                variant="outline"
-                                className="text-slate-500 gap-1"
-                              >
-                                <MessageCircle className="w-3 h-3" />
-                                Нет
-                              </Badge>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            className={
-                              student.status === "active"
-                                ? "bg-green-100 text-green-800"
-                                : "bg-slate-100 text-slate-800"
-                            }
-                          >
-                            {student.status === "active"
-                              ? "Активен"
-                              : "Неактивен"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              asChild
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <Button variant="ghost" size="sm">
-                                <MoreVertical className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                className="gap-2 text-red-600"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteStudent(student.id);
-                                }}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                                Удалить
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                                  <Button variant="ghost" size="sm">
+                                    <MoreVertical className="w-4 h-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
+                                    className="gap-2 text-red-600"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteStudent(student.id);
+                                    }}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                    Удалить
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Reports Panel - Slides in from right */}
+            {showReportsView && (
+              <div className="col-span-1 animate-in slide-in-from-right duration-500 ease-out">
+                <StudentReportsPanel selectedStudent={selectedStudentForReport} />
               </div>
-            </CardContent>
-          </Card>
+            )}
+          </div>
         </>
       )}
 

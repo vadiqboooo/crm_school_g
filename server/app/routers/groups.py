@@ -15,7 +15,7 @@ from app.models.lesson import Lesson
 from app.models.student import Student, StudentHistory, HistoryEventType
 from app.schemas.group import GroupCreate, GroupUpdate, GroupResponse, GroupStudentAdd, GroupStudentResponse
 from app.schemas.lesson import LessonResponse
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, get_manager_location_id
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
@@ -29,17 +29,23 @@ class GenerateLessonsRequest(BaseModel):
 async def list_groups(
     db: AsyncSession = Depends(get_db),
     current_user: Employee = Depends(get_current_user),
+    manager_location_id: Optional[UUID] = Depends(get_manager_location_id),
 ):
     query = select(Group).options(
         selectinload(Group.subject),
         selectinload(Group.teacher),
         selectinload(Group.group_students).selectinload(GroupStudent.student),
-        selectinload(Group.schedules)
+        selectinload(Group.schedules),
+        selectinload(Group.location)
     )
 
     # Если пользователь - учитель (не админ), показываем только его группы
     if current_user.role == "teacher":
         query = query.where(Group.teacher_id == current_user.id)
+
+    # Если пользователь - менеджер, показываем только группы его филиала
+    elif manager_location_id is not None:
+        query = query.where(Group.school_location_id == manager_location_id)
 
     query = query.order_by(Group.name)
     result = await db.execute(query)
@@ -68,7 +74,8 @@ async def list_groups(
             "schedule_duration": group.schedule_duration,
             "schedules": group.schedules,
             "start_date": group.start_date,
-            "school_location": group.school_location,
+            "school_location_id": group.school_location_id,
+            "location": group.location,
             "description": group.description,
             "comment": group.comment,
             "created_at": group.created_at,
@@ -96,6 +103,7 @@ async def get_group(
     group_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: Employee = Depends(get_current_user),
+    manager_location_id: Optional[UUID] = Depends(get_manager_location_id),
 ):
     result = await db.execute(
         select(Group)
@@ -103,7 +111,8 @@ async def get_group(
             selectinload(Group.subject),
             selectinload(Group.teacher),
             selectinload(Group.group_students).selectinload(GroupStudent.student),
-            selectinload(Group.schedules)
+            selectinload(Group.schedules),
+            selectinload(Group.location)
         )
         .where(Group.id == group_id)
     )
@@ -113,6 +122,10 @@ async def get_group(
 
     # Если пользователь - учитель (не админ), проверяем что это его группа
     if current_user.role == "teacher" and group.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Если пользователь - менеджер, проверяем что группа относится к его филиалу
+    if manager_location_id is not None and group.school_location_id != manager_location_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Filter out archived students
@@ -137,14 +150,13 @@ async def get_group(
         "schedule_duration": group.schedule_duration,
         "schedules": group.schedules,
         "start_date": group.start_date,
-        "school_location": group.school_location,
+        "school_location_id": group.school_location_id,
+        "location": group.location,
         "description": group.description,
         "comment": group.comment,
         "created_at": group.created_at,
         "students": active_students,
     }
-
-    return group
 
 
 @router.patch("/{group_id}", response_model=GroupResponse)
@@ -160,7 +172,8 @@ async def update_group(
             selectinload(Group.subject),
             selectinload(Group.teacher),
             selectinload(Group.students),
-            selectinload(Group.schedules)
+            selectinload(Group.schedules),
+            selectinload(Group.location)
         )
         .where(Group.id == group_id)
     )
@@ -172,11 +185,13 @@ async def update_group(
     if current_user.role == "teacher" and group.teacher_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    for field, value in data.model_dump(exclude_unset=True).items():
+    # Use exclude_none=False to include explicitly set None values
+    update_data = data.model_dump(exclude_unset=True, exclude_none=False)
+    for field, value in update_data.items():
         setattr(group, field, value)
 
     await db.commit()
-    await db.refresh(group, ["subject", "teacher", "students", "schedules"])
+    await db.refresh(group, ["subject", "teacher", "students", "schedules", "location"])
     return group
 
 

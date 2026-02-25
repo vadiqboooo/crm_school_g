@@ -8,6 +8,7 @@ import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { FinancesPage } from "./pages/FinancesPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { ReportFormPage } from "./pages/ReportFormPage";
+import { TasksPage } from "./pages/TasksPage";
 import { LoginPage } from "./pages/LoginPage";
 import { Layout } from "./components/Layout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -68,6 +69,10 @@ export const router = createBrowserRouter([
       {
         path: "reports/new",
         Component: ReportFormPage,
+      },
+      {
+        path: "tasks",
+        Component: TasksPage,
       },
     ],
   },

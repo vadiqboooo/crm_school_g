@@ -63,7 +63,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
     teacher_id: group.teacher.id,
     level: group.level || "",
     description: group.description || "",
-    school_location: group.school_location || "",
+    school_location_id: group.school_location_id || undefined,
   });
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [teachers, setTeachers] = useState<User[]>([]);
@@ -125,7 +125,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
       teacher_id: group.teacher.id,
       level: group.level || "",
       description: group.description || "",
-      school_location: group.school_location || "",
+      school_location_id: group.school_location_id || undefined,
     });
     setIsEditMode(true);
   };
@@ -432,21 +432,21 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                   </label>
                   {isEditMode ? (
                     <Select
-                      value={editFormData.school_location || "_none_"}
+                      value={editFormData.school_location_id || "none"}
                       onValueChange={(value) =>
                         setEditFormData({
                           ...editFormData,
-                          school_location: value === "_none_" ? "" : value
+                          school_location_id: value === "none" ? undefined : value
                         })
                       }
                     >
                       <SelectTrigger className="mt-2">
-                        <SelectValue placeholder="Выберите школу" />
+                        <SelectValue placeholder="Выберите филиал" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="_none_">Не указана</SelectItem>
+                        <SelectItem value="none">Не указан</SelectItem>
                         {schoolLocations.map((location) => (
-                          <SelectItem key={location.id} value={location.name}>
+                          <SelectItem key={location.id} value={location.id}>
                             {location.name}
                           </SelectItem>
                         ))}
@@ -454,8 +454,8 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                     </Select>
                   ) : (
                     <p className="mt-1 text-slate-900">
-                      {group.school_location || (
-                        <span className="text-slate-500">Не указана</span>
+                      {group.location?.name || (
+                        <span className="text-slate-500">Не указан</span>
                       )}
                     </p>
                   )}

@@ -51,6 +51,7 @@ class DailyReportCreate(BaseModel):
 
 class DailyReportUpdate(BaseModel):
     start_time: Optional[time_type] = None
+    end_time: Optional[time_type] = None
     lead_calls: Optional[int] = None
     lead_social: Optional[int] = None
     lead_website: Optional[int] = None
@@ -65,11 +66,64 @@ class DailyReportUpdate(BaseModel):
     status: Optional[ReportStatus] = None
 
 
+class EmployeeInfo(BaseModel):
+    """Basic employee info for report response"""
+    id: UUID
+    first_name: str
+    last_name: str
+    email: str
+
+    model_config = {"from_attributes": True}
+
+
+class AssigneeInfo(BaseModel):
+    """Basic employee info for task assignee"""
+    id: UUID
+    first_name: str
+    last_name: str
+    email: str
+
+    model_config = {"from_attributes": True}
+
+
+class TaskCreate(BaseModel):
+    report_id: Optional[UUID] = None
+    title: str
+    description: Optional[str] = None
+    deadline: Optional[str] = None
+    status: TaskStatus = TaskStatus.new
+    assigned_to: Optional[UUID] = None
+
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    deadline: Optional[str] = None
+    status: Optional[TaskStatus] = None
+    assigned_to: Optional[UUID] = None
+
+
+class TaskResponse(BaseModel):
+    id: UUID
+    report_id: Optional[UUID]
+    title: str
+    description: Optional[str]
+    deadline: Optional[str]
+    status: TaskStatus
+    assigned_to: Optional[UUID]
+    assignee: Optional[AssigneeInfo] = None
+    created_at: datetime_type
+
+    model_config = {"from_attributes": True}
+
+
 class DailyReportResponse(BaseModel):
     id: UUID
     employee_id: UUID
+    employee: Optional[EmployeeInfo] = None
     date: date_type
     start_time: Optional[time_type]
+    end_time: Optional[time_type]
     lead_calls: int
     lead_social: int
     lead_website: int
@@ -85,35 +139,14 @@ class DailyReportResponse(BaseModel):
     created_at: datetime_type
     churn_students: list[ChurnStudentResponse] = []
     notified_students: list[NotifiedStudentResponse] = []
+    tasks: list[TaskResponse] = []
 
     model_config = {"from_attributes": True}
 
 
-class TaskCreate(BaseModel):
-    report_id: Optional[UUID] = None
-    title: str
-    description: Optional[str] = None
-    deadline: Optional[str] = None
-    status: TaskStatus = TaskStatus.new
-
-
-class TaskUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    deadline: Optional[str] = None
-    status: Optional[TaskStatus] = None
-
-
-class TaskResponse(BaseModel):
-    id: UUID
-    report_id: Optional[UUID]
-    title: str
-    description: Optional[str]
-    deadline: Optional[str]
-    status: TaskStatus
-    created_at: datetime_type
-
-    model_config = {"from_attributes": True}
+class WeeklyReportUpdate(BaseModel):
+    """Схема для обновления недельного репорта."""
+    ai_report: str
 
 
 class WeeklyReportResponse(BaseModel):
@@ -129,6 +162,7 @@ class WeeklyReportResponse(BaseModel):
     homework_completed: int
     homework_total: int
     ai_report: str
+    is_approved: bool
     created_at: datetime_type
 
     model_config = {"from_attributes": True}

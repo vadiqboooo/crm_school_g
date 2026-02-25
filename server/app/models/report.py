@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime, date, time
 
-from sqlalchemy import String, Integer, Text, Numeric, Date, Time, DateTime, ForeignKey, Enum as SAEnum
+from sqlalchemy import String, Integer, Text, Numeric, Date, Time, DateTime, Boolean, ForeignKey, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -28,6 +28,7 @@ class DailyReport(Base):
     employee_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id"), nullable=False)
     date: Mapped[date] = mapped_column(Date, nullable=False)
     start_time: Mapped[time | None] = mapped_column(Time)
+    end_time: Mapped[time | None] = mapped_column(Time)
     lead_calls: Mapped[int] = mapped_column(Integer, default=0)
     lead_social: Mapped[int] = mapped_column(Integer, default=0)
     lead_website: Mapped[int] = mapped_column(Integer, default=0)
@@ -78,9 +79,11 @@ class Task(Base):
     description: Mapped[str | None] = mapped_column(Text)
     deadline: Mapped[str | None] = mapped_column(String(100))
     status: Mapped[TaskStatus] = mapped_column(SAEnum(TaskStatus), default=TaskStatus.new)
+    assigned_to: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     report = relationship("DailyReport", back_populates="tasks")
+    assignee = relationship("Employee", foreign_keys=[assigned_to])
 
 
 class WeeklyReport(Base):
@@ -98,6 +101,7 @@ class WeeklyReport(Base):
     homework_completed: Mapped[int] = mapped_column(Integer, default=0)
     homework_total: Mapped[int] = mapped_column(Integer, default=0)
     ai_report: Mapped[str] = mapped_column(Text, nullable=False)
+    is_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     student = relationship("Student", back_populates="weekly_reports")

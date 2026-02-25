@@ -84,6 +84,7 @@ export function SchoolPage() {
     address: "",
     phone: "",
     description: "",
+    manager_id: undefined,
   });
 
   // Exam template dialog
@@ -347,6 +348,7 @@ export function SchoolPage() {
         address: "",
         phone: "",
         description: "",
+        manager_id: undefined,
       });
     } catch (error) {
       console.error("Failed to create location:", error);
@@ -365,6 +367,21 @@ export function SchoolPage() {
     } catch (error) {
       console.error("Failed to delete location:", error);
       alert("Ошибка при удалении филиала");
+    }
+  };
+
+  const handleUpdateLocationManager = async (locationId: string, managerId: string | undefined) => {
+    try {
+      // Use null to explicitly clear the manager, undefined would be ignored by JSON.stringify
+      const updatedLocation = await api.updateSchoolLocation(locationId, { manager_id: managerId === undefined ? null : managerId } as any);
+
+      // Update only the specific location in state instead of reloading all data
+      setLocations(prev => prev.map(loc =>
+        loc.id === locationId ? updatedLocation : loc
+      ));
+    } catch (error) {
+      console.error("Failed to update location manager:", error);
+      alert("Ошибка при назначении менеджера");
     }
   };
 
@@ -687,52 +704,86 @@ export function SchoolPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {locations.map((location) => (
-              <Card key={location.id} className="group">
-                <CardHeader className="flex flex-row items-start justify-between pb-2">
-                  <div>
-                    <CardTitle className="text-lg">{location.name}</CardTitle>
-                    {location.address && (
-                      <p className="text-sm text-slate-600 mt-1">{location.address}</p>
+            {locations.map((location) => {
+              const managers = teachers.filter(t => t.role === "manager");
+              return (
+                <Card key={location.id} className="group">
+                  <CardHeader className="flex flex-row items-start justify-between pb-2">
+                    <div>
+                      <CardTitle className="text-lg">{location.name}</CardTitle>
+                      {location.address && (
+                        <p className="text-sm text-slate-600 mt-1">{location.address}</p>
+                      )}
+                    </div>
+                    {isAdmin && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            className="gap-2 text-red-600"
+                            onClick={() => handleDeleteLocation(location.id)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Удалить
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     )}
-                  </div>
-                  {isAdmin && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {isAdmin && (
+                      <div className="space-y-2">
+                        <Label htmlFor={`manager-${location.id}`}>Менеджер филиала</Label>
+                        <Select
+                          value={location.manager_id || "none"}
+                          onValueChange={(value) =>
+                            handleUpdateLocationManager(
+                              location.id,
+                              value === "none" ? undefined : value
+                            )
+                          }
                         >
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          className="gap-2 text-red-600"
-                          onClick={() => handleDeleteLocation(location.id)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Удалить
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </CardHeader>
-                <CardContent>
-                  {location.phone && (
-                    <p className="text-sm text-slate-600 mb-1">
-                      <strong>Телефон:</strong> {location.phone}
-                    </p>
-                  )}
-                  {location.description && (
-                    <p className="text-sm text-slate-600">
-                      {location.description}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
+                          <SelectTrigger id={`manager-${location.id}`}>
+                            <SelectValue placeholder="Не назначен" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Не назначен</SelectItem>
+                            {managers.map((manager) => (
+                              <SelectItem key={manager.id} value={manager.id}>
+                                {manager.first_name} {manager.last_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {!isAdmin && location.manager && (
+                      <p className="text-sm text-slate-600">
+                        <strong>Менеджер:</strong> {location.manager.first_name} {location.manager.last_name}
+                      </p>
+                    )}
+                    {location.phone && (
+                      <p className="text-sm text-slate-600">
+                        <strong>Телефон:</strong> {location.phone}
+                      </p>
+                    )}
+                    {location.description && (
+                      <p className="text-sm text-slate-600">
+                        {location.description}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </TabsContent>
 
@@ -1202,6 +1253,33 @@ export function SchoolPage() {
                 placeholder="Филиал Центральный"
                 required
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="loc_manager">Менеджер филиала</Label>
+              <Select
+                value={newLocation.manager_id || "none"}
+                onValueChange={(value) =>
+                  setNewLocation({
+                    ...newLocation,
+                    manager_id: value === "none" ? undefined : value,
+                  })
+                }
+              >
+                <SelectTrigger id="loc_manager">
+                  <SelectValue placeholder="Не назначен" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Не назначен</SelectItem>
+                  {teachers
+                    .filter((t) => t.role === "manager")
+                    .map((manager) => (
+                      <SelectItem key={manager.id} value={manager.id}>
+                        {manager.first_name} {manager.last_name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">

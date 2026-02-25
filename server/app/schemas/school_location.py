@@ -1,6 +1,17 @@
 from uuid import UUID
 from datetime import datetime
 from pydantic import BaseModel
+from typing import Optional
+
+
+class ManagerInfo(BaseModel):
+    """Basic manager information for SchoolLocation response"""
+    id: UUID
+    first_name: str
+    last_name: str
+    email: str
+
+    model_config = {"from_attributes": True}
 
 
 class SchoolLocationBase(BaseModel):
@@ -11,7 +22,7 @@ class SchoolLocationBase(BaseModel):
 
 
 class SchoolLocationCreate(SchoolLocationBase):
-    pass
+    manager_id: UUID | None = None
 
 
 class SchoolLocationUpdate(BaseModel):
@@ -19,11 +30,13 @@ class SchoolLocationUpdate(BaseModel):
     address: str | None = None
     phone: str | None = None
     description: str | None = None
+    manager_id: UUID | None = None
 
 
 class SchoolLocationResponse(SchoolLocationBase):
     id: UUID
+    manager_id: UUID | None
+    manager: Optional[ManagerInfo] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}

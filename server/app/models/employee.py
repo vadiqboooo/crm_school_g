@@ -33,3 +33,4 @@ class Employee(Base):
     salaries = relationship("EmployeeSalary", back_populates="employee")
     daily_reports = relationship("DailyReport", back_populates="employee")
     created_weekly_reports = relationship("WeeklyReport", back_populates="creator")
+    managed_location = relationship("SchoolLocation", back_populates="manager", uselist=False)

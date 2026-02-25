@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.school_location import SchoolLocation
@@ -19,7 +20,9 @@ async def list_school_locations(
     _: Employee = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(SchoolLocation).order_by(SchoolLocation.name)
+        select(SchoolLocation)
+        .options(selectinload(SchoolLocation.manager))
+        .order_by(SchoolLocation.name)
     )
     return result.scalars().all()
 
@@ -33,7 +36,7 @@ async def create_school_location(
     location = SchoolLocation(**data.model_dump())
     db.add(location)
     await db.commit()
-    await db.refresh(location)
+    await db.refresh(location, attribute_names=["manager"])
     return location
 
 
@@ -44,7 +47,9 @@ async def get_school_location(
     _: Employee = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(SchoolLocation).where(SchoolLocation.id == location_id)
+        select(SchoolLocation)
+        .options(selectinload(SchoolLocation.manager))
+        .where(SchoolLocation.id == location_id)
     )
     location = result.scalar_one_or_none()
     if not location:
@@ -60,17 +65,21 @@ async def update_school_location(
     _: Employee = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(SchoolLocation).where(SchoolLocation.id == location_id)
+        select(SchoolLocation)
+        .options(selectinload(SchoolLocation.manager))
+        .where(SchoolLocation.id == location_id)
     )
     location = result.scalar_one_or_none()
     if not location:
         raise HTTPException(status_code=404, detail="School location not found")
 
-    for field, value in data.model_dump(exclude_unset=True).items():
+    # Use exclude_none=False to include explicitly set None values
+    update_data = data.model_dump(exclude_unset=True, exclude_none=False)
+    for field, value in update_data.items():
         setattr(location, field, value)
 
     await db.commit()
-    await db.refresh(location)
+    await db.refresh(location, attribute_names=["manager"])
     return location
 
 

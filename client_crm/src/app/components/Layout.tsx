@@ -1,9 +1,11 @@
 import { Outlet, useLocation, Link, useNavigate } from "react-router";
-import { Sparkles, Users, GraduationCap, School, BarChart3, Wallet, ClipboardList, LogOut, FileText, ChevronLeft, ChevronRight } from "lucide-react";
+import { Sparkles, Users, GraduationCap, School, BarChart3, Wallet, ClipboardList, LogOut, FileText, ChevronLeft, ChevronRight, CheckSquare } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { useAuth } from "../contexts/AuthContext";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useTasksWebSocket } from "../hooks/useTasksWebSocket";
+import { showTaskNotification, initializeAudio } from "../utils/notifications";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,8 +22,10 @@ export function Layout() {
   const navigate = useNavigate();
   const isAdmin = user?.role === "admin";
   const isTeacher = user?.role === "teacher";
+  const isManager = user?.role === "manager";
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [uncompletedLessonsCount, setUncompletedLessonsCount] = useState(0);
+  const [lastReportsUrl, setLastReportsUrl] = useState("/reports");
 
   const adminNavItems = [
     { path: "/", icon: Users, label: "Группы" },
@@ -31,6 +35,14 @@ export function Layout() {
     { path: "/analytics", icon: BarChart3, label: "Аналитика" },
     { path: "/finances", icon: Wallet, label: "Финансы" },
     { path: "/reports", icon: ClipboardList, label: "Отчеты" },
+    { path: "/tasks", icon: CheckSquare, label: "Задачи" },
+  ];
+
+  const managerNavItems = [
+    { path: "/", icon: Users, label: "Группы" },
+    { path: "/students", icon: GraduationCap, label: "Студенты" },
+    { path: "/exams", icon: FileText, label: "Экзамены" },
+    { path: "/reports", icon: ClipboardList, label: "Отчеты" },
   ];
 
   const teacherNavItems = [
@@ -38,7 +50,57 @@ export function Layout() {
     { path: "/exams", icon: FileText, label: "Экзамены" },
   ];
 
-  const navItems = isAdmin ? adminNavItems : teacherNavItems;
+  const navItems = isAdmin ? adminNavItems : isManager ? managerNavItems : teacherNavItems;
+
+  // Track last reports URL to restore navigation state
+  useEffect(() => {
+    if (location.pathname.startsWith("/reports")) {
+      setLastReportsUrl(location.pathname);
+    }
+  }, [location.pathname]);
+
+  // Request notification permission for managers
+  useEffect(() => {
+    if (!isManager) return;
+
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, [isManager]);
+
+  // Initialize audio on first user interaction
+  useEffect(() => {
+    if (!isManager) return;
+
+    const handleFirstInteraction = () => {
+      initializeAudio();
+      // Remove listeners after first interaction
+      document.removeEventListener("click", handleFirstInteraction);
+      document.removeEventListener("keydown", handleFirstInteraction);
+    };
+
+    document.addEventListener("click", handleFirstInteraction);
+    document.addEventListener("keydown", handleFirstInteraction);
+
+    return () => {
+      document.removeEventListener("click", handleFirstInteraction);
+      document.removeEventListener("keydown", handleFirstInteraction);
+    };
+  }, [isManager]);
+
+  // Global WebSocket listener for task notifications (only for managers)
+  const handleGlobalTaskUpdate = useCallback((message: any) => {
+    // Only process for managers
+    if (!isManager) return;
+
+    // Only show notifications for new tasks assigned to the current manager
+    if (message.action === "create" && message.task?.assigned_to === user?.id) {
+      showTaskNotification(message.task.title);
+    }
+  }, [user?.id, isManager]);
+
+  // Connect to WebSocket (callback filters by manager role)
+  useTasksWebSocket(handleGlobalTaskUpdate);
 
   // Update document title based on current route
   useEffect(() => {
@@ -132,8 +194,11 @@ export function Layout() {
               (item.path === "/reports" && location.pathname.startsWith("/reports")) ||
               (item.path === "/exams" && location.pathname.startsWith("/exams"));
 
+            // Special handling for reports to maintain navigation state
+            const navigateTo = item.path === "/reports" ? lastReportsUrl : item.path;
+
             return (
-              <Link key={item.path} to={item.path} className="relative">
+              <Link key={item.path} to={navigateTo} className="relative">
                 <Button
                   variant="ghost"
                   className={`w-full justify-start gap-3 h-11 ${

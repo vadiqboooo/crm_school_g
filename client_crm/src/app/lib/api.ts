@@ -27,6 +27,12 @@ import type {
   ExamResultCreate,
   ExamResultUpdate,
   WeeklyReport,
+  DailyReport,
+  DailyReportCreate,
+  DailyReportUpdate,
+  Task,
+  TaskCreate,
+  TaskUpdate,
 } from "../types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -237,6 +243,32 @@ class ApiClient {
     return this.request(`/students/${studentId}/weekly-reports`);
   }
 
+  async updateWeeklyReport(
+    reportId: string,
+    data: { ai_report: string }
+  ): Promise<WeeklyReport> {
+    return this.request(`/students/weekly-reports/${reportId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async approveWeeklyReport(reportId: string): Promise<WeeklyReport> {
+    return this.request(`/students/weekly-reports/${reportId}/approve`, {
+      method: "POST",
+    });
+  }
+
+  async unapproveWeeklyReport(reportId: string): Promise<WeeklyReport> {
+    return this.request(`/students/weekly-reports/${reportId}/unapprove`, {
+      method: "POST",
+    });
+  }
+
+  async getAllStudentsLatestReports(): Promise<Record<string, WeeklyReport>> {
+    return this.request(`/students/weekly-reports/latest-all`);
+  }
+
   async deleteWeeklyReport(reportId: string): Promise<void> {
     return this.request(`/students/weekly-reports/${reportId}`, {
       method: "DELETE",
@@ -326,8 +358,9 @@ class ApiClient {
   }
 
   // Employee endpoints
-  async getEmployees(): Promise<import("../types/api").User[]> {
-    return this.request<import("../types/api").User[]>("/employees");
+  async getEmployees(roles?: string[]): Promise<import("../types/api").User[]> {
+    const params = roles ? `?roles=${roles.join(',')}` : '';
+    return this.request<import("../types/api").User[]>(`/employees${params}`);
   }
 
   async createEmployee(data: {
@@ -543,6 +576,70 @@ class ApiClient {
   async createExamFromTemplate(templateId: string, groupId: string): Promise<Exam> {
     return this.request<Exam>(`/exam-templates/${templateId}/use?group_id=${groupId}`, {
       method: "POST",
+    });
+  }
+
+  // --- Daily Reports ---
+
+  async getReports(): Promise<DailyReport[]> {
+    return this.request<DailyReport[]>("/reports");
+  }
+
+  async getReport(id: string): Promise<DailyReport> {
+    return this.request<DailyReport>(`/reports/${id}`);
+  }
+
+  async createReport(data: DailyReportCreate): Promise<DailyReport> {
+    return this.request<DailyReport>("/reports", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateReport(id: string, data: DailyReportUpdate): Promise<DailyReport> {
+    return this.request<DailyReport>(`/reports/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteReport(id: string): Promise<void> {
+    return this.request<void>(`/reports/${id}`, {
+      method: "DELETE",
+    });
+  }
+
+  // --- Tasks ---
+
+  async getReportTasks(reportId: string): Promise<Task[]> {
+    return this.request<Task[]>(`/reports/${reportId}/tasks`);
+  }
+
+  async getFilteredReportTasks(reportId: string): Promise<Task[]> {
+    return this.request<Task[]>(`/reports/daily/${reportId}/filtered-tasks`);
+  }
+
+  async getAllTasks(): Promise<Task[]> {
+    return this.request<Task[]>("/reports/tasks/all");
+  }
+
+  async createTask(data: TaskCreate): Promise<Task> {
+    return this.request<Task>("/reports/tasks", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateTask(id: string, data: TaskUpdate): Promise<Task> {
+    return this.request<Task>(`/reports/tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTask(id: string): Promise<void> {
+    return this.request<void>(`/reports/tasks/${id}`, {
+      method: "DELETE",
     });
   }
 }

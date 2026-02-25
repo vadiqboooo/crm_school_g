@@ -231,7 +231,12 @@ export interface Group {
   schedule_duration?: number; // Deprecated
   schedules: Schedule[]; // New field
   start_date?: string; // ISO date string
-  school_location?: string;
+  school_location_id?: string;
+  location?: {
+    id: string;
+    name: string;
+    address?: string;
+  };
   description?: string;
   comment?: string;
   created_at: string;
@@ -251,7 +256,7 @@ export interface GroupCreate {
   schedule_time?: string;
   schedule_duration?: number;
   start_date?: string;
-  school_location?: string;
+  school_location_id?: string;
   description?: string;
   comment?: string;
 }
@@ -265,7 +270,7 @@ export interface GroupUpdate {
   schedule_time?: string;
   schedule_duration?: number;
   start_date?: string;
-  school_location?: string;
+  school_location_id?: string;
   description?: string;
   comment?: string;
 }
@@ -385,6 +390,13 @@ export interface SchoolLocation {
   address?: string;
   phone?: string;
   description?: string;
+  manager_id?: string;
+  manager?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+  };
   created_at: string;
 }
 
@@ -393,6 +405,7 @@ export interface SchoolLocationCreate {
   address?: string;
   phone?: string;
   description?: string;
+  manager_id?: string;
 }
 
 export interface SchoolLocationUpdate {
@@ -400,6 +413,7 @@ export interface SchoolLocationUpdate {
   address?: string;
   phone?: string;
   description?: string;
+  manager_id?: string;
 }
 
 // Exam types
@@ -509,5 +523,130 @@ export interface WeeklyReport {
   homework_completed: number;
   homework_total: number;
   ai_report: string;
+  is_approved: boolean;
   created_at: string;
+}
+
+// Daily Report types
+export type ReportStatus = "draft" | "completed";
+export type TaskStatus = "new" | "in_progress" | "urgent" | "completed";
+
+export interface ReportChurnStudent {
+  id: string;
+  student_name?: string;
+  reason?: string;
+}
+
+export interface ReportChurnStudentCreate {
+  student_name?: string;
+  reason?: string;
+}
+
+export interface ReportNotifiedStudent {
+  id: string;
+  student_name?: string;
+}
+
+export interface ReportNotifiedStudentCreate {
+  student_name?: string;
+}
+
+export interface Task {
+  id: string;
+  report_id?: string;
+  title: string;
+  description?: string;
+  deadline?: string;
+  status: TaskStatus;
+  assigned_to?: string;
+  assignee?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+  };
+  created_at: string;
+}
+
+export interface TaskCreate {
+  report_id?: string;
+  title: string;
+  description?: string;
+  deadline?: string;
+  status?: TaskStatus;
+  assigned_to?: string;
+}
+
+export interface TaskUpdate {
+  title?: string;
+  description?: string;
+  deadline?: string;
+  status?: TaskStatus;
+  assigned_to?: string;
+}
+
+export interface DailyReport {
+  id: string;
+  employee_id: string;
+  employee?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+  };
+  date: string;
+  start_time?: string;
+  end_time?: string;
+  lead_calls: number;
+  lead_social: number;
+  lead_website: number;
+  trial_scheduled: number;
+  trial_attended: number;
+  cancellations?: string;
+  cash_income: number;
+  cashless_income: number;
+  water_balance?: number;
+  shopping_list?: string;
+  day_comment?: string;
+  status: ReportStatus;
+  created_at: string;
+  churn_students: ReportChurnStudent[];
+  notified_students: ReportNotifiedStudent[];
+  tasks: Task[];
+}
+
+export interface DailyReportCreate {
+  date: string;
+  start_time?: string;
+  lead_calls?: number;
+  lead_social?: number;
+  lead_website?: number;
+  trial_scheduled?: number;
+  trial_attended?: number;
+  cancellations?: string;
+  cash_income?: number;
+  cashless_income?: number;
+  water_balance?: number;
+  shopping_list?: string;
+  day_comment?: string;
+  status?: ReportStatus;
+  churn_students?: ReportChurnStudentCreate[];
+  notified_students?: ReportNotifiedStudentCreate[];
+}
+
+export interface DailyReportUpdate {
+  start_time?: string;
+  end_time?: string;
+  lead_calls?: number;
+  lead_social?: number;
+  lead_website?: number;
+  trial_scheduled?: number;
+  trial_attended?: number;
+  cancellations?: string;
+  cash_income?: number;
+  cashless_income?: number;
+  water_balance?: number;
+  shopping_list?: string;
+  day_comment?: string;
+  status?: ReportStatus;
 }

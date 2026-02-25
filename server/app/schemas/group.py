@@ -13,7 +13,7 @@ class GroupCreate(BaseModel):
     schedule_time: Optional[time_type] = None
     schedule_duration: Optional[int] = None
     start_date: Optional[date_type] = None
-    school_location: Optional[str] = None
+    school_location_id: Optional[UUID] = None
     description: Optional[str] = None
     comment: Optional[str] = None
 
@@ -27,7 +27,7 @@ class GroupUpdate(BaseModel):
     schedule_time: Optional[time_type] = None
     schedule_duration: Optional[int] = None
     start_date: Optional[date_type] = None
-    school_location: Optional[str] = None
+    school_location_id: Optional[UUID] = None
     description: Optional[str] = None
     comment: Optional[str] = None
 
@@ -45,6 +45,14 @@ class TeacherInGroup(BaseModel):
     id: UUID
     first_name: str
     last_name: str
+
+    model_config = {"from_attributes": True}
+
+
+class LocationInGroup(BaseModel):
+    id: UUID
+    name: str
+    address: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -77,7 +85,8 @@ class GroupResponse(BaseModel):
     schedule_duration: Optional[int]  # Deprecated
     schedules: list[ScheduleInGroup] = []  # New field
     start_date: Optional[date_type]
-    school_location: Optional[str]
+    school_location_id: Optional[UUID]
+    location: Optional[LocationInGroup] = None
     description: Optional[str]
     comment: Optional[str]
     created_at: datetime_type
