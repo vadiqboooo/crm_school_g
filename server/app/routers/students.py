@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
-from sqlalchemy import select
+from sqlalchemy import select, or_, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 import httpx
@@ -34,6 +34,7 @@ async def list_students(
     db: AsyncSession = Depends(get_db),
     _: Employee = Depends(get_current_user),
     manager_location_id: Optional[UUID] = Depends(get_manager_location_id),
+    all: bool = Query(False, description="Return all students regardless of location (for add-to-group search)"),
 ):
     # Build query with location filter if manager
     query = select(Student).options(
@@ -41,11 +42,26 @@ async def list_students(
         selectinload(Student.groups).selectinload(GroupStudent.group)
     )
 
-    # If manager, filter students by location through their groups
-    if manager_location_id is not None:
-        query = query.join(Student.groups).join(GroupStudent.group).where(
-            Group.school_location_id == manager_location_id
-        ).distinct()
+    # If manager and not requesting all students, filter by location
+    if manager_location_id is not None and not all:
+        # Students in at least one active group at manager's location
+        in_location = exists(
+            select(GroupStudent.id)
+            .join(Group, GroupStudent.group_id == Group.id)
+            .where(
+                GroupStudent.student_id == Student.id,
+                Group.school_location_id == manager_location_id,
+                GroupStudent.is_archived == False,
+            )
+        )
+        # Students without any active group associations
+        no_groups = ~exists(
+            select(GroupStudent.id).where(
+                GroupStudent.student_id == Student.id,
+                GroupStudent.is_archived == False,
+            )
+        )
+        query = query.where(or_(in_location, no_groups))
 
     result = await db.execute(query.order_by(Student.last_name))
     students = result.scalars().all()

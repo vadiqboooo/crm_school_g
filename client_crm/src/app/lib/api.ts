@@ -155,6 +155,10 @@ class ApiClient {
     return this.request<Student[]>("/students");
   }
 
+  async getAllStudents(): Promise<Student[]> {
+    return this.request<Student[]>("/students?all=true");
+  }
+
   async getStudent(id: string): Promise<Student> {
     return this.request<Student>(`/students/${id}`);
   }

@@ -84,7 +84,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
 
   const loadAllStudents = async () => {
     try {
-      const students = await api.getStudents();
+      const students = await api.getAllStudents();
       // Filter out students already in the group
       const availableStudents = students.filter(
         (student) => !group.students.some((gs) => gs.id === student.id)

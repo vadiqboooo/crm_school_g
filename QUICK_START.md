@@ -1,5 +1,7 @@
 # ⚡ Быстрый старт - CRM School
-
+docker exec -e
+  DATABASE_URL="postgresql+asyncpg://postgres:Cvdfer34@host.docker.internal:5432/crm_school"
+   crm_backend alembic upgrade head
 ## 🚀 Развертывание за 10 минут
 
 ### Шаг 1: Подготовка сервера (2 минуты)
