@@ -285,6 +285,39 @@ class ApiClient {
     });
   }
 
+  // Parent Feedback endpoints
+  async createParentFeedback(
+    studentId: string,
+    data: import("../types/api").ParentFeedbackCreate
+  ): Promise<import("../types/api").ParentFeedback> {
+    return this.request(`/students/${studentId}/parent-feedbacks`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getParentFeedbacks(
+    studentId: string
+  ): Promise<import("../types/api").ParentFeedback[]> {
+    return this.request(`/students/${studentId}/parent-feedbacks`);
+  }
+
+  async updateParentFeedback(
+    feedbackId: string,
+    data: import("../types/api").ParentFeedbackUpdate
+  ): Promise<import("../types/api").ParentFeedback> {
+    return this.request(`/students/parent-feedbacks/${feedbackId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteParentFeedback(feedbackId: string): Promise<void> {
+    return this.request(`/students/parent-feedbacks/${feedbackId}`, {
+      method: "DELETE",
+    });
+  }
+
   // Group endpoints
   async getGroups(): Promise<Group[]> {
     return this.request<Group[]>("/groups");
@@ -397,6 +430,14 @@ class ApiClient {
       method: "PATCH",
       body: JSON.stringify(data),
     });
+  }
+
+  async checkEmployeeDeletion(id: string): Promise<{
+    can_delete: boolean;
+    groups: Array<{ id: string; name: string }>;
+    groups_count: number;
+  }> {
+    return this.request(`/employees/${id}/deletion-check`);
   }
 
   async deleteEmployee(id: string): Promise<void> {

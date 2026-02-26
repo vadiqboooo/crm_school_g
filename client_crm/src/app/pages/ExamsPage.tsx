@@ -807,7 +807,11 @@ export function ExamsPage() {
                                             })()}
                                           </TableCell>
                                         <TableCell>
-                                          {result.added_by_employee ? (
+                                          {result.added_by_first_name && result.added_by_last_name ? (
+                                            <span className="text-sm text-slate-600">
+                                              {result.added_by_last_name} {result.added_by_first_name}
+                                            </span>
+                                          ) : result.added_by_employee ? (
                                             <span className="text-sm text-slate-600">
                                               {result.added_by_employee.last_name} {result.added_by_employee.first_name}
                                             </span>

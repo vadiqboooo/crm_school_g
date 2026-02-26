@@ -321,14 +321,32 @@ export function SchoolPage() {
   };
 
   const handleDeleteEmployee = async (id: string) => {
-    if (!confirm("Вы уверены, что хотите удалить сотрудника?")) return;
-
     try {
+      // First check if employee can be deleted
+      const check = await api.checkEmployeeDeletion(id);
+
+      if (!check.can_delete) {
+        const groupsList = check.groups.map(g => `  • ${g.name}`).join('\n');
+        alert(
+          `Невозможно удалить сотрудника.\n\n` +
+          `Он является преподавателем в следующих группах (${check.groups_count}):\n\n` +
+          `${groupsList}\n\n` +
+          `Сначала измените преподавателя в этих группах.`
+        );
+        return;
+      }
+
+      // If can delete, ask for confirmation
+      if (!confirm(
+        "Вы уверены, что хотите удалить сотрудника?\n\n" +
+        "Примечание: В экзаменах останется имя и фамилия проверяющего."
+      )) return;
+
       await api.deleteEmployee(id);
       await loadData();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to delete employee:", error);
-      alert("Ошибка при удалении сотрудника");
+      alert(error.message || "Ошибка при удалении сотрудника");
     }
   };
 

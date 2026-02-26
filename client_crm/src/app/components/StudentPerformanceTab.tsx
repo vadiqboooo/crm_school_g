@@ -5,10 +5,10 @@ import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "./ui/dialog";
 import { useState, useEffect, useMemo } from "react";
-import { Loader2, Calendar, FileText, Copy, Send, ChevronDown, ChevronUp, Trash2, MessageSquarePlus } from "lucide-react";
+import { Loader2, Calendar, FileText, Copy, Send, ChevronDown, ChevronUp, Trash2, MessageSquarePlus, Phone, MessageCircle, User, ThumbsUp, Minus, ThumbsDown } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
-import type { StudentPerformanceResponse, StudentPerformanceRecord, GroupInfo, WeeklyReport } from "../types/api";
+import type { StudentPerformanceResponse, StudentPerformanceRecord, GroupInfo, WeeklyReport, ParentFeedback, ContactType, ParentReaction } from "../types/api";
 
 interface StudentPerformanceTabProps {
   studentId: string;
@@ -49,21 +49,22 @@ export function StudentPerformanceTab({ studentId, studentGroups, studentName }:
   const [performanceData, setPerformanceData] = useState<StudentPerformanceResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [filterSubject, setFilterSubject] = useState<string>("all");
-  const [generatingReport, setGeneratingReport] = useState(false);
-  const [reportDays, setReportDays] = useState<number>(7);
-  const [reportsHistory, setReportsHistory] = useState<WeeklyReport[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [expandedReports, setExpandedReports] = useState<Set<string>>(new Set());
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
-  const [parentCommentDialogOpen, setParentCommentDialogOpen] = useState(false);
-  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
-  const [parentFeedback, setParentFeedback] = useState("");
-  const [parentReaction, setParentReaction] = useState("");
-  const [savingComment, setSavingComment] = useState(false);
+
+  // Parent Feedback state
+  const [parentFeedbacks, setParentFeedbacks] = useState<ParentFeedback[]>([]);
+  const [loadingFeedbacks, setLoadingFeedbacks] = useState(false);
+  const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
+  const [contactType, setContactType] = useState<ContactType>("call");
+  const [feedbackToParent, setFeedbackToParent] = useState("");
+  const [feedbackFromParent, setFeedbackFromParent] = useState("");
+  const [parentReaction, setParentReaction] = useState<ParentReaction | undefined>(undefined);
+  const [savingFeedback, setSavingFeedback] = useState(false);
+  const [expandedFeedbacks, setExpandedFeedbacks] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadPerformanceData();
-    loadReportsHistory(); // Загружаем историю сразу при загрузке компонента
+    loadParentFeedbacks();
   }, [studentId]);
 
   const loadPerformanceData = async () => {
@@ -79,49 +80,92 @@ export function StudentPerformanceTab({ studentId, studentGroups, studentName }:
     }
   };
 
-  const generateReport = async () => {
+  const loadParentFeedbacks = async () => {
     try {
-      setGeneratingReport(true);
-      await api.generateWeeklyReport(studentId, reportDays);
-      toast.success("Отчет успешно сгенерирован");
-      // Перезагрузить историю после создания нового репорта
-      const history = await api.getWeeklyReports(studentId);
-      setReportsHistory(history);
-      // Автоматически развернуть новый (первый) репорт
-      if (history.length > 0) {
-        setExpandedReports(new Set([history[0].id]));
-      }
+      setLoadingFeedbacks(true);
+      const feedbacks = await api.getParentFeedbacks(studentId);
+      setParentFeedbacks(feedbacks);
     } catch (err: any) {
-      console.error("Failed to generate report:", err);
-      toast.error(err.message || "Не удалось сгенерировать отчет");
+      console.error("Failed to load parent feedbacks:", err);
+      toast.error("Не удалось загрузить обратную связь");
     } finally {
-      setGeneratingReport(false);
+      setLoadingFeedbacks(false);
     }
   };
 
-  const loadReportsHistory = async () => {
-    try {
-      setLoadingHistory(true);
-      const history = await api.getWeeklyReports(studentId);
-      setReportsHistory(history);
-    } catch (err: any) {
-      console.error("Failed to load reports history:", err);
-      toast.error("Не удалось загрузить историю репортов");
-    } finally {
-      setLoadingHistory(false);
+  const openFeedbackDialog = () => {
+    setContactType("call");
+    setFeedbackToParent("");
+    setFeedbackFromParent("");
+    setParentReaction(undefined);
+    setFeedbackDialogOpen(true);
+  };
+
+  const getContactTypeLabel = (type: ContactType) => {
+    switch (type) {
+      case "call": return "Звонок";
+      case "telegram": return "Телеграм";
+      case "in_person": return "Лично";
     }
   };
 
-  const toggleReportExpanded = (reportId: string) => {
-    setExpandedReports(prev => {
+  const getParentReactionLabel = (reaction?: ParentReaction | null) => {
+    if (!reaction) return "—";
+    switch (reaction) {
+      case "positive": return "Положительная";
+      case "neutral": return "Нейтральная";
+      case "negative": return "Отрицательная";
+    }
+  };
+
+  const toggleFeedbackExpanded = (feedbackId: string) => {
+    setExpandedFeedbacks(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(reportId)) {
-        newSet.delete(reportId);
+      if (newSet.has(feedbackId)) {
+        newSet.delete(feedbackId);
       } else {
-        newSet.add(reportId);
+        newSet.add(feedbackId);
       }
       return newSet;
     });
+  };
+
+  const saveFeedback = async () => {
+    if (!feedbackToParent.trim()) {
+      toast.error("Заполните поле обратной связи");
+      return;
+    }
+
+    try {
+      setSavingFeedback(true);
+      await api.createParentFeedback(studentId, {
+        contact_type: contactType,
+        feedback_to_parent: feedbackToParent,
+        feedback_from_parent: feedbackFromParent || undefined,
+        parent_reaction: parentReaction,
+      });
+      toast.success("Обратная связь сохранена");
+      setFeedbackDialogOpen(false);
+      await loadParentFeedbacks();
+    } catch (err: any) {
+      console.error("Failed to save feedback:", err);
+      toast.error("Не удалось сохранить обратную связь");
+    } finally {
+      setSavingFeedback(false);
+    }
+  };
+
+  const deleteFeedback = async (feedbackId: string) => {
+    if (!confirm("Вы уверены, что хотите удалить эту обратную связь?")) return;
+
+    try {
+      await api.deleteParentFeedback(feedbackId);
+      toast.success("Обратная связь удалена");
+      await loadParentFeedbacks();
+    } catch (err: any) {
+      console.error("Failed to delete feedback:", err);
+      toast.error("Не удалось удалить обратную связь");
+    }
   };
 
   const toggleCommentExpanded = (lessonId: string) => {
@@ -148,55 +192,6 @@ export function StudentPerformanceTab({ studentId, studentGroups, studentName }:
     }
 
     return comment.substring(0, maxLength) + '...';
-  };
-
-  const copyReportToClipboard = async (reportText: string) => {
-    try {
-      await navigator.clipboard.writeText(reportText);
-      toast.success("Отчет скопирован в буфер обмена");
-    } catch (err) {
-      toast.error("Не удалось скопировать отчет");
-    }
-  };
-
-  const openParentCommentDialog = (report: WeeklyReport, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSelectedReportId(report.id);
-    setParentFeedback(report.parent_feedback || "");
-    setParentReaction(report.parent_reaction || "");
-    setParentCommentDialogOpen(true);
-  };
-
-  const saveParentComment = async () => {
-    if (!selectedReportId) return;
-    try {
-      setSavingComment(true);
-      const updated = await api.updateWeeklyReportParentComment(selectedReportId, {
-        parent_feedback: parentFeedback,
-        parent_reaction: parentReaction,
-      });
-      setReportsHistory(prev => prev.map(r => r.id === selectedReportId ? updated : r));
-      setParentCommentDialogOpen(false);
-      toast.success("Комментарий сохранён");
-    } catch (err) {
-      toast.error("Не удалось сохранить комментарий");
-    } finally {
-      setSavingComment(false);
-    }
-  };
-
-  const deleteReport = async (reportId: string) => {
-    if (!confirm("Вы уверены, что хотите удалить этот отчет?")) return;
-
-    try {
-      await api.deleteWeeklyReport(reportId);
-      toast.success("Отчет успешно удален");
-      // Обновить список репортов
-      await loadReportsHistory();
-    } catch (err: any) {
-      console.error("Failed to delete report:", err);
-      toast.error("Не удалось удалить отчет");
-    }
   };
 
   // Get available subjects from performance data
@@ -491,208 +486,256 @@ export function StudentPerformanceTab({ studentId, studentGroups, studentName }:
         )}
       </div>
 
-      {/* Weekly Report Section - Всегда показываем таблицу */}
+      {/* Parent Feedback Section */}
       <div className="bg-white border border-[#E8E8E8] rounded-lg overflow-hidden">
         <div className="border-b border-[#E8E8E8] px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <FileText className="w-[18px] h-[18px] text-[#E42313]" />
+            <MessageSquarePlus className="w-[18px] h-[18px] text-[#E42313]" />
             <div className="text-lg font-semibold text-[#0D0D0D]" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-              Еженедельные отчеты для родителей
+              Обратная связь с родителями
             </div>
-            {reportsHistory.length > 0 && (
+            {parentFeedbacks.length > 0 && (
               <span className="bg-[#E8E8E8] text-[#0D0D0D] text-xs px-2 py-0.5 rounded">
-                {reportsHistory.length}
+                {parentFeedbacks.length}
               </span>
             )}
           </div>
-          <div className="flex items-center gap-3">
-            <div className="px-3 py-1.5 border border-[#E8E8E8] rounded text-xs text-[#7A7A7A]" style={{ fontFamily: 'Inter, sans-serif' }}>
-              Период:
-            </div>
-            <Select
-              value={reportDays.toString()}
-              onValueChange={(value) => setReportDays(Number(value))}
-            >
-              <SelectTrigger className="w-[150px] h-10 bg-white border-[#E8E8E8]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="7">За 7 дней</SelectItem>
-                <SelectItem value="14">За 14 дней</SelectItem>
-                <SelectItem value="30">За 30 дней</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button
-              onClick={generateReport}
-              disabled={generatingReport}
-              className="bg-[#0D0D0D] hover:bg-[#000000] text-white px-5 py-2.5 h-auto font-medium text-[13px]"
-              style={{ fontFamily: 'Space Grotesk, sans-serif' }}
-            >
-              {generatingReport ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-                  Генерация...
-                </>
-              ) : (
-                <>
-                  <FileText className="w-3.5 h-3.5 mr-2" />
-                  Сгенерировать отчет
-                </>
-              )}
-            </Button>
-          </div>
+          <Button
+            onClick={openFeedbackDialog}
+            className="bg-[#0D0D0D] hover:bg-[#000000] text-white px-5 py-2.5 h-auto font-medium text-[13px]"
+            style={{ fontFamily: 'Space Grotesk, sans-serif' }}
+          >
+            <MessageSquarePlus className="w-3.5 h-3.5 mr-2" />
+            Добавить новую обратную связь
+          </Button>
         </div>
 
         <div className="p-6">
-          {loadingHistory ? (
+          {loadingFeedbacks ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-6 h-6 animate-spin text-[#7A7A7A]" />
             </div>
-          ) : reportsHistory.length === 0 ? (
+          ) : parentFeedbacks.length === 0 ? (
             <div className="text-center py-12 text-[#7A7A7A]">
-              <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">Репортов пока нет</p>
-              <p className="text-xs mt-1">Нажмите "Сгенерировать отчет" для создания первого отчета</p>
+              <MessageSquarePlus className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">Обратной связи пока нет</p>
+              <p className="text-xs mt-1">Нажмите "Добавить новую обратную связь" для создания первой записи</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {reportsHistory.map((report, index) => (
-                <div key={report.id} className="border border-[#E8E8E8] rounded-lg overflow-hidden">
-                  <div
-                    className="px-4 py-3 bg-[#FAFAFA] cursor-pointer hover:bg-[#F0F0F0] transition-colors flex items-center justify-between"
-                    onClick={() => toggleReportExpanded(report.id)}
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <div className="text-sm font-medium text-[#0D0D0D]" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-                          📅 {formatDate(report.period_start)} — {formatDate(report.period_end)}
+              {parentFeedbacks.map((feedback) => {
+                const isExpanded = expandedFeedbacks.has(feedback.id);
+                const createdDate = new Date(feedback.created_at);
+                const now = new Date();
+                const diffMs = now.getTime() - createdDate.getTime();
+                const diffMins = Math.floor(diffMs / 60000);
+                const diffHours = Math.floor(diffMs / 3600000);
+                const diffDays = Math.floor(diffMs / 86400000);
+
+                let timeAgo = '';
+                if (diffMins < 1) timeAgo = 'только что';
+                else if (diffMins < 60) timeAgo = `${diffMins} мин назад`;
+                else if (diffHours < 24) timeAgo = `${diffHours} ч назад`;
+                else if (diffDays < 7) timeAgo = `${diffDays} дн назад`;
+                else timeAgo = createdDate.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+                return (
+                  <div key={feedback.id} className="border border-[#E8E8E8] rounded-lg overflow-hidden">
+                    <div className="p-4 bg-[#FAFAFA] flex items-start justify-between gap-4">
+                      <div className="flex-1 grid grid-cols-[auto_1fr_auto] gap-4 items-start">
+                        {/* Date & Time */}
+                        <div className="flex flex-col">
+                          <div className="text-sm font-medium text-[#0D0D0D]" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+                            {createdDate.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                          </div>
+                          <div className="text-xs text-[#7A7A7A] mt-0.5" style={{ fontFamily: 'Inter, sans-serif' }}>
+                            {createdDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                          <div className="text-xs text-[#3B82F6] mt-1" style={{ fontFamily: 'Inter, sans-serif' }}>
+                            {timeAgo}
+                          </div>
                         </div>
-                        {index === 0 && (
-                          <span className="bg-[#E42313] text-white text-xs px-2 py-0.5 rounded">
-                            Новый
-                          </span>
+
+                        {/* Info */}
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-2">
+                              {feedback.contact_type === "call" && <Phone className="w-4 h-4 text-[#E42313]" />}
+                              {feedback.contact_type === "telegram" && <MessageCircle className="w-4 h-4 text-[#0088cc]" />}
+                              {feedback.contact_type === "in_person" && <User className="w-4 h-4 text-[#22C55E]" />}
+                              <span className="text-sm font-medium text-[#0D0D0D]" style={{ fontFamily: 'Inter, sans-serif' }}>
+                                {getContactTypeLabel(feedback.contact_type)}
+                              </span>
+                            </div>
+                            <span className="text-sm text-[#7A7A7A]" style={{ fontFamily: 'Inter, sans-serif' }}>
+                              {feedback.created_by_first_name && feedback.created_by_last_name
+                                ? `${feedback.created_by_first_name} ${feedback.created_by_last_name}`
+                                : feedback.created_by_employee
+                                ? `${feedback.created_by_employee.first_name} ${feedback.created_by_employee.last_name}`
+                                : '—'}
+                            </span>
+                          </div>
+
+                          {/* Feedback preview */}
+                          <div className="text-sm text-[#0D0D0D]" style={{ fontFamily: 'Inter, sans-serif' }}>
+                            <span className="font-medium">Обратная связь: </span>
+                            {isExpanded ? feedback.feedback_to_parent : (
+                              feedback.feedback_to_parent.length > 150
+                                ? `${feedback.feedback_to_parent.substring(0, 150)}...`
+                                : feedback.feedback_to_parent
+                            )}
+                          </div>
+
+                          {feedback.feedback_from_parent && (
+                            <div className="text-sm text-[#0D0D0D]" style={{ fontFamily: 'Inter, sans-serif' }}>
+                              <span className="font-medium">Ответ родителя: </span>
+                              {isExpanded ? feedback.feedback_from_parent : (
+                                feedback.feedback_from_parent.length > 150
+                                  ? `${feedback.feedback_from_parent.substring(0, 150)}...`
+                                  : feedback.feedback_from_parent
+                              )}
+                            </div>
+                          )}
+
+                          {(feedback.feedback_to_parent.length > 150 || (feedback.feedback_from_parent && feedback.feedback_from_parent.length > 150)) && (
+                            <button
+                              onClick={() => toggleFeedbackExpanded(feedback.id)}
+                              className="text-[#E42313] hover:underline text-xs font-medium"
+                            >
+                              {isExpanded ? 'Свернуть' : 'Читать полностью'}
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Reaction */}
+                        {feedback.parent_reaction && (
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{
+                            backgroundColor: feedback.parent_reaction === 'positive' ? '#F0FDF4' :
+                                           feedback.parent_reaction === 'negative' ? '#FEF2F2' : '#F8FAFC'
+                          }}>
+                            {feedback.parent_reaction === 'positive' && <ThumbsUp className="w-4 h-4 text-[#22C55E]" />}
+                            {feedback.parent_reaction === 'neutral' && <Minus className="w-4 h-4 text-[#7A7A7A]" />}
+                            {feedback.parent_reaction === 'negative' && <ThumbsDown className="w-4 h-4 text-[#EF4444]" />}
+                            <span className="text-xs font-medium" style={{
+                              fontFamily: 'Inter, sans-serif',
+                              color: feedback.parent_reaction === 'positive' ? '#22C55E' :
+                                     feedback.parent_reaction === 'negative' ? '#EF4444' : '#7A7A7A'
+                            }}>
+                              {getParentReactionLabel(feedback.parent_reaction)}
+                            </span>
+                          </div>
                         )}
                       </div>
-                      <div className="text-xs text-[#7A7A7A] mt-1" style={{ fontFamily: 'Inter, sans-serif' }}>
-                        Создан: {new Date(report.created_at).toLocaleDateString('ru-RU')} в{' '}
-                        {new Date(report.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
+
+                      {/* Delete button */}
                       <Button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          copyReportToClipboard(report.ai_report);
-                        }}
+                        onClick={() => deleteFeedback(feedback.id)}
                         variant="ghost"
                         size="sm"
-                        className="h-7 px-3"
+                        className="h-8 px-2 hover:bg-red-50"
                       >
-                        <Copy className="w-3 h-3 text-[#7A7A7A]" />
+                        <Trash2 className="w-4 h-4 text-red-600" />
                       </Button>
-                      <Button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          // TODO: Implement send functionality
-                        }}
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-3"
-                      >
-                        <Send className="w-3 h-3 text-[#7A7A7A]" />
-                      </Button>
-                      <Button
-                        onClick={(e) => openParentCommentDialog(report, e)}
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-3"
-                        title="Добавить комментарий родителя"
-                      >
-                        <MessageSquarePlus className={`w-3 h-3 ${report.parent_feedback || report.parent_reaction ? "text-blue-600" : "text-[#7A7A7A]"}`} />
-                      </Button>
-                      <Button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteReport(report.id);
-                        }}
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-3 hover:bg-red-50"
-                      >
-                        <Trash2 className="w-3 h-3 text-red-600" />
-                      </Button>
-                      {expandedReports.has(report.id) ? (
-                        <ChevronUp className="w-4 h-4 text-[#7A7A7A]" />
-                      ) : (
-                        <ChevronDown className="w-4 h-4 text-[#7A7A7A]" />
-                      )}
                     </div>
                   </div>
-                  {expandedReports.has(report.id) && (
-                    <div className="p-6 bg-white border-t border-[#E8E8E8] space-y-4">
-                      <div className="bg-[#FAFAFA] border border-[#E8E8E8] rounded-lg p-6">
-                        <div className="text-[13px] text-[#0D0D0D] leading-relaxed whitespace-pre-wrap" style={{ fontFamily: 'Inter, sans-serif' }}>
-                          {report.ai_report}
-                        </div>
-                      </div>
-                      {(report.parent_feedback || report.parent_reaction) && (
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
-                          <div className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Обратная связь с родителем</div>
-                          {report.parent_feedback && (
-                            <div>
-                              <div className="text-xs text-[#7A7A7A] mb-1">Обратная связь от родителя</div>
-                              <div className="text-sm text-[#0D0D0D] whitespace-pre-wrap">{report.parent_feedback}</div>
-                            </div>
-                          )}
-                          {report.parent_reaction && (
-                            <div>
-                              <div className="text-xs text-[#7A7A7A] mb-1">Как родитель принял обратную связь</div>
-                              <div className="text-sm text-[#0D0D0D] whitespace-pre-wrap">{report.parent_reaction}</div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       </div>
 
-      {/* Parent comment dialog */}
-      <Dialog open={parentCommentDialogOpen} onOpenChange={setParentCommentDialogOpen}>
-        <DialogContent className="max-w-lg">
+      {/* Parent Feedback Dialog */}
+      <Dialog open={feedbackDialogOpen} onOpenChange={setFeedbackDialogOpen}>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Обратная связь с родителем</DialogTitle>
+            <DialogTitle>Добавить новую обратную связь с родителем</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label>Обратная связь от родителя</Label>
+              <Label>Тип связи с родителем</Label>
+              <Select value={contactType} onValueChange={(value) => setContactType(value as ContactType)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="call">
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-4 h-4" />
+                      <span>Звонок</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="telegram">
+                    <div className="flex items-center gap-2">
+                      <MessageCircle className="w-4 h-4" />
+                      <span>Телеграм</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="in_person">
+                    <div className="flex items-center gap-2">
+                      <User className="w-4 h-4" />
+                      <span>Лично</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Какая была обратная связь</Label>
               <Textarea
-                placeholder="Напишите что сообщил родитель..."
-                value={parentFeedback}
-                onChange={(e) => setParentFeedback(e.target.value)}
-                rows={3}
+                placeholder="Опишите что было сообщено родителю..."
+                value={feedbackToParent}
+                onChange={(e) => setFeedbackToParent(e.target.value)}
+                rows={4}
               />
             </div>
             <div className="space-y-2">
-              <Label>Как родитель принял обратную связь</Label>
+              <Label>Обратная связь от родителя</Label>
               <Textarea
-                placeholder="Опишите реакцию родителя..."
-                value={parentReaction}
-                onChange={(e) => setParentReaction(e.target.value)}
-                rows={3}
+                placeholder="Опишите ответ родителя (необязательно)..."
+                value={feedbackFromParent}
+                onChange={(e) => setFeedbackFromParent(e.target.value)}
+                rows={4}
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Реакция родителя (необязательно)</Label>
+              <Select value={parentReaction || "none"} onValueChange={(value) => setParentReaction(value === "none" ? undefined : value as ParentReaction)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">
+                    <span className="text-[#7A7A7A]">Не указано</span>
+                  </SelectItem>
+                  <SelectItem value="positive">
+                    <div className="flex items-center gap-2">
+                      <ThumbsUp className="w-4 h-4 text-[#22C55E]" />
+                      <span>Положительная</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="neutral">
+                    <div className="flex items-center gap-2">
+                      <Minus className="w-4 h-4 text-[#7A7A7A]" />
+                      <span>Нейтральная</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="negative">
+                    <div className="flex items-center gap-2">
+                      <ThumbsDown className="w-4 h-4 text-[#EF4444]" />
+                      <span>Отрицательная</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setParentCommentDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setFeedbackDialogOpen(false)}>
               Отмена
             </Button>
-            <Button onClick={saveParentComment} disabled={savingComment}>
-              {savingComment ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Сохранение...</> : "Сохранить"}
+            <Button onClick={saveFeedback} disabled={savingFeedback}>
+              {savingFeedback ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Сохранение...</> : "Сохранить"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.employee import Employee, EmployeeRole
+from app.models.group import Group
 from app.schemas.employee import EmployeeResponse, EmployeeUpdate, EmployeeCreate
 from app.auth.dependencies import get_current_user, require_role
 from app.auth.security import hash_password
@@ -97,6 +98,38 @@ async def update_employee(
     return employee
 
 
+@router.get("/{employee_id}/deletion-check")
+async def check_employee_deletion(
+    employee_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(require_role(EmployeeRole.admin)),
+):
+    """Check if employee can be deleted and return related entities."""
+    result = await db.execute(select(Employee).where(Employee.id == employee_id))
+    employee = result.scalar_one_or_none()
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    # Check for groups where this employee is a teacher
+    groups_result = await db.execute(
+        select(Group).where(Group.teacher_id == employee_id)
+    )
+    groups = groups_result.scalars().all()
+
+    groups_info = []
+    for group in groups:
+        groups_info.append({
+            "id": str(group.id),
+            "name": group.name,
+        })
+
+    return {
+        "can_delete": len(groups) == 0,
+        "groups": groups_info,
+        "groups_count": len(groups),
+    }
+
+
 @router.delete("/{employee_id}")
 async def delete_employee(
     employee_id: UUID,
@@ -107,6 +140,19 @@ async def delete_employee(
     employee = result.scalar_one_or_none()
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
+
+    # Check for groups where this employee is a teacher
+    groups_result = await db.execute(
+        select(Group).where(Group.teacher_id == employee_id)
+    )
+    groups = groups_result.scalars().all()
+
+    if groups:
+        groups_names = [g.name for g in groups]
+        raise HTTPException(
+            status_code=400,
+            detail=f"Невозможно удалить сотрудника. Он является преподавателем в группах: {', '.join(groups_names)}. Сначала измените преподавателя в этих группах."
+        )
 
     await db.delete(employee)
     await db.commit()

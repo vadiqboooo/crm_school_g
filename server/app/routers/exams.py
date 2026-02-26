@@ -71,7 +71,12 @@ async def create_exam(
         if subject:
             exam_data['subject'] = subject.name
 
-    exam = Exam(**exam_data, created_by=current_user.id)
+    exam = Exam(
+        **exam_data,
+        created_by=current_user.id,
+        created_by_first_name=current_user.first_name,
+        created_by_last_name=current_user.last_name
+    )
     db.add(exam)
     await db.commit()
 
@@ -244,7 +249,13 @@ async def create_exam_result(
             if group and group.teacher_id != current_user.id:
                 raise HTTPException(status_code=403, detail="Access denied")
 
-    er = ExamResult(exam_id=exam_id, **data.model_dump(), added_by=current_user.id)
+    er = ExamResult(
+        exam_id=exam_id,
+        **data.model_dump(),
+        added_by=current_user.id,
+        added_by_first_name=current_user.first_name,
+        added_by_last_name=current_user.last_name
+    )
     db.add(er)
     await db.commit()
     await db.refresh(er, ["student", "added_by_employee"])

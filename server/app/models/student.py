@@ -29,6 +29,21 @@ class HistoryEventType(str, enum.Enum):
     removed_from_group = "removed_from_group"
     payment = "payment"
     status_change = "status_change"
+    parent_feedback_added = "parent_feedback_added"
+    parent_feedback_deleted = "parent_feedback_deleted"
+    student_info_updated = "student_info_updated"
+
+
+class ContactType(str, enum.Enum):
+    call = "call"
+    telegram = "telegram"
+    in_person = "in_person"
+
+
+class ParentReaction(str, enum.Enum):
+    positive = "positive"
+    neutral = "neutral"
+    negative = "negative"
 
 
 class Student(Base):
@@ -51,6 +66,7 @@ class Student(Base):
     exam_results = relationship("ExamResult", back_populates="student")
     payments = relationship("Payment", back_populates="student")
     weekly_reports = relationship("WeeklyReport", back_populates="student", cascade="all, delete-orphan")
+    parent_feedbacks = relationship("ParentFeedback", back_populates="student", cascade="all, delete-orphan")
 
 
 class ParentContact(Base):
@@ -76,3 +92,21 @@ class StudentHistory(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     student = relationship("Student", back_populates="history")
+
+
+class ParentFeedback(Base):
+    __tablename__ = "parent_feedbacks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("students.id"), nullable=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id"), nullable=False)
+    created_by_first_name: Mapped[str | None] = mapped_column(String(100))
+    created_by_last_name: Mapped[str | None] = mapped_column(String(100))
+    contact_type: Mapped[ContactType] = mapped_column(SAEnum(ContactType), nullable=False)
+    feedback_to_parent: Mapped[str] = mapped_column(Text, nullable=False)
+    feedback_from_parent: Mapped[str | None] = mapped_column(Text)
+    parent_reaction: Mapped[ParentReaction | None] = mapped_column(SAEnum(ParentReaction))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+    student = relationship("Student", back_populates="parent_feedbacks")
+    created_by_employee = relationship("Employee", foreign_keys=[created_by])

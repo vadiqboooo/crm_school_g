@@ -27,7 +27,9 @@ class Exam(Base):
     is_template: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     # Metadata
-    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id"))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"))
+    created_by_first_name: Mapped[str | None] = mapped_column(String(100))
+    created_by_last_name: Mapped[str | None] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     group = relationship("Group", back_populates="exams")
@@ -49,7 +51,9 @@ class ExamResult(Base):
     student_comment: Mapped[str | None] = mapped_column(Text)
 
     # Metadata
-    added_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id"))
+    added_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"))
+    added_by_first_name: Mapped[str | None] = mapped_column(String(100))
+    added_by_last_name: Mapped[str | None] = mapped_column(String(100))
     added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, onupdate=datetime.utcnow)
 

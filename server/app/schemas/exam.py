@@ -71,6 +71,8 @@ class ExamResponse(BaseModel):
     comment: Optional[str]
     is_template: bool
     created_by: Optional[UUID]
+    created_by_first_name: Optional[str] = None
+    created_by_last_name: Optional[str] = None
     created_at: datetime
     group: Optional[GroupInfoForExam] = None
     subject_rel: Optional[SubjectInfoForExam] = None
@@ -115,6 +117,8 @@ class ExamResultResponse(BaseModel):
     task_comments: Optional[Any]
     student_comment: Optional[str]
     added_by: Optional[UUID]
+    added_by_first_name: Optional[str] = None
+    added_by_last_name: Optional[str] = None
     added_at: datetime
     updated_at: Optional[datetime]
     student: Optional[StudentInfoForResult] = None

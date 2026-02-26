@@ -352,6 +352,12 @@ export function StudentsPage() {
         return <CheckCircle2 className="w-4 h-4 text-blue-600" />;
       case "status_change":
         return <Clock className="w-4 h-4 text-orange-600" />;
+      case "parent_feedback_added":
+        return <MessageCircle className="w-4 h-4 text-green-600" />;
+      case "parent_feedback_deleted":
+        return <MessageCircle className="w-4 h-4 text-red-600" />;
+      case "student_info_updated":
+        return <Edit className="w-4 h-4 text-blue-600" />;
       default:
         return <Clock className="w-4 h-4 text-slate-600" />;
     }

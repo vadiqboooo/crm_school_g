@@ -24,7 +24,7 @@ export interface User {
 // Student types
 export type StudentStatus = "active" | "inactive";
 export type ParentRelation = "мама" | "папа" | "бабушка" | "дедушка" | "тетя" | "дядя";
-export type HistoryEventType = "added_to_db" | "added_to_group" | "removed_from_group" | "payment" | "status_change";
+export type HistoryEventType = "added_to_db" | "added_to_group" | "removed_from_group" | "payment" | "status_change" | "parent_feedback_added" | "parent_feedback_deleted" | "student_info_updated";
 
 export interface ParentContact {
   id: string;
@@ -431,6 +431,8 @@ export interface Exam {
   comment?: string;
   is_template: boolean;
   created_by?: string;
+  created_by_first_name?: string;
+  created_by_last_name?: string;
   created_at: string;
   group?: {
     id: string;
@@ -479,6 +481,8 @@ export interface ExamResult {
   task_comments?: { [key: string]: string };
   student_comment?: string;
   added_by?: string;
+  added_by_first_name?: string;
+  added_by_last_name?: string;
   added_at: string;
   updated_at?: string;
   student?: {
@@ -651,4 +655,40 @@ export interface DailyReportUpdate {
   shopping_list?: string;
   day_comment?: string;
   status?: ReportStatus;
+}
+
+// Parent Feedback types
+export type ContactType = "call" | "telegram" | "in_person";
+export type ParentReaction = "positive" | "neutral" | "negative";
+
+export interface ParentFeedback {
+  id: string;
+  student_id: string;
+  created_by: string;
+  created_by_first_name?: string;
+  created_by_last_name?: string;
+  contact_type: ContactType;
+  feedback_to_parent: string;
+  feedback_from_parent?: string | null;
+  parent_reaction?: ParentReaction | null;
+  created_at: string;
+  created_by_employee?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+  };
+}
+
+export interface ParentFeedbackCreate {
+  contact_type: ContactType;
+  feedback_to_parent: string;
+  feedback_from_parent?: string;
+  parent_reaction?: ParentReaction;
+}
+
+export interface ParentFeedbackUpdate {
+  contact_type?: ContactType;
+  feedback_to_parent?: string;
+  feedback_from_parent?: string;
+  parent_reaction?: ParentReaction;
 }

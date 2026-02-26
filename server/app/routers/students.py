@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 import httpx
 
 from app.database import get_db
-from app.models.student import Student, ParentContact, StudentHistory, HistoryEventType
+from app.models.student import Student, ParentContact, StudentHistory, HistoryEventType, ParentFeedback
 from app.models.group import GroupStudent, Group
 from app.models.lesson import Lesson, LessonAttendance
 from app.models.subject import Subject
@@ -20,6 +20,7 @@ from app.schemas.student import (
     ParentContactCreate, ParentContactResponse,
     StudentHistoryResponse, GroupInfoResponse,
     StudentPerformanceRecord, StudentPerformanceResponse,
+    ParentFeedbackCreate, ParentFeedbackUpdate, ParentFeedbackResponse,
 )
 from app.schemas.report import WeeklyReportResponse, WeeklyReportUpdate, WeeklyReportParentCommentUpdate
 from app.auth.dependencies import get_current_user, get_manager_location_id
@@ -194,8 +195,24 @@ async def update_student(
     update_data = data.model_dump(exclude_unset=True)
     parent_contacts_data = update_data.pop("parent_contacts", None)
 
-    # Update basic fields
+    # Track changes for history
+    changes = []
+    field_labels = {
+        "first_name": "Имя",
+        "last_name": "Фамилия",
+        "phone": "Телефон",
+        "telegram_id": "Telegram ID",
+        "current_school": "Школа",
+        "class_number": "Класс",
+        "status": "Статус"
+    }
+
+    # Update basic fields and track changes
     for field, value in update_data.items():
+        old_value = getattr(student, field, None)
+        if old_value != value:
+            field_label = field_labels.get(field, field)
+            changes.append(f"{field_label}: '{old_value}' → '{value}'")
         setattr(student, field, value)
 
     # Update parent contacts if provided
@@ -208,6 +225,16 @@ async def update_student(
         student.parent_contacts = []
         for contact_data in parent_contacts_data:
             student.parent_contacts.append(ParentContact(**contact_data))
+        changes.append("Обновлены контакты родителей")
+
+    # Add history entry if there were changes
+    if changes:
+        history_entry = StudentHistory(
+            student_id=student_id,
+            event_type=HistoryEventType.student_info_updated,
+            description=f"Обновлена информация о студенте: {'; '.join(changes)}"
+        )
+        db.add(history_entry)
 
     await db.commit()
     await db.refresh(student, attribute_names=["parent_contacts", "groups", "history"])
@@ -850,3 +877,143 @@ async def delete_weekly_report(
     await db.commit()
 
     return {"detail": "Weekly report deleted successfully"}
+
+
+# ============================================
+# Parent Feedback Endpoints
+# ============================================
+
+@router.post("/{student_id}/parent-feedbacks", response_model=ParentFeedbackResponse)
+async def create_parent_feedback(
+    student_id: UUID,
+    data: ParentFeedbackCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Создать новую обратную связь с родителем."""
+    # Check if student exists
+    result = await db.execute(select(Student).where(Student.id == student_id))
+    student = result.scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # Create feedback
+    feedback = ParentFeedback(
+        student_id=student_id,
+        created_by=current_user.id,
+        created_by_first_name=current_user.first_name,
+        created_by_last_name=current_user.last_name,
+        contact_type=data.contact_type,
+        feedback_to_parent=data.feedback_to_parent,
+        feedback_from_parent=data.feedback_from_parent,
+        parent_reaction=data.parent_reaction,
+    )
+
+    db.add(feedback)
+
+    # Add history entry
+    contact_type_label = {
+        "call": "Звонок",
+        "telegram": "Telegram",
+        "in_person": "Лично"
+    }.get(data.contact_type, data.contact_type)
+
+    history_entry = StudentHistory(
+        student_id=student_id,
+        event_type=HistoryEventType.parent_feedback_added,
+        description=f"Добавлена обратная связь с родителем ({contact_type_label}). Создал: {current_user.first_name} {current_user.last_name}"
+    )
+    db.add(history_entry)
+
+    await db.commit()
+    await db.refresh(feedback, ["created_by_employee"])
+
+    return feedback
+
+
+@router.get("/{student_id}/parent-feedbacks", response_model=list[ParentFeedbackResponse])
+async def get_student_parent_feedbacks(
+    student_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Получить все обратные связи для студента."""
+    result = await db.execute(
+        select(ParentFeedback)
+        .where(ParentFeedback.student_id == student_id)
+        .options(selectinload(ParentFeedback.created_by_employee))
+        .order_by(ParentFeedback.created_at.desc())
+    )
+    feedbacks = result.scalars().all()
+    return feedbacks
+
+
+@router.patch("/parent-feedbacks/{feedback_id}", response_model=ParentFeedbackResponse)
+async def update_parent_feedback(
+    feedback_id: UUID,
+    data: ParentFeedbackUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Обновить обратную связь с родителем."""
+    result = await db.execute(
+        select(ParentFeedback)
+        .where(ParentFeedback.id == feedback_id)
+        .options(selectinload(ParentFeedback.created_by_employee))
+    )
+    feedback = result.scalar_one_or_none()
+
+    if not feedback:
+        raise HTTPException(status_code=404, detail="Parent feedback not found")
+
+    # Update fields
+    if data.contact_type is not None:
+        feedback.contact_type = data.contact_type
+    if data.feedback_to_parent is not None:
+        feedback.feedback_to_parent = data.feedback_to_parent
+    if data.feedback_from_parent is not None:
+        feedback.feedback_from_parent = data.feedback_from_parent
+    if data.parent_reaction is not None:
+        feedback.parent_reaction = data.parent_reaction
+
+    await db.commit()
+    await db.refresh(feedback)
+
+    return feedback
+
+
+@router.delete("/parent-feedbacks/{feedback_id}")
+async def delete_parent_feedback(
+    feedback_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Удалить обратную связь с родителем."""
+    result = await db.execute(
+        select(ParentFeedback).where(ParentFeedback.id == feedback_id)
+    )
+    feedback = result.scalar_one_or_none()
+
+    if not feedback:
+        raise HTTPException(status_code=404, detail="Parent feedback not found")
+
+    # Save info for history before deleting
+    student_id = feedback.student_id
+    contact_type_label = {
+        "call": "Звонок",
+        "telegram": "Telegram",
+        "in_person": "Лично"
+    }.get(feedback.contact_type, feedback.contact_type)
+
+    # Add history entry
+    history_entry = StudentHistory(
+        student_id=student_id,
+        event_type=HistoryEventType.parent_feedback_deleted,
+        description=f"Удалена обратная связь с родителем ({contact_type_label}). Удалил: {current_user.first_name} {current_user.last_name}"
+    )
+    db.add(history_entry)
+
+    await db.delete(feedback)
+    await db.commit()
+
+    return {"detail": "Parent feedback deleted successfully"}

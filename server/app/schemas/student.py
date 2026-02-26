@@ -3,7 +3,7 @@ from datetime import datetime as datetime_type, date, time
 from typing import Optional
 from pydantic import BaseModel
 
-from app.models.student import StudentStatus, ParentRelation, HistoryEventType
+from app.models.student import StudentStatus, ParentRelation, HistoryEventType, ContactType, ParentReaction
 from app.models.lesson import AttendanceStatus
 
 
@@ -100,3 +100,41 @@ class StudentPerformanceResponse(BaseModel):
     student_id: UUID
     student_name: str
     performance_records: list[StudentPerformanceRecord]
+
+
+class ParentFeedbackCreate(BaseModel):
+    contact_type: ContactType
+    feedback_to_parent: str
+    feedback_from_parent: Optional[str] = None
+    parent_reaction: Optional[ParentReaction] = None
+
+
+class ParentFeedbackUpdate(BaseModel):
+    contact_type: Optional[ContactType] = None
+    feedback_to_parent: Optional[str] = None
+    feedback_from_parent: Optional[str] = None
+    parent_reaction: Optional[ParentReaction] = None
+
+
+class EmployeeInfo(BaseModel):
+    id: UUID
+    first_name: str
+    last_name: str
+
+    model_config = {"from_attributes": True}
+
+
+class ParentFeedbackResponse(BaseModel):
+    id: UUID
+    student_id: UUID
+    created_by: UUID
+    created_by_first_name: Optional[str] = None
+    created_by_last_name: Optional[str] = None
+    contact_type: ContactType
+    feedback_to_parent: str
+    feedback_from_parent: Optional[str]
+    parent_reaction: Optional[ParentReaction]
+    created_at: datetime_type
+    created_by_employee: Optional[EmployeeInfo] = None
+
+    model_config = {"from_attributes": True}
