@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 import httpx
 
 from app.database import get_db
-from app.models.student import Student, ParentContact, StudentHistory, HistoryEventType, ParentFeedback
+from app.models.student import Student, ParentContact, StudentHistory, HistoryEventType, ParentFeedback, StudentComment, StudentSource, EducationType
 from app.models.group import GroupStudent, Group
 from app.models.lesson import Lesson, LessonAttendance
 from app.models.subject import Subject
@@ -21,6 +21,7 @@ from app.schemas.student import (
     StudentHistoryResponse, GroupInfoResponse,
     StudentPerformanceRecord, StudentPerformanceResponse,
     ParentFeedbackCreate, ParentFeedbackUpdate, ParentFeedbackResponse,
+    StudentCommentCreate, StudentCommentResponse,
 )
 from app.schemas.report import WeeklyReportResponse, WeeklyReportUpdate, WeeklyReportParentCommentUpdate
 from app.auth.dependencies import get_current_user, get_manager_location_id
@@ -39,7 +40,8 @@ async def list_students(
     # Build query with location filter if manager
     query = select(Student).options(
         selectinload(Student.parent_contacts),
-        selectinload(Student.groups).selectinload(GroupStudent.group)
+        selectinload(Student.groups).selectinload(GroupStudent.group).selectinload(Group.location),
+        selectinload(Student.comments).selectinload(StudentComment.author)
     )
 
     # If manager and not requesting all students, filter by location
@@ -66,6 +68,21 @@ async def list_students(
     result = await db.execute(query.order_by(Student.last_name))
     students = result.scalars().all()
 
+    # Conversion mappings for old enum values
+    source_mapping = {
+        "website": "Сайт",
+        "social_media": "Социальные сети",
+        "recommendation": "Рекомендация",
+        "advertising": "Реклама",
+        "other": "Другое",
+    }
+    education_mapping = {
+        "school": "Школа",
+        "college": "Колледж",
+        "university": "Университет",
+        "other": "Другое",
+    }
+
     # Manually construct response to include groups
     students_data = []
     for student in students:
@@ -83,19 +100,34 @@ async def list_students(
             )
         ]
 
+        # Convert source and education_type if they have old values
+        source_value = student.source
+        if source_value in source_mapping:
+            source_value = source_mapping[source_value]
+
+        education_type_value = student.education_type
+        if education_type_value in education_mapping:
+            education_type_value = education_mapping[education_type_value]
+
         student_dict = {
             "id": student.id,
             "first_name": student.first_name,
             "last_name": student.last_name,
             "phone": student.phone,
             "telegram_id": student.telegram_id,
+            "telegram_username": student.telegram_username,
+            "bot_linked": student.bot_linked,
+            "contract_number": student.contract_number,
+            "source": source_value,
+            "education_type": education_type_value,
             "current_school": student.current_school,
             "class_number": student.class_number,
             "status": student.status,
             "created_at": student.created_at,
             "parent_contacts": student.parent_contacts,
             "groups": groups_to_show,
-            "history": []
+            "history": [],
+            "comments": student.comments
         }
         students_data.append(StudentResponse(**student_dict))
 
@@ -131,13 +163,19 @@ async def create_student(
         "last_name": student.last_name,
         "phone": student.phone,
         "telegram_id": student.telegram_id,
+        "telegram_username": student.telegram_username,
+        "bot_linked": student.bot_linked,
+        "contract_number": student.contract_number,
+        "source": student.source,
+        "education_type": student.education_type,
         "current_school": student.current_school,
         "class_number": student.class_number,
         "status": student.status,
         "created_at": student.created_at,
         "parent_contacts": student.parent_contacts,
         "groups": [],  # New students don't have groups yet
-        "history": student.history
+        "history": student.history,
+        "comments": []  # New students don't have comments yet
     }
     return StudentResponse(**student_dict)
 
@@ -152,14 +190,39 @@ async def get_student(
         select(Student)
         .options(
             selectinload(Student.parent_contacts),
-            selectinload(Student.groups).selectinload(GroupStudent.group),
-            selectinload(Student.history)
+            selectinload(Student.groups).selectinload(GroupStudent.group).selectinload(Group.location),
+            selectinload(Student.history),
+            selectinload(Student.comments).selectinload(StudentComment.author)
         )
         .where(Student.id == student_id)
     )
     student = result.scalar_one_or_none()
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
+
+    # Convert old English enum values to new Russian values
+    source_mapping = {
+        "website": "Сайт",
+        "social_media": "Социальные сети",
+        "recommendation": "Рекомендация",
+        "advertising": "Реклама",
+        "other": "Другое",
+    }
+    education_mapping = {
+        "school": "Школа",
+        "college": "Колледж",
+        "university": "Университет",
+        "other": "Другое",
+    }
+
+    # Convert source and education_type if they have old values
+    source_value = student.source
+    if source_value in source_mapping:
+        source_value = source_mapping[source_value]
+
+    education_type_value = student.education_type
+    if education_type_value in education_mapping:
+        education_type_value = education_mapping[education_type_value]
 
     # Manually construct response to include groups and history
     student_dict = {
@@ -168,6 +231,11 @@ async def get_student(
         "last_name": student.last_name,
         "phone": student.phone,
         "telegram_id": student.telegram_id,
+        "telegram_username": student.telegram_username,
+        "bot_linked": student.bot_linked,
+        "contract_number": student.contract_number,
+        "source": source_value,
+        "education_type": education_type_value,
         "current_school": student.current_school,
         "class_number": student.class_number,
         "status": student.status,
@@ -177,12 +245,13 @@ async def get_student(
             GroupInfoResponse(
                 id=gs.group.id,
                 name=gs.group.name,
-                school_location=gs.group.school_location
+                school_location=gs.group.location.name if gs.group.location else None
             )
             for gs in student.groups
             if not gs.is_archived
         ],
-        "history": student.history
+        "history": student.history,
+        "comments": student.comments
     }
     return StudentResponse(**student_dict)
 
@@ -198,8 +267,9 @@ async def update_student(
         select(Student)
         .options(
             selectinload(Student.parent_contacts),
-            selectinload(Student.groups).selectinload(GroupStudent.group),
-            selectinload(Student.history)
+            selectinload(Student.groups).selectinload(GroupStudent.group).selectinload(Group.location),
+            selectinload(Student.history),
+            selectinload(Student.comments).selectinload(StudentComment.author)
         )
         .where(Student.id == student_id)
     )
@@ -210,6 +280,17 @@ async def update_student(
     # Handle parent contacts separately
     update_data = data.model_dump(exclude_unset=True)
     parent_contacts_data = update_data.pop("parent_contacts", None)
+
+    # Convert enum objects to their string values
+    # Pydantic returns enum objects, we need their .value property
+    if "source" in update_data and hasattr(update_data["source"], "value"):
+        update_data["source"] = update_data["source"].value
+
+    if "education_type" in update_data and hasattr(update_data["education_type"], "value"):
+        update_data["education_type"] = update_data["education_type"].value
+
+    if "status" in update_data and hasattr(update_data["status"], "value"):
+        update_data["status"] = update_data["status"].value
 
     # Track changes for history
     changes = []
@@ -253,7 +334,7 @@ async def update_student(
         db.add(history_entry)
 
     await db.commit()
-    await db.refresh(student, attribute_names=["parent_contacts", "groups", "history"])
+    await db.refresh(student, attribute_names=["parent_contacts", "groups", "history", "comments"])
 
     # Manually construct response to include groups and history
     student_dict = {
@@ -262,6 +343,11 @@ async def update_student(
         "last_name": student.last_name,
         "phone": student.phone,
         "telegram_id": student.telegram_id,
+        "telegram_username": student.telegram_username,
+        "bot_linked": student.bot_linked,
+        "contract_number": student.contract_number,
+        "source": student.source,
+        "education_type": student.education_type,
         "current_school": student.current_school,
         "class_number": student.class_number,
         "status": student.status,
@@ -271,12 +357,13 @@ async def update_student(
             GroupInfoResponse(
                 id=gs.group.id,
                 name=gs.group.name,
-                school_location=gs.group.school_location
+                school_location=gs.group.location.name if gs.group.location else None
             )
             for gs in student.groups
             if not gs.is_archived
         ],
-        "history": student.history
+        "history": student.history,
+        "comments": student.comments
     }
     return StudentResponse(**student_dict)
 
@@ -372,20 +459,28 @@ async def get_student_performance(
         raise HTTPException(status_code=404, detail="Student not found")
 
     # Build query with joins
+    # Include GroupStudent to filter by joined_at date
     query = (
         select(
             LessonAttendance,
             Lesson,
             Group,
-            Subject
+            Subject,
+            GroupStudent
         )
         .join(Lesson, LessonAttendance.lesson_id == Lesson.id)
         .join(Group, Lesson.group_id == Group.id)
         .join(Subject, Group.subject_id == Subject.id)
+        .join(
+            GroupStudent,
+            (GroupStudent.group_id == Group.id) & (GroupStudent.student_id == student_id)
+        )
         .where(
             LessonAttendance.student_id == student_id,
             Lesson.status == "conducted",
-            Lesson.is_cancelled == False
+            Lesson.is_cancelled == False,
+            # Only show lessons from when student joined the group or later
+            Lesson.date >= GroupStudent.joined_at
         )
     )
 
@@ -406,7 +501,7 @@ async def get_student_performance(
 
     # Build performance records
     performance_records = []
-    for attendance, lesson, group, subject in rows:
+    for attendance, lesson, group, subject, group_student in rows:
         performance_records.append(StudentPerformanceRecord(
             lesson_id=lesson.id,
             lesson_date=lesson.date,
@@ -1033,3 +1128,71 @@ async def delete_parent_feedback(
     await db.commit()
 
     return {"detail": "Parent feedback deleted successfully"}
+
+
+# --- Student Comments ---
+
+@router.post("/{student_id}/comments", response_model=StudentCommentResponse, status_code=status.HTTP_201_CREATED)
+async def create_student_comment(
+    student_id: UUID,
+    data: StudentCommentCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Add a comment to a student"""
+    # Verify student exists
+    result = await db.execute(select(Student).where(Student.id == student_id))
+    student = result.scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    comment = StudentComment(
+        student_id=student_id,
+        author_id=current_user.id,
+        content=data.content
+    )
+    db.add(comment)
+    await db.commit()
+    await db.refresh(comment, attribute_names=["author"])
+    return comment
+
+
+@router.get("/{student_id}/comments", response_model=list[StudentCommentResponse])
+async def get_student_comments(
+    student_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: Employee = Depends(get_current_user),
+):
+    """Get all comments for a student"""
+    result = await db.execute(
+        select(StudentComment)
+        .options(selectinload(StudentComment.author))
+        .where(StudentComment.student_id == student_id)
+        .order_by(StudentComment.created_at.desc())
+    )
+    return result.scalars().all()
+
+
+@router.delete("/{student_id}/comments/{comment_id}")
+async def delete_student_comment(
+    student_id: UUID,
+    comment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Delete a comment from a student"""
+    result = await db.execute(
+        select(StudentComment)
+        .where(StudentComment.id == comment_id, StudentComment.student_id == student_id)
+    )
+    comment = result.scalar_one_or_none()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    # Only author or admin can delete
+    if comment.author_id != current_user.id and current_user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to delete this comment")
+
+    await db.delete(comment)
+    await db.commit()
+    return {"detail": "Comment deleted successfully"}

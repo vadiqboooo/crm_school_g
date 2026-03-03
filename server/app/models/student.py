@@ -1,9 +1,9 @@
 import uuid
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import String, Text, DateTime, ForeignKey, Integer, Enum as SAEnum
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import String, Text, ForeignKey, Integer, Boolean, Enum as SAEnum
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -46,6 +46,24 @@ class ParentReaction(str, enum.Enum):
     negative = "negative"
 
 
+class StudentSource(str, enum.Enum):
+    website = "Сайт"
+    social_media = "Социальные сети"
+    recommendation = "Рекомендация"
+    advertising = "Реклама"
+    other = "Другое"
+
+
+class EducationType(str, enum.Enum):
+    school = "Школа"
+    gymnasium = "Гимназия"
+    lyceum = "Лицей"
+    college = "Колледж"
+    spo = "СПО"
+    university = "Университет"
+    other = "Другое"
+
+
 class Student(Base):
     __tablename__ = "students"
 
@@ -54,10 +72,15 @@ class Student(Base):
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(20))
     telegram_id: Mapped[str | None] = mapped_column(String(100))
+    telegram_username: Mapped[str | None] = mapped_column(String(100))
+    bot_linked: Mapped[bool] = mapped_column(Boolean, default=False)
+    contract_number: Mapped[str | None] = mapped_column(String(100))
+    source: Mapped[StudentSource | None] = mapped_column(SAEnum(StudentSource, values_callable=lambda x: [e.value for e in x]))
+    education_type: Mapped[EducationType | None] = mapped_column(SAEnum(EducationType, values_callable=lambda x: [e.value for e in x]))
     current_school: Mapped[str | None] = mapped_column(String(200))
     class_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    status: Mapped[StudentStatus] = mapped_column(SAEnum(StudentStatus), default=StudentStatus.active)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    status: Mapped[StudentStatus] = mapped_column(SAEnum(StudentStatus, values_callable=lambda x: [e.value for e in x]), default=StudentStatus.active)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     groups = relationship("GroupStudent", back_populates="student")
     parent_contacts = relationship("ParentContact", back_populates="student", cascade="all, delete-orphan")
@@ -67,6 +90,7 @@ class Student(Base):
     payments = relationship("Payment", back_populates="student")
     weekly_reports = relationship("WeeklyReport", back_populates="student", cascade="all, delete-orphan")
     parent_feedbacks = relationship("ParentFeedback", back_populates="student", cascade="all, delete-orphan")
+    comments = relationship("StudentComment", back_populates="student", cascade="all, delete-orphan")
 
 
 class ParentContact(Base):
@@ -77,7 +101,7 @@ class ParentContact(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     relation: Mapped[ParentRelation] = mapped_column(SAEnum(ParentRelation), nullable=False)
     phone: Mapped[str] = mapped_column(String(20), nullable=False)
-    telegram_id: Mapped[str | None] = mapped_column(String(100))
+    telegram_username: Mapped[str | None] = mapped_column(String(100))
 
     student = relationship("Student", back_populates="parent_contacts")
 
@@ -89,7 +113,7 @@ class StudentHistory(Base):
     student_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("students.id"), nullable=False)
     event_type: Mapped[HistoryEventType] = mapped_column(SAEnum(HistoryEventType), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     student = relationship("Student", back_populates="history")
 
@@ -106,7 +130,20 @@ class ParentFeedback(Base):
     feedback_to_parent: Mapped[str] = mapped_column(Text, nullable=False)
     feedback_from_parent: Mapped[str | None] = mapped_column(Text)
     parent_reaction: Mapped[ParentReaction | None] = mapped_column(SAEnum(ParentReaction))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     student = relationship("Student", back_populates="parent_feedbacks")
     created_by_employee = relationship("Employee", foreign_keys=[created_by])
+
+
+class StudentComment(Base):
+    __tablename__ = "student_comments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("students.id"), nullable=False)
+    author_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id"), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    student = relationship("Student", back_populates="comments")
+    author = relationship("Employee")

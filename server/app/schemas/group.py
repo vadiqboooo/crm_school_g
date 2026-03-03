@@ -106,6 +106,7 @@ class GroupResponse(BaseModel):
     location: Optional[LocationInGroup] = None
     description: Optional[str]
     comment: Optional[str]
+    is_archived: bool
     created_at: datetime_type
     students: list[StudentInGroup] = []
 
@@ -122,5 +123,6 @@ class GroupStudentResponse(BaseModel):
     student_id: UUID
     is_archived: bool
     joined_at: datetime_type
+    student: Optional[StudentInGroup] = None
 
     model_config = {"from_attributes": True}

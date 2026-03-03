@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { useNavigate } from "react-router";
-import { Users, GraduationCap, Book, Clock, Plus, LayoutGrid, Table as TableIcon, Loader2, Trash2, Edit, X, Filter, ChevronDown } from "lucide-react";
+import { Users, GraduationCap, Book, Clock, Plus, LayoutGrid, Table as TableIcon, Loader2, Trash2, Edit, X, Filter, ChevronDown, Archive, ArchiveRestore } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +43,7 @@ import {
 } from "../components/ui/popover";
 import { Checkbox } from "../components/ui/checkbox";
 import { MoreVertical } from "lucide-react";
+import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { Group, GroupCreate, Subject, User, SchoolLocation } from "../types/api";
 import { useAuth } from "../contexts/AuthContext";
@@ -80,6 +81,7 @@ export function HomePage() {
   const [selectedTeachers, setSelectedTeachers] = useState<string[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [selectedExamTypes, setSelectedExamTypes] = useState<string[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
 
   const [newGroup, setNewGroup] = useState<GroupCreate>({
     name: "",
@@ -190,9 +192,10 @@ export function HomePage() {
         comment: "",
       });
       setNewSchedules([]);
+      toast.success(`Группа "${group.name}" успешно создана`);
     } catch (error) {
       console.error("Failed to create group:", error);
-      alert("Ошибка при создании группы");
+      toast.error("Ошибка при создании группы");
     } finally {
       setCreating(false);
     }
@@ -225,9 +228,34 @@ export function HomePage() {
     try {
       await api.deleteGroup(id);
       await loadData();
+      toast.success("Группа успешно удалена");
     } catch (error) {
       console.error("Failed to delete group:", error);
-      alert("Ошибка при удалении группы");
+      toast.error("Ошибка при удалении группы");
+    }
+  };
+
+  const handleArchiveGroup = async (id: string) => {
+    if (!confirm("Вы уверены, что хотите переместить группу в архив?")) return;
+
+    try {
+      await api.archiveGroup(id);
+      await loadData();
+      toast.success("Группа перемещена в архив");
+    } catch (error) {
+      console.error("Failed to archive group:", error);
+      toast.error("Ошибка при архивации группы");
+    }
+  };
+
+  const handleRestoreGroup = async (id: string) => {
+    try {
+      await api.restoreGroup(id);
+      await loadData();
+      toast.success("Группа восстановлена из архива");
+    } catch (error) {
+      console.error("Failed to restore group:", error);
+      toast.error("Ошибка при восстановлении группы");
     }
   };
 
@@ -281,6 +309,10 @@ export function HomePage() {
         return false;
       }
     }
+    // Filter by archive status
+    if (group.is_archived !== showArchived) {
+      return false;
+    }
     return true;
   });
 
@@ -309,9 +341,9 @@ export function HomePage() {
   }
 
   return (
-    <>
+    <div className="h-screen flex flex-col bg-background">
       {/* Header */}
-      <div className="bg-white border-b">
+      <div className="shrink-0 bg-white border-b z-20">
         <div className="container mx-auto px-6 py-4 min-h-[88px]">
           <div className="flex items-center justify-between">
             <div>
@@ -389,6 +421,18 @@ export function HomePage() {
                 </Popover>
               )}
 
+              {/* Archive toggle */}
+              {(isAdmin || isManager) && (
+                <Button
+                  variant={showArchived ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setShowArchived(!showArchived)}
+                >
+                  <Archive className="w-4 h-4 mr-2" />
+                  {showArchived ? "Показать активные" : "Показать архив"}
+                </Button>
+              )}
+
               {/* View mode toggle - only for admin and manager */}
               {canUseTableView && (
                 <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
@@ -443,7 +487,7 @@ export function HomePage() {
       </div>
 
       {/* Main Content */}
-      <main className="container mx-auto px-6 py-8">
+      <main className="flex-1 min-h-0 flex flex-col px-6 py-4">
         {/* Clear filters button */}
         {hasActiveFilters && (
           <div className="mb-4">
@@ -483,9 +527,16 @@ export function HomePage() {
               {/* Top section */}
               <div className="p-4 pb-3">
                 <div className="flex items-start justify-between mb-2">
-                  <h3 className="text-lg font-semibold text-slate-900 group-hover:text-blue-600 transition-colors flex-1">
-                    {group.name}
-                  </h3>
+                  <div className="flex items-center gap-2 flex-1">
+                    <h3 className="text-lg font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">
+                      {group.name}
+                    </h3>
+                    {group.is_archived && (
+                      <Badge variant="secondary" className="text-xs">
+                        Архив
+                      </Badge>
+                    )}
+                  </div>
                   <div className="flex items-center gap-1">
                     {hasWarning && isTeacher && (
                       <Badge
@@ -524,6 +575,29 @@ export function HomePage() {
                             <Edit className="w-4 h-4" />
                             Редактировать
                           </DropdownMenuItem>
+                          {!group.is_archived ? (
+                            <DropdownMenuItem
+                              className="gap-2 text-orange-600"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleArchiveGroup(group.id);
+                              }}
+                            >
+                              <Archive className="w-4 h-4" />
+                              В архив
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem
+                              className="gap-2 text-green-600"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRestoreGroup(group.id);
+                              }}
+                            >
+                              <ArchiveRestore className="w-4 h-4" />
+                              Восстановить
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem
                             className="gap-2 text-red-600"
                             onClick={(e) => {
@@ -578,12 +652,21 @@ export function HomePage() {
           )}
         </div>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
+        <div className="flex flex-col flex-1 min-h-0 bg-card border border-border rounded-xl">
+          {/* Fixed table header */}
+          <div className="shrink-0">
+            <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '18%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '14%' }} />
+                {(isAdmin || isManager) && <col style={{ width: '12%' }} />}
+              </colgroup>
+              <thead className="bg-card border-b-2 border-border">
+                <tr>
                     <TableHead>Название</TableHead>
 
                     {/* Subject filter */}
@@ -746,9 +829,23 @@ export function HomePage() {
                     </TableHead>
 
                     {(isAdmin || isManager) && <TableHead>Действия</TableHead>}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+                  </tr>
+                </thead>
+              </table>
+            </div>
+          {/* Scrollable table body */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '18%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '14%' }} />
+                {(isAdmin || isManager) && <col style={{ width: '12%' }} />}
+              </colgroup>
+              <TableBody>
                   {filteredGroups.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={(isAdmin || isManager) ? 7 : 6} className="text-center py-12">
@@ -765,7 +862,16 @@ export function HomePage() {
                         className="cursor-pointer"
                         onClick={() => navigate(`/group/${group.id}`)}
                       >
-                      <TableCell className="font-medium">{group.name}</TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {group.name}
+                          {group.is_archived && (
+                            <Badge variant="secondary" className="text-xs">
+                              Архив
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span>{group.subject.name}</span>
@@ -811,6 +917,29 @@ export function HomePage() {
                                 <Edit className="w-4 h-4" />
                                 Редактировать
                               </DropdownMenuItem>
+                              {!group.is_archived ? (
+                                <DropdownMenuItem
+                                  className="gap-2 text-orange-600"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleArchiveGroup(group.id);
+                                  }}
+                                >
+                                  <Archive className="w-4 h-4" />
+                                  В архив
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem
+                                  className="gap-2 text-green-600"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRestoreGroup(group.id);
+                                  }}
+                                >
+                                  <ArchiveRestore className="w-4 h-4" />
+                                  Восстановить
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem
                                 className="gap-2 text-red-600"
                                 onClick={(e) => {
@@ -829,10 +958,9 @@ export function HomePage() {
                   ))
                   )}
                 </TableBody>
-              </Table>
+              </table>
             </div>
-          </CardContent>
-        </Card>
+          </div>
       )}
 
       {/* Create Group Dialog */}
@@ -1083,6 +1211,6 @@ export function HomePage() {
         </DialogContent>
       </Dialog>
       </main>
-    </>
+    </div>
   );
 }

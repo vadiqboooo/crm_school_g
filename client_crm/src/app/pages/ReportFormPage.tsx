@@ -29,9 +29,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog";
-import { ArrowLeft, Plus, Loader2, Check, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, Check, MessageSquare, Send, X } from "lucide-react";
 import { api } from "../lib/api";
-import type { DailyReport, Task, TaskCreate, TaskUpdate, DailyReportUpdate, User, Student } from "../types/api";
+import type { DailyReport, Task, TaskCreate, TaskUpdate, DailyReportUpdate, User, Student, TaskComment, TaskCommentCreate } from "../types/api";
 import { toast } from "sonner";
 import { useTasksWebSocket } from "../hooks/useTasksWebSocket";
 import { useCallback } from "react";
@@ -94,6 +94,11 @@ export function ReportFormPage() {
   const [newTaskDescription, setNewTaskDescription] = useState("");
   const [newTaskDeadline, setNewTaskDeadline] = useState("");
   const [newTaskAssignedTo, setNewTaskAssignedTo] = useState<string>("");
+
+  // Task comments - expanded inline
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [newComment, setNewComment] = useState("");
+  const [sendingComment, setSendingComment] = useState(false);
 
   const [savingOperations, setSavingOperations] = useState(false);
   const [savingFinances, setSavingFinances] = useState(false);
@@ -341,22 +346,58 @@ export function ReportFormPage() {
   const handleUpdateTaskStatus = async (taskId: string, status: string) => {
     try {
       const updateData: TaskUpdate = { status: status as any };
+
+      // If task is being completed, update report_id to current report
+      // This ensures completed tasks stay in the report where they were completed
+      if (status === "completed" && reportId) {
+        updateData.report_id = reportId;
+      }
+
       const updatedTask = await api.updateTask(taskId, updateData);
       setTasks(tasks.map(t => t.id === taskId ? updatedTask : t));
+
+      if (status === "completed") {
+        toast.success("Задача выполнена и закреплена за этим отчетом");
+      }
     } catch (error) {
       console.error("Failed to update task:", error);
       toast.error("Ошибка при обновлении задачи");
     }
   };
 
-  const handleDeleteTask = async (taskId: string) => {
+  const handleToggleComments = (taskId: string) => {
+    if (expandedTaskId === taskId) {
+      setExpandedTaskId(null);
+      setNewComment("");
+    } else {
+      setExpandedTaskId(taskId);
+    }
+  };
+
+  const handleSendComment = async (taskId: string) => {
+    if (!newComment.trim()) return;
+
     try {
-      await api.deleteTask(taskId);
-      setTasks(tasks.filter(t => t.id !== taskId));
-      toast.success("Задача удалена");
+      setSendingComment(true);
+      const commentData: TaskCommentCreate = {
+        content: newComment.trim()
+      };
+
+      await api.createTaskComment(taskId, commentData);
+
+      // Reload tasks to get updated comments
+      if (reportId) {
+        const updatedTasks = await api.getFilteredReportTasks(reportId);
+        setTasks(updatedTasks);
+      }
+
+      setNewComment("");
+      toast.success("Комментарий добавлен");
     } catch (error) {
-      console.error("Failed to delete task:", error);
-      toast.error("Ошибка при удалении задачи");
+      console.error("Failed to send comment:", error);
+      toast.error("Ошибка при добавлении комментария");
+    } finally {
+      setSendingComment(false);
     }
   };
 
@@ -555,16 +596,18 @@ export function ReportFormPage() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle>Задачи</CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => setIsTaskDialogOpen(true)}
-                >
-                  <Plus className="w-4 h-4" />
-                  Добавить задачу
-                </Button>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => setIsTaskDialogOpen(true)}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Добавить задачу
+                  </Button>
+                  <CardTitle>Задачи</CardTitle>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -588,71 +631,135 @@ export function ReportFormPage() {
                       <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">
                         Статус
                       </th>
-                      {isAdmin && (
-                        <th className="w-12 px-6 py-3"></th>
-                      )}
+                      <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">
+                        Комментарии
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {tasks.map((task) => (
-                      <tr key={task.id} className="border-b hover:bg-slate-50">
-                        <td className="px-6 py-4">
-                          <div>
-                            <div className="font-medium text-slate-900">
-                              {task.title}
-                            </div>
-                            {task.description && (
-                              <div className="text-sm text-slate-500 mt-1">
-                                {task.description}
+                      <>
+                        <tr key={task.id} className={`border-b hover:bg-slate-50 ${task.status === 'completed' ? 'bg-green-50' : ''}`}>
+                          <td className="px-6 py-4">
+                            <div>
+                              <div className={`font-medium ${task.status === 'completed' ? 'text-green-700' : 'text-slate-900'}`}>
+                                {task.title}
                               </div>
+                              {task.description && (
+                                <div className="text-sm text-slate-500 mt-1">
+                                  {task.description}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            {task.deadline ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                {task.deadline}
+                              </span>
+                            ) : (
+                              <span className="text-sm text-slate-400">—</span>
                             )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          {task.deadline ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                              {task.deadline}
-                            </span>
-                          ) : (
-                            <span className="text-sm text-slate-400">—</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-700">
-                          {task.assignee ? (
-                            `${task.assignee.first_name} ${task.assignee.last_name}`
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <Select
-                            value={task.status}
-                            onValueChange={(value) => handleUpdateTaskStatus(task.id, value)}
-                          >
-                            <SelectTrigger className="w-[140px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="new">Новая</SelectItem>
-                              <SelectItem value="in_progress">В работе</SelectItem>
-                              <SelectItem value="urgent">Срочно</SelectItem>
-                              <SelectItem value="completed">Выполнена</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </td>
-                        {isAdmin && (
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-700">
+                            {task.assignee ? (
+                              `${task.assignee.first_name} ${task.assignee.last_name}`
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            <Select
+                              value={task.status}
+                              onValueChange={(value) => handleUpdateTaskStatus(task.id, value)}
+                            >
+                              <SelectTrigger className={`w-[140px] ${task.status === 'completed' ? 'border-green-300 bg-green-50' : ''}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="new">Новая</SelectItem>
+                                <SelectItem value="in_progress">В работе</SelectItem>
+                                <SelectItem value="urgent">Срочно</SelectItem>
+                                <SelectItem value="completed">Выполнена</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </td>
                           <td className="px-6 py-4">
                             <Button
                               variant="ghost"
-                              size="icon"
-                              onClick={() => handleDeleteTask(task.id)}
-                              className="h-8 w-8"
+                              size="sm"
+                              onClick={() => handleToggleComments(task.id)}
+                              className={`gap-2 ${expandedTaskId === task.id ? 'bg-blue-100' : ''}`}
                             >
-                              <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-600" />
+                              <MessageSquare className="w-4 h-4" />
+                              {task.comments && task.comments.length > 0 && (
+                                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                                  {task.comments.length}
+                                </span>
+                              )}
                             </Button>
                           </td>
+                        </tr>
+                        {expandedTaskId === task.id && (
+                          <tr className="bg-slate-50">
+                            <td colSpan={5} className="px-6 py-4">
+                              <div className="space-y-3">
+                                {/* Comments List */}
+                                {task.comments && task.comments.length > 0 && (
+                                  <div className="space-y-2 mb-3">
+                                    {task.comments.map((comment) => (
+                                      <div key={comment.id} className="bg-white rounded-lg p-3 border border-slate-200">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <span className="font-medium text-sm text-slate-900">
+                                            {comment.author.first_name} {comment.author.last_name}
+                                          </span>
+                                          <span className="text-xs text-slate-500">
+                                            {new Date(comment.created_at).toLocaleDateString('ru-RU', {
+                                              day: 'numeric',
+                                              month: 'short',
+                                              hour: '2-digit',
+                                              minute: '2-digit'
+                                            })}
+                                          </span>
+                                        </div>
+                                        <p className="text-sm text-slate-700 whitespace-pre-wrap">
+                                          {comment.content}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {/* Add Comment */}
+                                <div className="flex gap-2">
+                                  <Textarea
+                                    value={newComment}
+                                    onChange={(e) => setNewComment(e.target.value)}
+                                    placeholder="Добавить комментарий..."
+                                    className="flex-1 min-h-[60px]"
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                        handleSendComment(task.id);
+                                      }
+                                    }}
+                                  />
+                                  <Button
+                                    onClick={() => handleSendComment(task.id)}
+                                    disabled={!newComment.trim() || sendingComment}
+                                    size="sm"
+                                    className="self-end"
+                                  >
+                                    {sendingComment ? (
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                      <Send className="w-4 h-4" />
+                                    )}
+                                  </Button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
                         )}
-                      </tr>
+                      </>
                     ))}
                   </tbody>
                 </table>
@@ -1242,6 +1349,7 @@ export function ReportFormPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }

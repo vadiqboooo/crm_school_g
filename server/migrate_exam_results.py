@@ -5,7 +5,7 @@ import asyncio
 import sqlite3
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -259,7 +259,7 @@ async def migrate_exam_results():
                 is_template=False,
                 selected_tasks=selected_tasks,
                 created_by=created_by,
-                created_at=datetime.utcnow()
+                created_at=datetime.now(timezone.utc)
             )
 
             session.add(exam)
@@ -325,7 +325,7 @@ async def migrate_exam_results():
                 task_comments=None,
                 student_comment=comment if comment else None,
                 added_by=added_by,
-                added_at=datetime.utcnow()
+                added_at=datetime.now(timezone.utc)
             )
 
             session.add(exam_result)

@@ -33,6 +33,8 @@ import type {
   Task,
   TaskCreate,
   TaskUpdate,
+  TaskComment,
+  TaskCommentCreate,
 } from "../types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -93,7 +95,8 @@ class ApiClient {
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.detail || `HTTP error! status: ${response.status}`);
+        console.error("API Error Details:", JSON.stringify(error, null, 2));
+        throw new Error(error.detail || JSON.stringify(error) || `HTTP error! status: ${response.status}`);
       }
 
       // Handle 204 No Content
@@ -218,6 +221,24 @@ class ApiClient {
 
   async deleteParentContact(studentId: string, contactId: string): Promise<void> {
     return this.request<void>(`/students/${studentId}/contacts/${contactId}`, {
+      method: "DELETE",
+    });
+  }
+
+  // Student Comments
+  async createStudentComment(studentId: string, data: import("../types/api").StudentCommentCreate): Promise<import("../types/api").StudentComment> {
+    return this.request<import("../types/api").StudentComment>(`/students/${studentId}/comments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getStudentComments(studentId: string): Promise<import("../types/api").StudentComment[]> {
+    return this.request<import("../types/api").StudentComment[]>(`/students/${studentId}/comments`);
+  }
+
+  async deleteStudentComment(studentId: string, commentId: string): Promise<void> {
+    return this.request<void>(`/students/${studentId}/comments/${commentId}`, {
       method: "DELETE",
     });
   }
@@ -351,6 +372,18 @@ class ApiClient {
     });
   }
 
+  async archiveGroup(id: string): Promise<void> {
+    return this.request<void>(`/groups/${id}/archive`, {
+      method: "POST",
+    });
+  }
+
+  async restoreGroup(id: string): Promise<void> {
+    return this.request<void>(`/groups/${id}/restore`, {
+      method: "POST",
+    });
+  }
+
   async addStudentToGroup(groupId: string, studentId: string): Promise<void> {
     return this.request<void>(`/groups/${groupId}/students`, {
       method: "POST",
@@ -364,6 +397,10 @@ class ApiClient {
     });
   }
 
+  async getGroupStudents(groupId: string): Promise<import("../types/api").GroupStudent[]> {
+    return this.request<import("../types/api").GroupStudent[]>(`/groups/${groupId}/students`);
+  }
+
   async getArchivedStudents(groupId: string): Promise<import("../types/api").GroupStudent[]> {
     return this.request<import("../types/api").GroupStudent[]>(`/groups/${groupId}/students/archived`);
   }
@@ -372,6 +409,13 @@ class ApiClient {
     return this.request<void>(`/groups/${groupId}/students/${studentId}/restore`, {
       method: "POST",
     });
+  }
+
+  async updateStudentJoinedDate(groupId: string, studentId: string, joinedDate: string): Promise<{ detail: string; old_date: string; new_date: string }> {
+    return this.request<{ detail: string; old_date: string; new_date: string }>(
+      `/groups/${groupId}/students/${studentId}/joined-date?joined_at=${joinedDate}`,
+      { method: "PATCH" }
+    );
   }
 
   // Schedule endpoints
@@ -396,6 +440,38 @@ class ApiClient {
     return this.request<Lesson[]>(`/groups/${groupId}/generate-lessons`, {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  async deleteGroupLessons(groupId: string, params?: { from_date?: string; only_future?: boolean }): Promise<{ detail: string; count: number; skipped: number }> {
+    const queryParams = new URLSearchParams();
+    if (params?.from_date) queryParams.append("from_date", params.from_date);
+    if (params?.only_future !== undefined) queryParams.append("only_future", String(params.only_future));
+
+    const queryString = queryParams.toString();
+    return this.request<{ detail: string; count: number; skipped: number }>(
+      `/groups/${groupId}/lessons${queryString ? `?${queryString}` : ""}`,
+      { method: "DELETE" }
+    );
+  }
+
+  async regenerateLessons(groupId: string, data: { end_date?: string; months?: number; delete_existing?: boolean }): Promise<{
+    detail: string;
+    deleted_count: number;
+    skipped_count: number;
+    created_count: number;
+    lessons: Lesson[];
+  }> {
+    const queryParams = data.delete_existing !== undefined ? `?delete_existing=${data.delete_existing}` : "";
+    return this.request<{
+      detail: string;
+      deleted_count: number;
+      skipped_count: number;
+      created_count: number;
+      lessons: Lesson[];
+    }>(`/groups/${groupId}/regenerate-lessons${queryParams}`, {
+      method: "POST",
+      body: JSON.stringify({ end_date: data.end_date, months: data.months }),
     });
   }
 
@@ -694,6 +770,24 @@ class ApiClient {
 
   async deleteTask(id: string): Promise<void> {
     return this.request<void>(`/reports/tasks/${id}`, {
+      method: "DELETE",
+    });
+  }
+
+  // Task Comments
+  async createTaskComment(taskId: string, data: TaskCommentCreate): Promise<TaskComment> {
+    return this.request<TaskComment>(`/reports/tasks/${taskId}/comments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getTaskComments(taskId: string): Promise<TaskComment[]> {
+    return this.request<TaskComment[]>(`/reports/tasks/${taskId}/comments`);
+  }
+
+  async deleteTaskComment(taskId: string, commentId: string): Promise<void> {
+    return this.request<void>(`/reports/tasks/${taskId}/comments/${commentId}`, {
       method: "DELETE",
     });
   }

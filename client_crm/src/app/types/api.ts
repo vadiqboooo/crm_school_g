@@ -23,6 +23,8 @@ export interface User {
 
 // Student types
 export type StudentStatus = "active" | "inactive";
+export type StudentSource = "Сайт" | "Социальные сети" | "Рекомендация" | "Реклама" | "Другое";
+export type EducationType = "Школа" | "Гимназия" | "Лицей" | "СПО" | "Колледж" | "Университет" | "Другое";
 export type ParentRelation = "мама" | "папа" | "бабушка" | "дедушка" | "тетя" | "дядя";
 export type HistoryEventType = "added_to_db" | "added_to_group" | "removed_from_group" | "payment" | "status_change" | "parent_feedback_added" | "parent_feedback_deleted" | "student_info_updated";
 
@@ -32,7 +34,7 @@ export interface ParentContact {
   name: string;
   relation: ParentRelation;
   phone: string;
-  telegram_id?: string;
+  telegram_username?: string;
 }
 
 export interface StudentHistory {
@@ -49,12 +51,35 @@ export interface GroupInfo {
   school_location?: string;
 }
 
+export interface StudentComment {
+  id: string;
+  student_id: string;
+  author_id: string;
+  author: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+  };
+  content: string;
+  created_at: string;
+}
+
+export interface StudentCommentCreate {
+  content: string;
+}
+
 export interface Student {
   id: string;
   first_name: string;
   last_name: string;
   phone?: string;
   telegram_id?: string;
+  telegram_username?: string;
+  bot_linked?: boolean;
+  contract_number?: string;
+  source?: StudentSource;
+  education_type?: EducationType;
   current_school?: string;
   class_number?: number;
   status: StudentStatus;
@@ -62,6 +87,7 @@ export interface Student {
   parent_contacts: ParentContact[];
   groups: GroupInfo[];
   history: StudentHistory[];
+  comments: StudentComment[];
 }
 
 export interface StudentCreate {
@@ -69,6 +95,11 @@ export interface StudentCreate {
   last_name: string;
   phone?: string;
   telegram_id?: string;
+  telegram_username?: string;
+  bot_linked?: boolean;
+  contract_number?: string;
+  source?: StudentSource;
+  education_type?: EducationType;
   current_school?: string;
   class_number?: number;
   status?: StudentStatus;
@@ -76,7 +107,7 @@ export interface StudentCreate {
     name: string;
     relation: ParentRelation;
     phone: string;
-    telegram_id?: string;
+    telegram_username?: string;
   }>;
 }
 
@@ -85,6 +116,11 @@ export interface StudentUpdate {
   last_name?: string;
   phone?: string;
   telegram_id?: string;
+  telegram_username?: string;
+  bot_linked?: boolean;
+  contract_number?: string;
+  source?: StudentSource;
+  education_type?: EducationType;
   current_school?: string;
   class_number?: number;
   status?: StudentStatus;
@@ -92,7 +128,7 @@ export interface StudentUpdate {
     name: string;
     relation: ParentRelation;
     phone: string;
-    telegram_id?: string;
+    telegram_username?: string;
   }>;
 }
 
@@ -239,6 +275,7 @@ export interface Group {
   };
   description?: string;
   comment?: string;
+  is_archived: boolean;
   created_at: string;
   students: Array<{
     id: string;
@@ -557,6 +594,24 @@ export interface ReportNotifiedStudentCreate {
   student_name?: string;
 }
 
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  author_id: string;
+  author: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+  };
+  content: string;
+  created_at: string;
+}
+
+export interface TaskCommentCreate {
+  content: string;
+}
+
 export interface Task {
   id: string;
   report_id?: string;
@@ -570,8 +625,21 @@ export interface Task {
     first_name: string;
     last_name: string;
     email: string;
+    role: "admin" | "teacher" | "manager";
   };
   created_at: string;
+  updated_at: string;
+  comments: TaskComment[];
+  report?: {
+    id: string;
+    date: string;
+    employee?: {
+      id: string;
+      first_name: string;
+      last_name: string;
+      email: string;
+    };
+  };
 }
 
 export interface TaskCreate {
@@ -584,6 +652,7 @@ export interface TaskCreate {
 }
 
 export interface TaskUpdate {
+  report_id?: string;
   title?: string;
   description?: string;
   deadline?: string;

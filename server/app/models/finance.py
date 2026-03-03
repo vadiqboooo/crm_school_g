@@ -1,9 +1,9 @@
 import uuid
 import enum
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
-from sqlalchemy import Numeric, Integer, Date, DateTime, ForeignKey, Enum as SAEnum
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Numeric, Integer, Date, ForeignKey, Enum as SAEnum
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -29,7 +29,7 @@ class Payment(Base):
     amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     status: Mapped[PaymentStatus] = mapped_column(SAEnum(PaymentStatus), default=PaymentStatus.pending)
     due_date: Mapped[date | None] = mapped_column(Date)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     student = relationship("Student", back_populates="payments")
     group = relationship("Group", back_populates="payments")
@@ -46,6 +46,6 @@ class EmployeeSalary(Base):
     status: Mapped[SalaryStatus] = mapped_column(SAEnum(SalaryStatus), default=SalaryStatus.pending)
     period_start: Mapped[date | None] = mapped_column(Date)
     period_end: Mapped[date | None] = mapped_column(Date)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     employee = relationship("Employee", back_populates="salaries")

@@ -63,24 +63,39 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [groupData, attendanceData] = await Promise.all([
-        api.getGroup(lesson.group_id),
+      const [groupStudents, attendanceData] = await Promise.all([
+        api.getGroupStudents(lesson.group_id),
         api.getLessonAttendance(lesson.id),
       ]);
 
-      const studentAttendance: StudentAttendance[] = groupData.students.map((student) => {
-        const attendance = attendanceData.find((a) => a.student_id === student.id);
-        return {
-          id: student.id,
-          attendanceId: attendance?.id,
-          name: `${student.first_name} ${student.last_name}`,
-          status: attendance?.attendance || "present",
-          lateMinutes: attendance?.late_minutes,
-          lessonGrade: attendance?.lesson_grade || "",
-          homeworkGrade: attendance?.homework_grade || "",
-          comment: attendance?.comment || "",
-        };
-      });
+      // Filter students: only show those who were added before or on the lesson date
+      const lessonDate = new Date(lesson.date);
+      lessonDate.setHours(0, 0, 0, 0); // Reset time to start of day
+
+      const studentAttendance: StudentAttendance[] = groupStudents
+        .filter((gs) => {
+          // Only include active (non-archived) students
+          if (gs.is_archived) return false;
+
+          // Only include students who joined before or on the lesson date
+          const joinedDate = new Date(gs.joined_at);
+          joinedDate.setHours(0, 0, 0, 0); // Reset time to start of day
+          return joinedDate <= lessonDate;
+        })
+        .map((gs) => {
+          const student = gs.student!;
+          const attendance = attendanceData.find((a) => a.student_id === student.id);
+          return {
+            id: student.id,
+            attendanceId: attendance?.id,
+            name: `${student.first_name} ${student.last_name}`,
+            status: attendance?.attendance || "present",
+            lateMinutes: attendance?.late_minutes,
+            lessonGrade: attendance?.lesson_grade || "",
+            homeworkGrade: attendance?.homework_grade || "",
+            comment: attendance?.comment || "",
+          };
+        });
 
       setStudents(studentAttendance);
     } catch (err) {

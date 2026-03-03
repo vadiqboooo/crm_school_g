@@ -33,7 +33,13 @@
       "Bash(npx tsc:*)",
       "Bash(git -C . diff --stat client_crm/src/app/components/StudentPerformanceTab.tsx)",
       "Bash(npm run type-check:*)",
-      "Bash(docker ps:*)"
+      "Bash(docker ps:*)",
+      "Bash(dir:*)",
+      "Bash(git checkout:*)",
+      "Bash(ls:*)",
+      "Bash(npx:*)",
+      "Bash(./node_modules/.bin/tsc:*)",
+      "Bash(node:*)"
     ]
   }
 }

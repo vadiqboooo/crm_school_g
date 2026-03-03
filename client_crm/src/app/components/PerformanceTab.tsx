@@ -33,7 +33,13 @@ interface PerformanceTabProps {
 export function PerformanceTab({ groupId }: PerformanceTabProps) {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [attendanceData, setAttendanceData] = useState<Map<string, LessonAttendance[]>>(new Map());
-  const [students, setStudents] = useState<Array<{ id: string; first_name: string; last_name: string }>>([]);
+  const [groupStudents, setGroupStudents] = useState<Array<{
+    id: string;
+    student_id: string;
+    joined_at: string;
+    is_archived: boolean;
+    student?: { id: string; first_name: string; last_name: string };
+  }>>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [showAttendance, setShowAttendance] = useState(true);
@@ -48,9 +54,10 @@ export function PerformanceTab({ groupId }: PerformanceTabProps) {
     try {
       setLoading(true);
 
-      // Load group to get students
-      const groupData = await api.getGroup(groupId);
-      setStudents(groupData.students);
+      // Load group students with joined_at information
+      const groupStudentsData = await api.getGroupStudents(groupId);
+      // Filter only active (non-archived) students
+      setGroupStudents(groupStudentsData.filter(gs => !gs.is_archived));
 
       // Load all lessons
       const lessonsData = await api.getLessons(groupId);
@@ -130,26 +137,39 @@ export function PerformanceTab({ groupId }: PerformanceTabProps) {
 
   // Build student performance data
   const performanceData: StudentPerformanceData[] = useMemo(() => {
-    return students.map((student) => ({
-      studentId: student.id,
-      studentName: `${student.first_name} ${student.last_name}`,
-      lessons: filteredLessons.map((lesson) => {
-        const attendance = attendanceData.get(lesson.id)?.find((a) => a.student_id === student.id);
-        const isLessonConducted = lesson.status === "conducted" && !lesson.is_cancelled;
-        return {
-          lessonId: lesson.id,
-          lessonDate: lesson.date,
-          lessonTopic: lesson.topic || "Тема не указана",
-          homework: lesson.homework || "Не указано",
-          attendance: attendance?.attendance,
-          lateMinutes: attendance?.late_minutes,
-          homeworkGrade: attendance?.homework_grade,
-          lessonGrade: attendance?.lesson_grade,
-          isLessonConducted,
-        };
-      }),
-    }));
-  }, [students, filteredLessons, attendanceData]);
+    return groupStudents.map((gs) => {
+      const student = gs.student!;
+      const joinedDate = new Date(gs.joined_at);
+      joinedDate.setHours(0, 0, 0, 0); // Reset time to start of day
+
+      return {
+        studentId: student.id,
+        studentName: `${student.first_name} ${student.last_name}`,
+        lessons: filteredLessons
+          .filter((lesson) => {
+            // Only show lessons from when student joined or later
+            const lessonDate = new Date(lesson.date);
+            lessonDate.setHours(0, 0, 0, 0);
+            return lessonDate >= joinedDate;
+          })
+          .map((lesson) => {
+            const attendance = attendanceData.get(lesson.id)?.find((a) => a.student_id === student.id);
+            const isLessonConducted = lesson.status === "conducted" && !lesson.is_cancelled;
+            return {
+              lessonId: lesson.id,
+              lessonDate: lesson.date,
+              lessonTopic: lesson.topic || "Тема не указана",
+              homework: lesson.homework || "Не указано",
+              attendance: attendance?.attendance,
+              lateMinutes: attendance?.late_minutes,
+              homeworkGrade: attendance?.homework_grade,
+              lessonGrade: attendance?.lesson_grade,
+              isLessonConducted,
+            };
+          }),
+      };
+    });
+  }, [groupStudents, filteredLessons, attendanceData]);
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);

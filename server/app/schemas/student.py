@@ -3,7 +3,7 @@ from datetime import datetime as datetime_type, date, time
 from typing import Optional
 from pydantic import BaseModel
 
-from app.models.student import StudentStatus, ParentRelation, HistoryEventType, ContactType, ParentReaction
+from app.models.student import StudentStatus, ParentRelation, HistoryEventType, ContactType, ParentReaction, StudentSource, EducationType
 from app.models.lesson import AttendanceStatus
 
 
@@ -11,7 +11,7 @@ class ParentContactCreate(BaseModel):
     name: str
     relation: ParentRelation
     phone: str
-    telegram_id: Optional[str] = None
+    telegram_username: Optional[str] = None
 
 
 class ParentContactResponse(BaseModel):
@@ -19,7 +19,7 @@ class ParentContactResponse(BaseModel):
     name: str
     relation: ParentRelation
     phone: str
-    telegram_id: Optional[str]
+    telegram_username: Optional[str]
 
     model_config = {"from_attributes": True}
 
@@ -46,6 +46,11 @@ class StudentCreate(BaseModel):
     last_name: str
     phone: Optional[str] = None
     telegram_id: Optional[str] = None
+    telegram_username: Optional[str] = None
+    bot_linked: bool = False
+    contract_number: Optional[str] = None
+    source: Optional[StudentSource] = None
+    education_type: Optional[EducationType] = None
     current_school: Optional[str] = None
     class_number: Optional[int] = None
     status: StudentStatus = StudentStatus.active
@@ -57,10 +62,39 @@ class StudentUpdate(BaseModel):
     last_name: Optional[str] = None
     phone: Optional[str] = None
     telegram_id: Optional[str] = None
+    telegram_username: Optional[str] = None
+    bot_linked: Optional[bool] = None
+    contract_number: Optional[str] = None
+    source: Optional[StudentSource] = None
+    education_type: Optional[EducationType] = None
     current_school: Optional[str] = None
     class_number: Optional[int] = None
     status: Optional[StudentStatus] = None
     parent_contacts: Optional[list[ParentContactCreate]] = None
+
+
+class StudentCommentAuthor(BaseModel):
+    id: UUID
+    first_name: str
+    last_name: str
+    email: str
+
+    model_config = {"from_attributes": True}
+
+
+class StudentCommentResponse(BaseModel):
+    id: UUID
+    student_id: UUID
+    author_id: UUID
+    author: StudentCommentAuthor
+    content: str
+    created_at: datetime_type
+
+    model_config = {"from_attributes": True}
+
+
+class StudentCommentCreate(BaseModel):
+    content: str
 
 
 class StudentResponse(BaseModel):
@@ -69,6 +103,11 @@ class StudentResponse(BaseModel):
     last_name: str
     phone: Optional[str]
     telegram_id: Optional[str]
+    telegram_username: Optional[str] = None
+    bot_linked: bool = False
+    contract_number: Optional[str] = None
+    source: Optional[StudentSource] = None
+    education_type: Optional[EducationType] = None
     current_school: Optional[str]
     class_number: Optional[int]
     status: StudentStatus
@@ -76,6 +115,7 @@ class StudentResponse(BaseModel):
     parent_contacts: list[ParentContactResponse] = []
     groups: list[GroupInfoResponse] = []
     history: list[StudentHistoryResponse] = []
+    comments: list[StudentCommentResponse] = []
 
     model_config = {"from_attributes": True}
 

@@ -82,6 +82,7 @@ class AssigneeInfo(BaseModel):
     first_name: str
     last_name: str
     email: str
+    role: str
 
     model_config = {"from_attributes": True}
 
@@ -96,11 +97,46 @@ class TaskCreate(BaseModel):
 
 
 class TaskUpdate(BaseModel):
+    report_id: Optional[UUID] = None
     title: Optional[str] = None
     description: Optional[str] = None
     deadline: Optional[str] = None
     status: Optional[TaskStatus] = None
     assigned_to: Optional[UUID] = None
+
+
+class TaskCommentCreate(BaseModel):
+    content: str
+
+
+class TaskCommentAuthor(BaseModel):
+    """Author info for task comment"""
+    id: UUID
+    first_name: str
+    last_name: str
+    email: str
+
+    model_config = {"from_attributes": True}
+
+
+class TaskCommentResponse(BaseModel):
+    id: UUID
+    task_id: UUID
+    author_id: UUID
+    author: TaskCommentAuthor
+    content: str
+    created_at: datetime_type
+
+    model_config = {"from_attributes": True}
+
+
+class ReportInfo(BaseModel):
+    """Basic report info for task response"""
+    id: UUID
+    date: date_type
+    employee: Optional[EmployeeInfo] = None
+
+    model_config = {"from_attributes": True}
 
 
 class TaskResponse(BaseModel):
@@ -113,6 +149,9 @@ class TaskResponse(BaseModel):
     assigned_to: Optional[UUID]
     assignee: Optional[AssigneeInfo] = None
     created_at: datetime_type
+    updated_at: datetime_type
+    comments: list[TaskCommentResponse] = []
+    report: Optional[ReportInfo] = None
 
     model_config = {"from_attributes": True}
 

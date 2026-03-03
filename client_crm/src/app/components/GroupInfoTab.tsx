@@ -42,9 +42,15 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isAddScheduleOpen, setIsAddScheduleOpen] = useState(false);
   const [isGenerateLessonsOpen, setIsGenerateLessonsOpen] = useState(false);
+  const [isRegenerateLessonsOpen, setIsRegenerateLessonsOpen] = useState(false);
+  const [isDeleteLessonsOpen, setIsDeleteLessonsOpen] = useState(false);
   const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
   const [isArchivedStudentsOpen, setIsArchivedStudentsOpen] = useState(false);
+  const [isEditJoinedDateOpen, setIsEditJoinedDateOpen] = useState(false);
   const [archivedStudents, setArchivedStudents] = useState<import("../types/api").GroupStudent[]>([]);
+  const [groupStudents, setGroupStudents] = useState<import("../types/api").GroupStudent[]>([]);
+  const [selectedStudentForDateEdit, setSelectedStudentForDateEdit] = useState<{ studentId: string; studentName: string; currentDate: string } | null>(null);
+  const [newJoinedDate, setNewJoinedDate] = useState("");
   const [loadingArchived, setLoadingArchived] = useState(false);
   const [generateMonths, setGenerateMonths] = useState("3");
   const [allStudents, setAllStudents] = useState<Student[]>([]);
@@ -81,6 +87,10 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
       loadEditModeData();
     }
   }, [isEditMode]);
+
+  useEffect(() => {
+    loadGroupStudents();
+  }, [group.id]);
 
   const loadAllStudents = async () => {
     try {
@@ -216,6 +226,52 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
     }
   };
 
+  const handleRegenerateLessons = async () => {
+    try {
+      setIsGenerating(true);
+      const months = parseInt(generateMonths);
+      const result = await api.regenerateLessons(group.id, { months, delete_existing: true });
+      setIsRegenerateLessonsOpen(false);
+
+      let message = `Создано ${result.created_count} новых уроков`;
+      if (result.deleted_count > 0) {
+        message = `Удалено ${result.deleted_count} уроков, ${message.toLowerCase()}`;
+      }
+      if (result.skipped_count > 0) {
+        message += `. Пропущено ${result.skipped_count} проведенных уроков`;
+      }
+
+      toast.success(message);
+      if (onUpdate) onUpdate();
+    } catch (error) {
+      console.error("Failed to regenerate lessons:", error);
+      toast.error("Ошибка при пересоздании уроков");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleDeleteFutureLessons = async () => {
+    try {
+      setIsGenerating(true);
+      const result = await api.deleteGroupLessons(group.id, { only_future: true });
+      setIsDeleteLessonsOpen(false);
+
+      let message = `Удалено ${result.count} будущих уроков`;
+      if (result.skipped > 0) {
+        message += `. Пропущено ${result.skipped} проведенных уроков`;
+      }
+
+      toast.success(message);
+      if (onUpdate) onUpdate();
+    } catch (error) {
+      console.error("Failed to delete lessons:", error);
+      toast.error("Ошибка при удалении уроков");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const handleAddStudent = async () => {
     if (!selectedStudentId) return;
     try {
@@ -223,6 +279,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
       setIsAddStudentOpen(false);
       setSelectedStudentId("");
       setStudentSearchQuery("");
+      await loadGroupStudents();
       if (onUpdate) onUpdate();
       toast.success("Студент добавлен в группу");
     } catch (error) {
@@ -235,6 +292,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
     if (!confirm("Удалить студента из группы?")) return;
     try {
       await api.removeStudentFromGroup(group.id, studentId);
+      await loadGroupStudents();
       if (onUpdate) onUpdate();
       toast.success("Студент архивирован");
     } catch (error) {
@@ -256,12 +314,44 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
     }
   };
 
+  const loadGroupStudents = async () => {
+    try {
+      const students = await api.getGroupStudents(group.id);
+      setGroupStudents(students.filter(gs => !gs.is_archived));
+    } catch (error) {
+      console.error("Failed to load group students:", error);
+    }
+  };
+
+  const handleEditJoinedDate = (studentId: string, studentName: string, currentDate: string) => {
+    setSelectedStudentForDateEdit({ studentId, studentName, currentDate });
+    setNewJoinedDate(currentDate.split('T')[0]); // Convert to YYYY-MM-DD format
+    setIsEditJoinedDateOpen(true);
+  };
+
+  const handleUpdateJoinedDate = async () => {
+    if (!selectedStudentForDateEdit || !newJoinedDate) return;
+
+    try {
+      await api.updateStudentJoinedDate(group.id, selectedStudentForDateEdit.studentId, newJoinedDate);
+      setIsEditJoinedDateOpen(false);
+      setSelectedStudentForDateEdit(null);
+      await loadGroupStudents();
+      if (onUpdate) onUpdate();
+      toast.success("Дата добавления обновлена");
+    } catch (error) {
+      console.error("Failed to update joined date:", error);
+      toast.error("Ошибка при обновлении даты");
+    }
+  };
+
   const handleRestoreStudent = async (studentId: string) => {
     if (!confirm("Восстановить студента в группе?")) return;
     try {
       await api.restoreStudentToGroup(group.id, studentId);
       if (onUpdate) onUpdate();
       await loadArchivedStudents();
+      await loadGroupStudents();
       toast.success("Студент восстановлен");
     } catch (error) {
       console.error("Failed to restore student:", error);
@@ -560,14 +650,36 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                     )}
                   </div>
                   {(isAdmin || isManager) && group.start_date && group.schedules.length > 0 && (
-                    <Button
-                      onClick={() => setIsGenerateLessonsOpen(true)}
-                      className="mt-2 bg-green-600 hover:bg-green-700 w-full"
-                      size="sm"
-                    >
-                      <Sparkles className="w-4 h-4 mr-2" />
-                      Сгенерировать уроки
-                    </Button>
+                    <div className="mt-2 space-y-2">
+                      <Button
+                        onClick={() => setIsGenerateLessonsOpen(true)}
+                        className="bg-green-600 hover:bg-green-700 w-full"
+                        size="sm"
+                      >
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        Сгенерировать уроки
+                      </Button>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          onClick={() => setIsRegenerateLessonsOpen(true)}
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                        >
+                          <Sparkles className="w-4 h-4 mr-2" />
+                          Пересоздать
+                        </Button>
+                        <Button
+                          onClick={() => setIsDeleteLessonsOpen(true)}
+                          variant="outline"
+                          size="sm"
+                          className="w-full text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Удалить
+                        </Button>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
@@ -674,32 +786,52 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                 )}
               </div>
               <div className="space-y-2">
-                {group.students && group.students.length > 0 ? (
-                  group.students.map((student) => (
-                    <div
-                      key={student.id}
-                      className="flex items-center justify-between p-2 border rounded-lg hover:bg-slate-50"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center font-semibold text-xs">
-                          {student.first_name[0]}{student.last_name[0]}
+                {groupStudents && groupStudents.length > 0 ? (
+                  groupStudents.map((gs) => {
+                    const student = gs.student!;
+                    const joinedDate = new Date(gs.joined_at).toLocaleDateString('ru-RU');
+                    return (
+                      <div
+                        key={student.id}
+                        className="flex items-center justify-between p-2 border rounded-lg hover:bg-slate-50"
+                      >
+                        <div className="flex items-center gap-2 flex-1">
+                          <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center font-semibold text-xs">
+                            {student.first_name[0]}{student.last_name[0]}
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium text-sm">
+                              {student.first_name} {student.last_name}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Добавлен: {joinedDate}
+                            </p>
+                          </div>
                         </div>
-                        <p className="font-medium text-sm">
-                          {student.first_name} {student.last_name}
-                        </p>
+                        {(isAdmin || isManager) && (
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              onClick={() => handleEditJoinedDate(student.id, `${student.first_name} ${student.last_name}`, gs.joined_at)}
+                              title="Изменить дату добавления"
+                            >
+                              <Edit className="w-3.5 h-3.5 text-slate-500" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              onClick={() => handleRemoveStudent(student.id)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
-                      {(isAdmin || isManager) && (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7"
-                          onClick={() => handleRemoveStudent(student.id)}
-                        >
-                          <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                        </Button>
-                      )}
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <p className="text-xs text-slate-500 text-center py-3">
                     Нет студентов в группе
@@ -829,6 +961,92 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
               className="bg-green-600 hover:bg-green-700"
             >
               {isGenerating ? "Генерация..." : "Сгенерировать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Regenerate Lessons Dialog */}
+      <Dialog open={isRegenerateLessonsOpen} onOpenChange={setIsRegenerateLessonsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Пересоздать расписание уроков</DialogTitle>
+            <DialogDescription>
+              Удалить все будущие уроки и создать новые по актуальному расписанию группы
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="regenerate-months">На сколько месяцев вперёд</Label>
+              <Input
+                id="regenerate-months"
+                type="number"
+                min="1"
+                max="12"
+                value={generateMonths}
+                onChange={(e) => setGenerateMonths(e.target.value)}
+                className="mt-2"
+              />
+            </div>
+            <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-sm text-amber-900">
+              <p className="font-medium mb-1">⚠️ Внимание!</p>
+              <p>
+                Все будущие непроведенные уроки будут удалены и созданы заново по актуальному расписанию группы.
+                Проведенные уроки (с посещаемостью) останутся без изменений.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsRegenerateLessonsOpen(false)}
+              disabled={isGenerating}
+            >
+              Отмена
+            </Button>
+            <Button
+              onClick={handleRegenerateLessons}
+              disabled={isGenerating}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              {isGenerating ? "Пересоздание..." : "Пересоздать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Lessons Dialog */}
+      <Dialog open={isDeleteLessonsOpen} onOpenChange={setIsDeleteLessonsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Удалить будущие уроки</DialogTitle>
+            <DialogDescription>
+              Удалить все будущие уроки группы (начиная с сегодняшнего дня)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-red-50 border border-red-200 p-3 rounded-lg text-sm text-red-900">
+              <p className="font-medium mb-1">⚠️ Внимание!</p>
+              <p>
+                Будут удалены все будущие непроведенные уроки группы.
+                Проведенные уроки (с посещаемостью) и прошлые уроки останутся без изменений.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteLessonsOpen(false)}
+              disabled={isGenerating}
+            >
+              Отмена
+            </Button>
+            <Button
+              onClick={handleDeleteFutureLessons}
+              disabled={isGenerating}
+              variant="destructive"
+            >
+              {isGenerating ? "Удаление..." : "Удалить"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -998,6 +1216,52 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
               onClick={() => setIsArchivedStudentsOpen(false)}
             >
               Закрыть
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Joined Date Dialog */}
+      <Dialog open={isEditJoinedDateOpen} onOpenChange={setIsEditJoinedDateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Изменить дату добавления</DialogTitle>
+            <DialogDescription>
+              Изменение даты добавления студента {selectedStudentForDateEdit?.studentName} в группу
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="joined-date">Дата добавления</Label>
+              <Input
+                id="joined-date"
+                type="date"
+                value={newJoinedDate}
+                onChange={(e) => setNewJoinedDate(e.target.value)}
+                className="mt-2"
+              />
+            </div>
+            <div className="bg-blue-50 p-3 rounded-lg text-sm text-slate-700">
+              <p>
+                Текущая дата: <strong>{selectedStudentForDateEdit?.currentDate ? new Date(selectedStudentForDateEdit.currentDate).toLocaleDateString('ru-RU') : ''}</strong>
+              </p>
+              <p className="mt-1">
+                Изменение даты повлияет на отображение студента в уроках и успеваемости.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsEditJoinedDateOpen(false)}
+            >
+              Отмена
+            </Button>
+            <Button
+              onClick={handleUpdateJoinedDate}
+              disabled={!newJoinedDate}
+            >
+              Сохранить
             </Button>
           </DialogFooter>
         </DialogContent>
