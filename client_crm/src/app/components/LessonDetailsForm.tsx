@@ -16,8 +16,10 @@ import {
 } from "./ui/popover";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { api } from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
 import type {
   Lesson,
   LessonAttendance,
@@ -31,11 +33,13 @@ interface StudentAttendance {
   id: string;
   attendanceId?: string;
   name: string;
+  isTrial: boolean;
   status: AttendanceStatus;
   lateMinutes?: number;
   lessonGrade?: string;
   homeworkGrade?: string;
   comment: string;
+  originalComment: string;
 }
 
 interface LessonDetailsFormProps {
@@ -44,6 +48,9 @@ interface LessonDetailsFormProps {
 }
 
 export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const canViewStudent = user?.role === "admin" || user?.role === "manager";
   const [students, setStudents] = useState<StudentAttendance[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -85,15 +92,19 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
         .map((gs) => {
           const student = gs.student!;
           const attendance = attendanceData.find((a) => a.student_id === student.id);
+          const defaultStatus: AttendanceStatus = gs.is_trial ? "trial" : "present";
+          const existingComment = attendance?.comment || "";
           return {
             id: student.id,
             attendanceId: attendance?.id,
             name: `${student.first_name} ${student.last_name}`,
-            status: attendance?.attendance || "present",
+            isTrial: gs.is_trial,
+            status: attendance?.attendance || defaultStatus,
             lateMinutes: attendance?.late_minutes,
             lessonGrade: attendance?.lesson_grade || "",
             homeworkGrade: attendance?.homework_grade || "",
-            comment: attendance?.comment || "",
+            comment: existingComment,
+            originalComment: existingComment,
           };
         });
 
@@ -172,6 +183,18 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
             student_id: student.id,
             ...attendanceData,
           });
+        }
+      }
+
+      // Auto-create student comments for students with new/changed comments
+      for (const student of students) {
+        const trimmed = student.comment.trim();
+        if (trimmed && trimmed !== student.originalComment.trim()) {
+          try {
+            await api.createStudentComment(student.id, { content: trimmed });
+          } catch {
+            // Non-critical: don't fail the whole save
+          }
         }
       }
 
@@ -411,10 +434,32 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
                     <tr key={student.id} className="border-b hover:bg-slate-50">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-1 h-8 bg-green-500 rounded" />
-                          <span className="text-sm font-medium text-slate-900">
-                            {student.name}
-                          </span>
+                          <div className={`w-1 h-8 rounded ${
+                            student.status === "present" ? "bg-green-500" :
+                            student.status === "late" ? "bg-yellow-400" :
+                            student.status === "absent" ? "bg-red-500" :
+                            "bg-blue-500"
+                          }`} />
+                          <div className="flex items-center gap-2">
+                            {canViewStudent ? (
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/students/${student.id}`)}
+                                className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors text-left"
+                              >
+                                {student.name}
+                              </button>
+                            ) : (
+                              <span className="text-sm font-medium text-slate-900">
+                                {student.name}
+                              </span>
+                            )}
+                            {student.isTrial && (
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 shrink-0">
+                                Пробное
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-3">

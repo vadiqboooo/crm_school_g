@@ -800,9 +800,16 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                             {student.first_name[0]}{student.last_name[0]}
                           </div>
                           <div className="flex-1">
-                            <p className="font-medium text-sm">
-                              {student.first_name} {student.last_name}
-                            </p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-sm">
+                                {student.first_name} {student.last_name}
+                              </p>
+                              {gs.is_trial && (
+                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                                  Пробное
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-slate-500">
                               Добавлен: {joinedDate}
                             </p>

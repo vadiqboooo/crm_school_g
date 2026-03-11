@@ -28,7 +28,7 @@ def upgrade() -> None:
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('student_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('contact_type', sa.Enum('звонок', 'телеграм', 'лично', name='contacttype'), nullable=False),
+        sa.Column('contact_type', sa.Enum('звонок', 'телеграм', 'лично', name='contacttype', create_type=False), nullable=False),
         sa.Column('feedback_to_parent', sa.Text(), nullable=False),
         sa.Column('feedback_from_parent', sa.Text(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=False),

@@ -244,6 +244,7 @@ export interface GroupStudent {
   group_id: string;
   student_id: string;
   is_archived: boolean;
+  is_trial: boolean;
   joined_at: string;
   student?: {
     id: string;
@@ -760,4 +761,77 @@ export interface ParentFeedbackUpdate {
   feedback_to_parent?: string;
   feedback_from_parent?: string;
   parent_reaction?: ParentReaction;
+}
+
+// Lead types
+export type LeadStatus = "not_sorted" | "contact_established" | "trial_assigned" | "trial_conducted" | "archived";
+
+export interface LeadCommentAuthor {
+  id: string;
+  first_name: string;
+  last_name: string;
+}
+
+export interface LeadComment {
+  id: string;
+  lead_id: string;
+  author_id: string;
+  author: LeadCommentAuthor;
+  content: string;
+  created_at: string;
+}
+
+export interface Lead {
+  id: string;
+  contact_name: string | null;
+  student_name: string | null;
+  phone: string | null;
+  telegram: string | null;
+  class_number: number | null;
+  education_type: string | null;
+  current_school: string | null;
+  source: string | null;
+  status: LeadStatus;
+  assigned_to_id: string | null;
+  assigned_to: { id: string; first_name: string; last_name: string } | null;
+  school_location_id: string | null;
+  student_id: string | null;
+  trial_group_id: string | null;
+  trial_group: { id: string; name: string } | null;
+  trial_groups: { id: string; name: string }[];
+  trial_conducted_group_id: string | null;
+  trial_conducted_group: { id: string; name: string } | null;
+  conducted_groups: { id: string; name: string }[];
+  created_at: string;
+  comments: LeadComment[];
+}
+
+export interface LeadCreate {
+  contact_name?: string;
+  student_name?: string;
+  phone?: string;
+  class_number?: number;
+  education_type?: string;
+  current_school?: string;
+  source?: string;
+  assigned_to_id?: string;
+  school_location_id?: string;
+}
+
+export interface LeadUpdate {
+  contact_name?: string;
+  student_name?: string;
+  phone?: string;
+  telegram?: string;
+  class_number?: number;
+  education_type?: string;
+  current_school?: string;
+  source?: string;
+  status?: LeadStatus;
+  assigned_to_id?: string;
+  school_location_id?: string;
+}
+
+export interface LeadCommentCreate {
+  content: string;
 }

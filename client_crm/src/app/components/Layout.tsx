@@ -29,7 +29,7 @@ export function Layout() {
 
   const adminNavItems = [
     { path: "/", icon: Users, label: "Группы" },
-    { path: "/students", icon: GraduationCap, label: "Студенты" },
+    { path: "/students", icon: GraduationCap, label: "Клиенты" },
     { path: "/exams", icon: FileText, label: "Экзамены" },
     { path: "/school", icon: School, label: "Школа" },
     { path: "/analytics", icon: BarChart3, label: "Аналитика" },
@@ -40,7 +40,7 @@ export function Layout() {
 
   const managerNavItems = [
     { path: "/", icon: Users, label: "Группы" },
-    { path: "/students", icon: GraduationCap, label: "Студенты" },
+    { path: "/students", icon: GraduationCap, label: "Клиенты" },
     { path: "/exams", icon: FileText, label: "Экзамены" },
     { path: "/reports", icon: ClipboardList, label: "Отчеты" },
   ];
@@ -114,7 +114,7 @@ export function Layout() {
 
       const titleMap: { [key: string]: string } = {
         "/": "Группы",
-        "/students": "Студенты",
+        "/students": "Клиенты",
         "/exams": "Экзамены",
         "/school": "Школа",
         "/analytics": "Аналитика",

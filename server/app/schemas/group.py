@@ -122,6 +122,7 @@ class GroupStudentResponse(BaseModel):
     group_id: UUID
     student_id: UUID
     is_archived: bool
+    is_trial: bool = False
     joined_at: datetime_type
     student: Optional[StudentInGroup] = None
 

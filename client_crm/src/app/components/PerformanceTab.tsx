@@ -22,6 +22,7 @@ interface StudentPerformanceData {
     homeworkGrade?: string;
     lessonGrade?: string;
     isLessonConducted: boolean;
+    isBeforeJoining: boolean;
   }[];
 }
 
@@ -145,28 +146,25 @@ export function PerformanceTab({ groupId }: PerformanceTabProps) {
       return {
         studentId: student.id,
         studentName: `${student.first_name} ${student.last_name}`,
-        lessons: filteredLessons
-          .filter((lesson) => {
-            // Only show lessons from when student joined or later
-            const lessonDate = new Date(lesson.date);
-            lessonDate.setHours(0, 0, 0, 0);
-            return lessonDate >= joinedDate;
-          })
-          .map((lesson) => {
-            const attendance = attendanceData.get(lesson.id)?.find((a) => a.student_id === student.id);
-            const isLessonConducted = lesson.status === "conducted" && !lesson.is_cancelled;
-            return {
-              lessonId: lesson.id,
-              lessonDate: lesson.date,
-              lessonTopic: lesson.topic || "Тема не указана",
-              homework: lesson.homework || "Не указано",
-              attendance: attendance?.attendance,
-              lateMinutes: attendance?.late_minutes,
-              homeworkGrade: attendance?.homework_grade,
-              lessonGrade: attendance?.lesson_grade,
-              isLessonConducted,
-            };
-          }),
+        lessons: filteredLessons.map((lesson) => {
+          const lessonDate = new Date(lesson.date);
+          lessonDate.setHours(0, 0, 0, 0);
+          const isBeforeJoining = lessonDate < joinedDate;
+          const attendance = attendanceData.get(lesson.id)?.find((a) => a.student_id === student.id);
+          const isLessonConducted = lesson.status === "conducted" && !lesson.is_cancelled;
+          return {
+            lessonId: lesson.id,
+            lessonDate: lesson.date,
+            lessonTopic: lesson.topic || "Тема не указана",
+            homework: lesson.homework || "Не указано",
+            attendance: attendance?.attendance,
+            lateMinutes: attendance?.late_minutes,
+            homeworkGrade: attendance?.homework_grade,
+            lessonGrade: attendance?.lesson_grade,
+            isLessonConducted,
+            isBeforeJoining,
+          };
+        }),
       };
     });
   }, [groupStudents, filteredLessons, attendanceData]);
@@ -345,11 +343,17 @@ export function PerformanceTab({ groupId }: PerformanceTabProps) {
                               <div
                                 className="h-10 flex items-center justify-center text-xs font-semibold"
                                 style={{
-                                  backgroundColor: getAttendanceColor(lessonData.attendance, lessonData.isLessonConducted),
-                                  color: lessonData.isLessonConducted ? "white" : "#94a3b8"
+                                  backgroundColor: lessonData.isBeforeJoining
+                                    ? "#f1f5f9"
+                                    : getAttendanceColor(lessonData.attendance, lessonData.isLessonConducted),
+                                  color: lessonData.isBeforeJoining
+                                    ? "#cbd5e1"
+                                    : lessonData.isLessonConducted ? "white" : "#94a3b8"
                                 }}
                               >
-                                {!lessonData.isLessonConducted
+                                {lessonData.isBeforeJoining
+                                  ? "·"
+                                  : !lessonData.isLessonConducted
                                   ? "-"
                                   : lessonData.attendance === "absent"
                                   ? "Н"
@@ -370,11 +374,15 @@ export function PerformanceTab({ groupId }: PerformanceTabProps) {
                               <div
                                 className="h-10 flex items-center justify-center text-xs font-semibold"
                                 style={{
-                                  backgroundColor: getGradeColor(lessonData.homeworkGrade, lessonData.isLessonConducted),
-                                  color: lessonData.isLessonConducted && lessonData.homeworkGrade ? "white" : "#94a3b8"
+                                  backgroundColor: lessonData.isBeforeJoining
+                                    ? "#f1f5f9"
+                                    : getGradeColor(lessonData.homeworkGrade, lessonData.isLessonConducted),
+                                  color: lessonData.isBeforeJoining
+                                    ? "#cbd5e1"
+                                    : lessonData.isLessonConducted && lessonData.homeworkGrade ? "white" : "#94a3b8"
                                 }}
                               >
-                                {lessonData.homeworkGrade || "-"}
+                                {lessonData.isBeforeJoining ? "·" : lessonData.homeworkGrade || "-"}
                               </div>
                             </div>
                           )}
@@ -385,11 +393,15 @@ export function PerformanceTab({ groupId }: PerformanceTabProps) {
                               <div
                                 className="h-10 flex items-center justify-center text-xs font-semibold"
                                 style={{
-                                  backgroundColor: getGradeColor(lessonData.lessonGrade, lessonData.isLessonConducted),
-                                  color: lessonData.isLessonConducted && lessonData.lessonGrade ? "white" : "#94a3b8"
+                                  backgroundColor: lessonData.isBeforeJoining
+                                    ? "#f1f5f9"
+                                    : getGradeColor(lessonData.lessonGrade, lessonData.isLessonConducted),
+                                  color: lessonData.isBeforeJoining
+                                    ? "#cbd5e1"
+                                    : lessonData.isLessonConducted && lessonData.lessonGrade ? "white" : "#94a3b8"
                                 }}
                               >
-                                {lessonData.lessonGrade || "-"}
+                                {lessonData.isBeforeJoining ? "·" : lessonData.lessonGrade || "-"}
                               </div>
                             </div>
                           )}

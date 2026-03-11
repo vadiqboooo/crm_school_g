@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+import { LeadsBoard } from "../components/LeadsBoard";
+import { LeadDetailPage } from "../components/LeadDetailPage";
 import { Card, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -49,6 +51,7 @@ import {
   School,
   Building2,
   BookOpen,
+  Calendar,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -75,7 +78,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { StudentPerformanceTab } from "../components/StudentPerformanceTab";
 import { StudentReportsPanel } from "../components/StudentReportsPanel";
-import type { Student, StudentCreate, StudentHistory, ParentRelation, WeeklyReport } from "../types/api";
+import type { Student, StudentCreate, StudentHistory, ParentRelation, WeeklyReport, GroupInfo, Schedule, Lead } from "../types/api";
 
 const parentRelations: { value: ParentRelation; label: string }[] = [
   { value: "мама", label: "Мама" },
@@ -209,8 +212,36 @@ function InfoCardComponent({
   onShare: () => void;
   onFormChange: (data: Student) => void;
 }) {
+  const navigate = useNavigate();
   const hasPhone = student.phone && student.phone.length > 0;
   const hasTelegram = student.telegram_username && student.telegram_username.length > 0;
+
+  const [groupSchedules, setGroupSchedules] = useState<Array<{ id: string; name: string; color?: string; schedules: Schedule[] }>>([]);
+  useEffect(() => {
+    if (!student.groups || student.groups.length === 0) return;
+    Promise.all(student.groups.map((g) => api.getGroup(g.id)))
+      .then((data) => setGroupSchedules(data.map((g) => ({
+        id: g.id,
+        name: g.name,
+        color: g.subject?.color,
+        schedules: g.schedules || [],
+      }))))
+      .catch(console.error);
+  }, [student.groups]);
+
+  const getDayAbbr = (day: string) => {
+    const map: Record<string, string> = {
+      "Понедельник": "Пн", "Вторник": "Вт", "Среда": "Ср",
+      "Четверг": "Чт", "Пятница": "Пт", "Суббота": "Сб", "Воскресенье": "Вс",
+    };
+    return map[day] || day.slice(0, 2);
+  };
+
+  const calcEndTime = (start: string, minutes: number) => {
+    const [h, m] = start.split(":").map(Number);
+    const total = h * 60 + m + minutes;
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  };
 
   const inputCls = "w-full px-3 py-2 bg-input-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600/40 transition-colors";
   const selectCls = "w-full px-3 py-2 bg-input-background border border-border rounded-lg text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600/40 transition-colors";
@@ -289,15 +320,67 @@ function InfoCardComponent({
               )}
             </div>
 
-            {/* Groups */}
+            {/* Groups + Schedule */}
             {student.groups && student.groups.length > 0 && (
-              <div className="flex items-center gap-2 flex-wrap">
-                {student.groups.map((group) => (
-                  <Badge key={group.id} className="bg-blue-600">
-                    {group.name}
-                  </Badge>
-                ))}
-              </div>
+              <>
+                <div className="border-t border-border my-4" />
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm font-medium text-muted-foreground">Группы и расписание</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {groupSchedules.map((gs) => (
+                      <div
+                        key={gs.id}
+                        className="rounded-lg border border-border overflow-hidden"
+                        style={{ borderLeftColor: gs.color || "#2563eb", borderLeftWidth: 3 }}
+                      >
+                        <div className="px-3 py-2 space-y-1.5">
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/group/${gs.id}`)}
+                            className="text-sm font-semibold hover:underline transition-colors text-left leading-tight"
+                            style={{ color: gs.color || "#2563eb" }}
+                          >
+                            {gs.name}
+                          </button>
+                          {gs.schedules.length > 0 ? (
+                            <div className="space-y-1">
+                              {gs.schedules.map((s) => (
+                                <div key={s.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                  <Clock className="w-3 h-3 shrink-0" />
+                                  <span className="font-medium text-foreground">{getDayAbbr(s.day_of_week)}</span>
+                                  <span>{s.start_time.slice(0, 5)}–{calcEndTime(s.start_time, s.duration_minutes)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground/60">Нет расписания</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {/* Placeholder cards while loading */}
+                    {groupSchedules.length === 0 && student.groups.map((group) => (
+                      <div
+                        key={group.id}
+                        className="rounded-lg border border-border border-l-[3px] border-l-blue-600 overflow-hidden"
+                      >
+                        <div className="px-3 py-2">
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/group/${group.id}`)}
+                            className="text-sm font-semibold text-blue-600 hover:underline text-left"
+                          >
+                            {group.name}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
             )}
           </>
         ) : (
@@ -781,6 +864,77 @@ function CommentsComponent({ studentId }: { studentId: string }) {
   );
 }
 
+/* Student Schedule Card */
+function StudentScheduleCard({ groups }: { groups: GroupInfo[] }) {
+  const navigate = useNavigate();
+  const [groupSchedules, setGroupSchedules] = useState<Array<{ id: string; name: string; schedules: Schedule[] }>>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (groups.length === 0) {
+      setLoading(false);
+      return;
+    }
+    loadSchedules();
+  }, [groups]);
+
+  const loadSchedules = async () => {
+    try {
+      setLoading(true);
+      const groupData = await Promise.all(groups.map((g) => api.getGroup(g.id)));
+      setGroupSchedules(groupData.map((g) => ({ id: g.id, name: g.name, schedules: g.schedules || [] })));
+    } catch (err) {
+      console.error("Failed to load schedules:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (groups.length === 0) return null;
+
+  return (
+    <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg">
+      <CardContent className="pt-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Clock className="w-4 h-4 text-muted-foreground" />
+          <h3 className="text-lg font-semibold">Расписание занятий</h3>
+        </div>
+        {loading ? (
+          <div className="flex justify-center py-4">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {groupSchedules.map(({ id, name, schedules }) => (
+              <div key={id} className="border border-border rounded-xl p-3">
+                <button
+                  onClick={() => navigate(`/group/${id}`)}
+                  className="text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors mb-2 block"
+                >
+                  {name}
+                </button>
+                {schedules.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Расписание не указано</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {schedules.map((s) => (
+                      <div key={s.id} className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 rounded-lg">
+                        <span className="text-sm font-medium text-blue-700">{s.day_of_week}</span>
+                        <span className="text-slate-400">·</span>
+                        <span className="text-sm text-slate-600">{s.start_time}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ===== END NEW DESIGN COMPONENTS =====
 
 export function StudentsPage() {
@@ -790,6 +944,8 @@ export function StudentsPage() {
   const isAdmin = user?.role === "admin";
   const isManager = user?.role === "manager";
 
+  const [mainTab, setMainTab] = useState<"leads" | "students">("leads");
+  const [selectedLeadForDetail, setSelectedLeadForDetail] = useState<Lead | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
   const [activeTab, setActiveTab] = useState("info"); // Student detail tabs
   const [loading, setLoading] = useState(true);
@@ -1128,13 +1284,63 @@ export function StudentsPage() {
     );
   }
 
+  const [createLeadOpen, setCreateLeadOpen] = useState(false);
+
+  const tabStrip = (
+    <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-xl w-fit">
+        {(["leads", "students"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setMainTab(tab)}
+            className={`px-5 py-2 rounded-lg text-sm transition-all ${
+              mainTab === tab ? "bg-blue-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {tab === "leads" ? "Лиды" : "Студенты"}
+          </button>
+        ))}
+      </div>
+      <Button
+        className="bg-blue-600 hover:bg-blue-700 gap-2"
+        onClick={() => {
+          if (mainTab === "leads") setCreateLeadOpen(true);
+          else setCreateDialogOpen(true);
+        }}
+      >
+        <Plus className="w-4 h-4" />
+        Добавить клиента
+      </Button>
+    </div>
+  );
+
   return (
     <>
-      {!selectedStudent ? (
+      {!selectedStudent && mainTab === "leads" && selectedLeadForDetail ? (
+        <LeadDetailPage
+          lead={selectedLeadForDetail}
+          onBack={() => setSelectedLeadForDetail(null)}
+          onConverted={() => { setSelectedLeadForDetail(null); }}
+        />
+      ) : !selectedStudent && mainTab === "leads" ? (
+        <div className="h-screen flex flex-col bg-background">
+          <div className="shrink-0 px-6 pt-6">
+            {tabStrip}
+          </div>
+          <div className="flex-1 min-h-0 overflow-auto px-6 pb-4">
+            <LeadsBoard
+              onLeadSelect={(lead) => setSelectedLeadForDetail(lead)}
+              externalCreateOpen={createLeadOpen}
+              onExternalCreateClose={() => setCreateLeadOpen(false)}
+            />
+          </div>
+        </div>
+      ) : !selectedStudent ? (
         <div className="h-screen flex flex-col bg-background">
           {/* 1. FIXED PAGE HEADER (Title + Filters) */}
           <div className="shrink-0">
             <div className="max-w-full px-6 pt-6">
+            {tabStrip}
             {/* Title Block */}
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -1160,13 +1366,6 @@ export function StudentsPage() {
                       Отчеты
                     </>
                   )}
-                </Button>
-                <Button
-                  className="bg-blue-600 hover:bg-blue-700 gap-2"
-                  onClick={() => setCreateDialogOpen(true)}
-                >
-                  <Plus className="w-4 h-4" />
-                  Добавить студента
                 </Button>
               </div>
             </div>
@@ -1577,7 +1776,7 @@ export function StudentsPage() {
       </Dialog>
 
       {/* Scroll to top button */}
-      {!selectedStudent && (
+      {!selectedStudent && mainTab === "students" && (
         <Button className="fixed bottom-8 right-8 h-12 w-12 rounded-full shadow-lg bg-blue-600 hover:bg-blue-700 z-50 transition-all duration-300" onClick={scrollToTop} title="Наверх"><ArrowUp className="w-5 h-5" /></Button>
       )}
     </>

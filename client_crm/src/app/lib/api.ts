@@ -35,6 +35,11 @@ import type {
   TaskUpdate,
   TaskComment,
   TaskCommentCreate,
+  Lead,
+  LeadCreate,
+  LeadUpdate,
+  LeadComment,
+  LeadCommentCreate,
 } from "../types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -789,6 +794,54 @@ class ApiClient {
   async deleteTaskComment(taskId: string, commentId: string): Promise<void> {
     return this.request<void>(`/reports/tasks/${taskId}/comments/${commentId}`, {
       method: "DELETE",
+    });
+  }
+
+  // Leads endpoints
+  async getLeads(): Promise<Lead[]> {
+    return this.request<Lead[]>("/leads");
+  }
+
+  async createLead(data: LeadCreate): Promise<Lead> {
+    return this.request<Lead>("/leads", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLead(id: string, data: LeadUpdate): Promise<Lead> {
+    return this.request<Lead>(`/leads/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async assignTrialGroup(leadId: string, groupId: string): Promise<Lead> {
+    return this.request<Lead>(`/leads/${leadId}/assign-trial`, {
+      method: "POST",
+      body: JSON.stringify({ group_id: groupId }),
+    });
+  }
+
+  async convertLeadToStudent(leadId: string, groupId?: string): Promise<Lead> {
+    return this.request<Lead>(`/leads/${leadId}/convert`, {
+      method: "POST",
+      body: JSON.stringify({ group_id: groupId ?? null }),
+    });
+  }
+
+  async removeLeadTrialGroup(leadId: string, groupId: string): Promise<Lead> {
+    return this.request<Lead>(`/leads/${leadId}/trial-groups/${groupId}`, { method: "DELETE" });
+  }
+
+  async deleteLead(id: string): Promise<void> {
+    return this.request<void>(`/leads/${id}`, { method: "DELETE" });
+  }
+
+  async addLeadComment(leadId: string, data: LeadCommentCreate): Promise<LeadComment> {
+    return this.request<LeadComment>(`/leads/${leadId}/comments`, {
+      method: "POST",
+      body: JSON.stringify(data),
     });
   }
 }

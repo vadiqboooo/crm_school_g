@@ -8,6 +8,9 @@ from app.database import get_db
 from app.models.lesson import Lesson, LessonAttendance
 from app.models.group import Group
 from app.models.employee import Employee
+from app.models.lead import Lead, LeadStatus
+from app.models.group import GroupStudent
+from sqlalchemy.orm import selectinload
 from app.schemas.lesson import (
     LessonCreate, LessonUpdate, LessonResponse,
     AttendanceCreate, AttendanceUpdate, AttendanceResponse,
@@ -109,8 +112,37 @@ async def update_lesson(
         if group and group.teacher_id != current_user.id:
             raise HTTPException(status_code=403, detail="Access denied")
 
+    old_status = lesson.status
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(lesson, field, value)
+
+    # Auto-move leads to "trial_conducted" when lesson is marked as conducted
+    if data.status == "conducted" and old_status != "conducted":
+        trial_gs_result = await db.execute(
+            select(GroupStudent).where(
+                GroupStudent.group_id == lesson.group_id,
+                GroupStudent.is_trial == True,
+                GroupStudent.is_archived == False,
+            )
+        )
+        trial_student_ids = [gs.student_id for gs in trial_gs_result.scalars().all()]
+        if trial_student_ids:
+            group_result = await db.execute(select(Group).where(Group.id == lesson.group_id))
+            conducted_group = group_result.scalar_one_or_none()
+
+            trial_leads_result = await db.execute(
+                select(Lead)
+                .options(selectinload(Lead.conducted_groups))
+                .where(
+                    Lead.student_id.in_(trial_student_ids),
+                    Lead.status.in_([LeadStatus.trial_assigned, LeadStatus.trial_conducted]),
+                )
+            )
+            for lead_obj in trial_leads_result.scalars().all():
+                lead_obj.status = LeadStatus.trial_conducted
+                lead_obj.trial_conducted_group_id = lesson.group_id
+                if conducted_group and conducted_group not in lead_obj.conducted_groups:
+                    lead_obj.conducted_groups.append(conducted_group)
 
     await db.commit()
     await db.refresh(lesson)

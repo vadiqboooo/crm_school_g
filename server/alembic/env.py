@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.models.settings import Settings
 from app.models.schedule import Schedule
+from app.models.lead import Lead, LeadComment
 
 target_metadata = Base.metadata
 
