@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { Plus, Phone, MessageCircle, X, Loader2, UserPlus, Send } from "lucide-react";
+import { Plus, Phone, MessageCircle, X, Loader2, UserPlus, Send, GraduationCap } from "lucide-react";
 import { api } from "../lib/api";
 import type { Lead, LeadStatus, Group } from "../types/api";
+import type { User } from "../types/api";
 import {
   HoverCard,
   HoverCardContent,
@@ -38,6 +39,9 @@ const COLUMNS: {
   { status: "trial_assigned",      label: "Назначено пробное",  headerColor: "bg-purple-50 border-purple-200",   countColor: "text-purple-600", borderColor: "border-purple-200" },
   { status: "trial_conducted",     label: "Проведено пробное",  headerColor: "bg-green-50 border-green-200",     countColor: "text-green-600",  borderColor: "border-green-200" },
 ];
+
+const EDUCATION_TYPES = ["Школа", "Гимназия", "Лицей", "СПО", "Колледж", "Университет", "Другое"];
+const SOURCE_OPTIONS = ["Сайт", "Социальные сети", "Рекомендация", "Реклама", "Другое"];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmtDate(iso: string) {
@@ -230,45 +234,174 @@ function LeadCard({
 }
 
 // ─── Dialogs ──────────────────────────────────────────────────────────────────
+type CreateLeadForm = {
+  contact_name: string;
+  student_name: string;
+  phone: string;
+  class_number: string;
+  education_type: string;
+  current_school: string;
+  source: string;
+  assigned_to_id: string;
+  telegram: string;
+  comment: string;
+};
+
+const EMPTY_CREATE_FORM: CreateLeadForm = {
+  contact_name: "", student_name: "", phone: "",
+  class_number: "", education_type: "", current_school: "",
+  source: "", assigned_to_id: "", telegram: "", comment: "",
+};
+
+function validatePhone(phone: string): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 10 || digits.length > 12) return "Введите корректный номер телефона";
+  return null;
+}
+
 function CreateLeadDialog({
   open, onClose, onCreate,
 }: {
   open: boolean;
   onClose: () => void;
-  onCreate: (d: { contact_name: string; student_name: string; phone: string }) => Promise<void>;
+  onCreate: (d: CreateLeadForm) => Promise<void>;
 }) {
-  const [form, setForm] = useState({ contact_name: "", student_name: "", phone: "" });
+  const [form, setForm] = useState<CreateLeadForm>(EMPTY_CREATE_FORM);
+  const [employees, setEmployees] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setForm(EMPTY_CREATE_FORM);
+      setPhoneError(null);
+      api.getEmployees(["admin", "manager"]).then(setEmployees).catch(() => {});
+    }
+  }, [open]);
+
+  const set = (key: keyof CreateLeadForm, value: string) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  const handlePhoneChange = (value: string) => {
+    set("phone", value);
+    if (value) setPhoneError(validatePhone(value));
+    else setPhoneError(null);
+  };
 
   const handle = async () => {
+    const err = validatePhone(form.phone);
+    if (err) { setPhoneError(err); return; }
     setLoading(true);
-    try { await onCreate(form); setForm({ contact_name: "", student_name: "", phone: "" }); }
+    try { await onCreate(form); }
     finally { setLoading(false); }
   };
 
   const cls = "w-full px-3 py-2 border border-border rounded-lg text-sm bg-background focus:outline-none focus:ring-2 focus:ring-blue-600/20";
+  const isValid = !!(form.contact_name || form.student_name) && !phoneError;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>Новый клиент</DialogTitle></DialogHeader>
-        <div className="space-y-3 py-2">
-          {[
-            { key: "contact_name", label: "Имя родителя / контакта", ph: "Иванова Мария" },
-            { key: "student_name", label: "Имя ученика",             ph: "Иванов Кирилл" },
-            { key: "phone",        label: "Телефон",                  ph: "+7 (___) ___-__-__" },
-          ].map(({ key, label, ph }) => (
-            <div key={key}>
-              <label className="text-sm text-muted-foreground mb-1.5 block">{label}</label>
-              <input className={cls} placeholder={ph} value={(form as any)[key]}
-                onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))} />
+        <div className="space-y-4 py-2">
+
+          {/* Основные данные */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm text-muted-foreground mb-1.5 block">Имя родителя / контакта</label>
+              <input className={cls} placeholder="Иванова Мария" value={form.contact_name}
+                onChange={(e) => set("contact_name", e.target.value)} />
             </div>
-          ))}
+            <div>
+              <label className="text-sm text-muted-foreground mb-1.5 block">Имя ученика</label>
+              <input className={cls} placeholder="Иванов Кирилл" value={form.student_name}
+                onChange={(e) => set("student_name", e.target.value)} />
+            </div>
+          </div>
+
+          {/* Телефон + Телеграм */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm text-muted-foreground mb-1.5 block">
+                Телефон <span className="text-xs text-muted-foreground/60">(родителя / контакта)</span>
+              </label>
+              <input
+                className={`${cls} ${phoneError ? "border-red-400 focus:ring-red-400/20" : ""}`}
+                placeholder="+7 (___) ___-__-__"
+                value={form.phone}
+                onChange={(e) => handlePhoneChange(e.target.value)}
+                type="tel"
+              />
+              {phoneError && <p className="text-xs text-red-500 mt-1">{phoneError}</p>}
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground mb-1.5 block">
+                Telegram <span className="text-xs text-muted-foreground/60">(родителя / контакта)</span>
+              </label>
+              <input className={cls} placeholder="@username" value={form.telegram}
+                onChange={(e) => set("telegram", e.target.value)} />
+            </div>
+          </div>
+
+          {/* Учёба */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-sm text-muted-foreground mb-1.5 block">Класс</label>
+              <input className={cls} placeholder="9" type="number" min="1" max="11"
+                value={form.class_number}
+                onChange={(e) => set("class_number", e.target.value)} />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground mb-1.5 block">Тип заведения</label>
+              <select className={cls} value={form.education_type}
+                onChange={(e) => set("education_type", e.target.value)}>
+                <option value="">Не указан</option>
+                {EDUCATION_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground mb-1.5 block">Номер учебного заведения</label>
+              <input className={cls} placeholder="№5" value={form.current_school}
+                onChange={(e) => set("current_school", e.target.value)} />
+            </div>
+          </div>
+
+          {/* Источник и ответственный */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm text-muted-foreground mb-1.5 block">Источник</label>
+              <select className={cls} value={form.source}
+                onChange={(e) => set("source", e.target.value)}>
+                <option value="">Не указан</option>
+                {SOURCE_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground mb-1.5 block">Ответственный</label>
+              <select className={cls} value={form.assigned_to_id}
+                onChange={(e) => set("assigned_to_id", e.target.value)}>
+                <option value="">Не назначен</option>
+                {employees.map((e) => (
+                  <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Комментарий */}
+          <div>
+            <label className="text-sm text-muted-foreground mb-1.5 block">Комментарий</label>
+            <textarea className={`${cls} resize-none`} rows={3}
+              placeholder="Первичная информация о клиенте..."
+              value={form.comment}
+              onChange={(e) => set("comment", e.target.value)} />
+          </div>
         </div>
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Отмена</Button>
-          <Button className="bg-blue-600 hover:bg-blue-700" onClick={handle}
-            disabled={loading || (!form.contact_name && !form.student_name)}>
+          <Button className="bg-blue-600 hover:bg-blue-700" onClick={handle} disabled={loading || !isValid}>
             {loading && <Loader2 className="w-4 h-4 animate-spin mr-2" />} Создать
           </Button>
         </DialogFooter>
@@ -393,7 +526,7 @@ function ConvertDialog({
   onClose: () => void;
   onConvert: (leadId: string, groupId?: string) => Promise<void>;
 }) {
-  const [groupId, setGroupId] = useState("");
+  const [groupId, setGroupId] = useState("none");
   const [loading, setLoading] = useState(false);
   const active = groups.filter((g) => !g.is_archived);
 
@@ -410,7 +543,7 @@ function ConvertDialog({
             <Select value={groupId} onValueChange={setGroupId}>
               <SelectTrigger><SelectValue placeholder="Выбрать группу..." /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Без группы</SelectItem>
+                <SelectItem value="none">Без группы</SelectItem>
                 {active.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -422,7 +555,7 @@ function ConvertDialog({
             onClick={async () => {
               if (!lead) return;
               setLoading(true);
-              try { await onConvert(lead.id, groupId || undefined); onClose(); }
+              try { await onConvert(lead.id, groupId === "none" ? undefined : groupId); onClose(); }
               finally { setLoading(false); }
             }}>
             {loading && <Loader2 className="w-4 h-4 animate-spin mr-2" />} Перевести
@@ -485,9 +618,23 @@ export function LeadsBoard({
   const patchLead = (updated: Lead) =>
     setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
 
-  const handleCreate = async (d: { contact_name: string; student_name: string; phone: string }) => {
+  const handleCreate = async (d: CreateLeadForm) => {
     try {
-      const lead = await api.createLead(d);
+      const lead = await api.createLead({
+        contact_name: d.contact_name || undefined,
+        student_name: d.student_name || undefined,
+        phone: d.phone || undefined,
+        class_number: d.class_number ? Number(d.class_number) : undefined,
+        education_type: d.education_type || undefined,
+        current_school: d.current_school || undefined,
+        source: d.source || undefined,
+        assigned_to_id: d.assigned_to_id || undefined,
+        telegram: d.telegram || undefined,
+      });
+      if (d.comment.trim()) {
+        const comment = await api.addLeadComment(lead.id, { content: d.comment.trim() });
+        lead.comments = [comment];
+      }
       setLeads((prev) => [lead, ...prev]);
       setCreateOpen(false);
       toast.success("Клиент добавлен");

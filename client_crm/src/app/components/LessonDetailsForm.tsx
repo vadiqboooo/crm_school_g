@@ -153,7 +153,7 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
     try {
       setSaving(true);
 
-      // Update lesson details
+      // Save lesson details without changing status yet
       await api.updateLesson(lesson.id, {
         topic: lessonTopic,
         homework,
@@ -163,10 +163,9 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
         homework_grading: hadPreviousHomework ? homeworkGradingSystem : undefined,
         homework_tasks_count: hadPreviousHomework && homeworkGradingSystem === "tasks" ? parseInt(homeworkTasksCount) : undefined,
         had_previous_homework: hadPreviousHomework,
-        status: "conducted",
       });
 
-      // Create or update attendance records
+      // Create or update attendance records first (comments must exist before status → conducted)
       for (const student of students) {
         const attendanceData = {
           attendance: student.status,
@@ -185,6 +184,9 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
           });
         }
       }
+
+      // Mark lesson as conducted — attendance comments are now saved, backend can copy them to leads
+      await api.updateLesson(lesson.id, { status: "conducted" });
 
       // Auto-create student comments for students with new/changed comments
       for (const student of students) {

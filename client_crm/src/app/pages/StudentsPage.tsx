@@ -944,7 +944,10 @@ export function StudentsPage() {
   const isAdmin = user?.role === "admin";
   const isManager = user?.role === "manager";
 
-  const [mainTab, setMainTab] = useState<"leads" | "students">("leads");
+  const [mainTab, setMainTab] = useState<"leads" | "students" | "archive">("leads");
+  const [archivedLeads, setArchivedLeads] = useState<Lead[]>([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [archiveSearch, setArchiveSearch] = useState("");
   const [selectedLeadForDetail, setSelectedLeadForDetail] = useState<Lead | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
   const [activeTab, setActiveTab] = useState("info"); // Student detail tabs
@@ -958,7 +961,8 @@ export function StudentsPage() {
   const [selectedStudentForReport, setSelectedStudentForReport] = useState<Student | null>(null);
   const [studentLatestReports, setStudentLatestReports] = useState<Map<string, WeeklyReport>>(new Map());
 
-  // Create student dialog
+  // Create dialogs
+  const [createLeadOpen, setCreateLeadOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newStudent, setNewStudent] = useState<StudentCreate>({
@@ -1036,6 +1040,72 @@ export function StudentsPage() {
     }
   };
 
+  const [archivedStudents, setArchivedStudents] = useState<Student[]>([]);
+
+  const loadArchivedLeads = async () => {
+    try {
+      setArchiveLoading(true);
+      const [leadsData, studentsData] = await Promise.all([
+        api.getLeads(),
+        api.getStudents(),
+      ]);
+      setArchivedLeads(leadsData.filter((l) => l.status === "archived"));
+      setArchivedStudents(studentsData.filter((s) => s.status === "inactive"));
+    } catch (error) {
+      console.error("Failed to load archive:", error);
+    } finally {
+      setArchiveLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (mainTab === "archive") loadArchivedLeads();
+  }, [mainTab]);
+
+  const handleRestoreStudent = async (id: string) => {
+    try {
+      await api.restoreStudent(id);
+      setArchivedStudents((prev) => prev.filter((s) => s.id !== id));
+      // Reload fresh data so groups/comments are up to date
+      api.getStudents().then(setStudents).catch(console.error);
+      toast.success("Студент восстановлен");
+    } catch {
+      toast.error("Ошибка при восстановлении");
+    }
+  };
+
+  const handleRestoreLead = async (id: string) => {
+    try {
+      await api.restoreLead(id);
+      setArchivedLeads((prev) => prev.filter((l) => l.id !== id));
+      toast.success("Лид восстановлен");
+    } catch {
+      toast.error("Ошибка при восстановлении");
+    }
+  };
+
+  const handlePermanentDeleteStudent = async (id: string) => {
+    if (!confirm("Удалить студента навсегда? Это действие нельзя отменить.")) return;
+    try {
+      await api.permanentDeleteStudent(id);
+      setArchivedStudents((prev) => prev.filter((s) => s.id !== id));
+      toast.success("Студент удалён");
+    } catch {
+      toast.error("Ошибка при удалении");
+    }
+  };
+
+  const handlePermanentDeleteLead = async (id: string) => {
+    if (!confirm("Удалить лид навсегда? Это действие нельзя отменить.")) return;
+    try {
+      await api.permanentDeleteLead(id);
+      setArchivedLeads((prev) => prev.filter((l) => l.id !== id));
+      toast.success("Лид удалён");
+    } catch {
+      toast.error("Ошибка при удалении");
+    }
+  };
+
   const loadStudentHistory = async (id: string) => {
     try {
       const history = await api.getStudentHistory(id);
@@ -1085,17 +1155,22 @@ export function StudentsPage() {
   };
 
   const handleDeleteStudent = async (id: string) => {
-    if (!confirm("Вы уверены, что хотите удалить студента?")) return;
+    if (!confirm("Вы уверены, что хотите архивировать студента?")) return;
 
     try {
       await api.deleteStudent(id);
-      await loadStudents();
+      const student = students.find((s) => s.id === id);
+      if (student) {
+        const archived = { ...student, status: "inactive" as const };
+        setStudents((prev) => prev.filter((s) => s.id !== id));
+        setArchivedStudents((prev) => [...prev, archived]);
+      }
       if (selectedStudent?.id === id) {
         navigate("/students");
       }
     } catch (error) {
       console.error("Failed to delete student:", error);
-      toast.error("Ошибка при удалении студента");
+      toast.error("Ошибка при архивировании студента");
     }
   };
 
@@ -1284,12 +1359,12 @@ export function StudentsPage() {
     );
   }
 
-  const [createLeadOpen, setCreateLeadOpen] = useState(false);
+  const tabLabels: Record<string, string> = { leads: "Лиды", students: "Студенты", archive: "Архив" };
 
   const tabStrip = (
     <div className="flex items-center justify-between mb-5">
       <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-xl w-fit">
-        {(["leads", "students"] as const).map((tab) => (
+        {(["leads", "students", "archive"] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setMainTab(tab)}
@@ -1297,20 +1372,22 @@ export function StudentsPage() {
               mainTab === tab ? "bg-blue-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            {tab === "leads" ? "Лиды" : "Студенты"}
+            {tabLabels[tab]}
           </button>
         ))}
       </div>
-      <Button
-        className="bg-blue-600 hover:bg-blue-700 gap-2"
-        onClick={() => {
-          if (mainTab === "leads") setCreateLeadOpen(true);
-          else setCreateDialogOpen(true);
-        }}
-      >
-        <Plus className="w-4 h-4" />
-        Добавить клиента
-      </Button>
+      {mainTab !== "archive" && (
+        <Button
+          className="bg-blue-600 hover:bg-blue-700 gap-2"
+          onClick={() => {
+            if (mainTab === "leads") setCreateLeadOpen(true);
+            else setCreateDialogOpen(true);
+          }}
+        >
+          <Plus className="w-4 h-4" />
+          Добавить клиента
+        </Button>
+      )}
     </div>
   );
 
@@ -1333,6 +1410,139 @@ export function StudentsPage() {
               externalCreateOpen={createLeadOpen}
               onExternalCreateClose={() => setCreateLeadOpen(false)}
             />
+          </div>
+        </div>
+      ) : !selectedStudent && mainTab === "archive" ? (
+        <div className="h-screen flex flex-col bg-background">
+          <div className="shrink-0 px-6 pt-6">
+            {tabStrip}
+            <div className="relative max-w-sm mb-4">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Поиск по архиву..."
+                value={archiveSearch}
+                onChange={(e) => setArchiveSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 overflow-auto px-6 pb-4">
+            {archiveLoading ? (
+              <div className="flex items-center justify-center py-20">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : (() => {
+              const q = archiveSearch.toLowerCase();
+              const filtStudents = archivedStudents.filter((s) =>
+                !q || `${s.last_name} ${s.first_name}`.toLowerCase().includes(q) || s.phone?.includes(q)
+              );
+              const filtLeads = archivedLeads.filter((l) =>
+                !q || l.student_name?.toLowerCase().includes(q) || l.contact_name?.toLowerCase().includes(q) || l.phone?.includes(q)
+              );
+              const isEmpty = filtStudents.length === 0 && filtLeads.length === 0;
+              return (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Тип</TableHead>
+                      <TableHead>Ученик / Контакт</TableHead>
+                      <TableHead>Телефон</TableHead>
+                      <TableHead>Группы</TableHead>
+                      <TableHead>Дата</TableHead>
+                      <TableHead></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filtStudents.map((student) => (
+                      <TableRow key={`s-${student.id}`} className="hover:bg-muted/50">
+                        <TableCell>
+                          <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50 text-xs">Студент</Badge>
+                        </TableCell>
+                        <TableCell className="font-medium">{student.last_name} {student.first_name}</TableCell>
+                        <TableCell>{student.phone || "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {student.groups && student.groups.length > 0
+                            ? student.groups.map((g) => g.name).join(", ")
+                            : "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm">—</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="gap-1.5 text-emerald-600 border-emerald-200 hover:bg-emerald-50"
+                              onClick={() => handleRestoreStudent(student.id)}
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                              Восстановить
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50"
+                              onClick={() => handlePermanentDeleteStudent(student.id)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {filtLeads.map((lead) => (
+                      <TableRow key={`l-${lead.id}`} className="hover:bg-muted/50">
+                        <TableCell>
+                          <Badge variant="outline" className="text-orange-600 border-orange-200 bg-orange-50 text-xs">Лид</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{lead.student_name || "—"}</div>
+                          {lead.contact_name && <div className="text-xs text-muted-foreground">{lead.contact_name}</div>}
+                        </TableCell>
+                        <TableCell>{lead.phone || "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {lead.conducted_groups.length > 0
+                            ? lead.conducted_groups.map((g) => g.name).join(", ")
+                            : lead.trial_groups.length > 0
+                            ? lead.trial_groups.map((g) => g.name).join(", ")
+                            : "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          {new Date(lead.created_at).toLocaleDateString("ru-RU")}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="gap-1.5 text-emerald-600 border-emerald-200 hover:bg-emerald-50"
+                              onClick={() => handleRestoreLead(lead.id)}
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                              Восстановить
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50"
+                              onClick={() => handlePermanentDeleteLead(lead.id)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {isEmpty && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-12">
+                          Архив пуст
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              );
+            })()}
           </div>
         </div>
       ) : !selectedStudent ? (

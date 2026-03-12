@@ -11,6 +11,7 @@ from app.models.lead import Lead, LeadComment, LeadStatus
 from app.models.group import Group, GroupStudent
 from app.models.student import Student, StudentHistory, HistoryEventType
 from app.models.employee import Employee
+from app.models.lesson import LessonAttendance
 from app.schemas.lead import (
     LeadCreate, LeadUpdate, LeadResponse,
     LeadCommentCreate, LeadCommentResponse,
@@ -178,6 +179,22 @@ async def convert_to_student(
         )
         db.add(history)
 
+    # Mark all trial group memberships as non-trial (student is now a real student)
+    trial_gs_result = await db.execute(
+        select(GroupStudent).where(
+            GroupStudent.student_id == lead.student_id,
+            GroupStudent.is_trial == True,
+        )
+    )
+    for gs in trial_gs_result.scalars().all():
+        gs.is_trial = False
+
+    # Ensure student status is active
+    student_result = await db.execute(select(Student).where(Student.id == lead.student_id))
+    existing_student = student_result.scalar_one_or_none()
+    if existing_student:
+        existing_student.status = "active"
+
     if data.group_id:
         existing_result = await db.execute(
             select(GroupStudent).where(
@@ -241,18 +258,94 @@ async def remove_trial_group(
     return result.scalar_one()
 
 
+@router.post("/{lead_id}/restore", response_model=LeadResponse)
+async def restore_lead(
+    lead_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Restore an archived lead back to not_sorted."""
+    result = await db.execute(_lead_query().where(Lead.id == lead_id))
+    lead = result.scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    lead.status = LeadStatus.not_sorted
+    await db.commit()
+    result = await db.execute(_lead_query().where(Lead.id == lead_id))
+    return result.scalar_one()
+
+
+@router.delete("/{lead_id}/permanent", status_code=204)
+async def permanent_delete_lead(
+    lead_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Hard-delete an archived lead from the database."""
+    result = await db.execute(_lead_query().where(Lead.id == lead_id))
+    lead = result.scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    lead.trial_groups.clear()
+    lead.conducted_groups.clear()
+    await db.flush()
+    await db.delete(lead)
+    await db.commit()
+
+
 @router.delete("/{lead_id}", status_code=204)
 async def delete_lead(
     lead_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: Employee = Depends(get_current_user),
 ):
-    result = await db.execute(select(Lead).where(Lead.id == lead_id))
+    result = await db.execute(_lead_query().where(Lead.id == lead_id))
     lead = result.scalar_one_or_none()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
-    await db.delete(lead)
+    # Archive instead of hard delete
+    lead.status = LeadStatus.archived
+
+    # Clean up temp student created for trial (not yet converted)
+    if lead.student_id:
+        # Hard-delete all GroupStudent entries for this student first
+        gs_result = await db.execute(
+            select(GroupStudent).where(
+                GroupStudent.student_id == lead.student_id,
+            )
+        )
+        for gs in gs_result.scalars().all():
+            await db.delete(gs)
+
+        # Delete lesson attendance records (NOT NULL FK prevents SET NULL)
+        att_result = await db.execute(
+            select(LessonAttendance).where(
+                LessonAttendance.student_id == lead.student_id,
+            )
+        )
+        for att in att_result.scalars().all():
+            await db.delete(att)
+
+        await db.flush()  # flush deletes before deleting the student
+
+        # Hard-delete the temp student record (it was never formally converted)
+        student_result = await db.execute(
+            select(Student).where(Student.id == lead.student_id)
+        )
+        student = student_result.scalar_one_or_none()
+        if student:
+            await db.delete(student)
+        lead.student_id = None
+
+    # Clear trial group relations
+    lead.trial_groups.clear()
+    lead.conducted_groups.clear()
+    lead.trial_group_id = None
+    lead.trial_conducted_group_id = None
+
     await db.commit()
 
 

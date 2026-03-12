@@ -26,6 +26,7 @@ from app.schemas.student import (
 from app.schemas.report import WeeklyReportResponse, WeeklyReportUpdate, WeeklyReportParentCommentUpdate
 from app.auth.dependencies import get_current_user, get_manager_location_id
 from app.config import settings
+from app.models.lead import Lead, LeadStatus
 
 router = APIRouter(prefix="/students", tags=["students"])
 
@@ -42,7 +43,7 @@ async def list_students(
         selectinload(Student.parent_contacts),
         selectinload(Student.groups).selectinload(GroupStudent.group).selectinload(Group.location),
         selectinload(Student.comments).selectinload(StudentComment.author)
-    )
+    ).where(Student.status == "active")
 
     # If manager and not requesting all students, filter by location
     if manager_location_id is not None and not all:
@@ -64,6 +65,16 @@ async def list_students(
             )
         )
         query = query.where(or_(in_location, no_groups))
+
+    # Exclude students linked to an active (non-archived) lead — they are temp trial students
+    # only show them after conversion (lead becomes archived)
+    no_active_lead = ~exists(
+        select(Lead.id).where(
+            Lead.student_id == Student.id,
+            Lead.status != LeadStatus.archived,
+        )
+    )
+    query = query.where(no_active_lead)
 
     result = await db.execute(query.order_by(Student.last_name))
     students = result.scalars().all()
@@ -379,9 +390,49 @@ async def delete_student(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
+    # Soft-delete: archive instead of hard delete to preserve group history
+    student.status = "inactive"
+    await db.commit()
+    return {"detail": "Archived"}
+
+
+@router.delete("/{student_id}/permanent")
+async def permanent_delete_student(
+    student_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: Employee = Depends(get_current_user),
+):
+    result = await db.execute(select(Student).where(Student.id == student_id))
+    student = result.scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    gs_result = await db.execute(
+        select(GroupStudent).where(GroupStudent.student_id == student_id)
+    )
+    for gs in gs_result.scalars().all():
+        await db.delete(gs)
+    await db.flush()
+
     await db.delete(student)
     await db.commit()
     return {"detail": "Deleted"}
+
+
+@router.post("/{student_id}/restore")
+async def restore_student(
+    student_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: Employee = Depends(get_current_user),
+):
+    result = await db.execute(select(Student).where(Student.id == student_id))
+    student = result.scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    student.status = "active"
+    await db.commit()
+    return {"detail": "Restored"}
 
 
 # --- Parent Contacts ---

@@ -123,7 +123,7 @@ function ConvertDialog({
   open: boolean; lead: Lead | null; groups: Group[];
   onClose: () => void; onConvert: (groupId?: string) => Promise<void>;
 }) {
-  const [groupId, setGroupId] = useState("");
+  const [groupId, setGroupId] = useState("none");
   const [loading, setLoading] = useState(false);
   const active = groups.filter((g) => !g.is_archived);
   return (
@@ -139,7 +139,7 @@ function ConvertDialog({
             <Select value={groupId} onValueChange={setGroupId}>
               <SelectTrigger><SelectValue placeholder="Выбрать группу..." /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Без группы</SelectItem>
+                <SelectItem value="none">Без группы</SelectItem>
                 {active.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -148,7 +148,7 @@ function ConvertDialog({
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Отмена</Button>
           <Button className="bg-emerald-600 hover:bg-emerald-700" disabled={loading}
-            onClick={async () => { setLoading(true); try { await onConvert(groupId || undefined); onClose(); } finally { setLoading(false); } }}>
+            onClick={async () => { setLoading(true); try { await onConvert(groupId === "none" ? undefined : groupId); onClose(); } finally { setLoading(false); } }}>
             {loading && <Loader2 className="w-4 h-4 animate-spin mr-2" />} Перевести
           </Button>
         </DialogFooter>

@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models.lesson import Lesson, LessonAttendance
 from app.models.group import Group
 from app.models.employee import Employee
-from app.models.lead import Lead, LeadStatus
+from app.models.lead import Lead, LeadStatus, LeadComment
 from app.models.group import GroupStudent
 from sqlalchemy.orm import selectinload
 from app.schemas.lesson import (
@@ -130,6 +130,17 @@ async def update_lesson(
             group_result = await db.execute(select(Group).where(Group.id == lesson.group_id))
             conducted_group = group_result.scalar_one_or_none()
 
+            # Fetch attendance comments for trial students in this lesson
+            attendance_result = await db.execute(
+                select(LessonAttendance).where(
+                    LessonAttendance.lesson_id == lesson_id,
+                    LessonAttendance.student_id.in_(trial_student_ids),
+                    LessonAttendance.comment.isnot(None),
+                    LessonAttendance.comment != "",
+                )
+            )
+            attendance_comments = {att.student_id: att.comment for att in attendance_result.scalars().all()}
+
             trial_leads_result = await db.execute(
                 select(Lead)
                 .options(selectinload(Lead.conducted_groups))
@@ -143,6 +154,14 @@ async def update_lesson(
                 lead_obj.trial_conducted_group_id = lesson.group_id
                 if conducted_group and conducted_group not in lead_obj.conducted_groups:
                     lead_obj.conducted_groups.append(conducted_group)
+                # Copy teacher's attendance comment to lead comments
+                if lead_obj.student_id in attendance_comments:
+                    lead_comment = LeadComment(
+                        lead_id=lead_obj.id,
+                        author_id=current_user.id,
+                        content=attendance_comments[lead_obj.student_id],
+                    )
+                    db.add(lead_comment)
 
     await db.commit()
     await db.refresh(lesson)

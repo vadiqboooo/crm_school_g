@@ -810,6 +810,7 @@ export interface LeadCreate {
   contact_name?: string;
   student_name?: string;
   phone?: string;
+  telegram?: string;
   class_number?: number;
   education_type?: string;
   current_school?: string;

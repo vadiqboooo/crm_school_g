@@ -838,6 +838,22 @@ class ApiClient {
     return this.request<void>(`/leads/${id}`, { method: "DELETE" });
   }
 
+  async restoreLead(id: string): Promise<Lead> {
+    return this.request<Lead>(`/leads/${id}/restore`, { method: "POST" });
+  }
+
+  async restoreStudent(id: string): Promise<void> {
+    return this.request<void>(`/students/${id}/restore`, { method: "POST" });
+  }
+
+  async permanentDeleteStudent(id: string): Promise<void> {
+    return this.request<void>(`/students/${id}/permanent`, { method: "DELETE" });
+  }
+
+  async permanentDeleteLead(id: string): Promise<void> {
+    return this.request<void>(`/leads/${id}/permanent`, { method: "DELETE" });
+  }
+
   async addLeadComment(leadId: string, data: LeadCommentCreate): Promise<LeadComment> {
     return this.request<LeadComment>(`/leads/${leadId}/comments`, {
       method: "POST",
