@@ -18,7 +18,39 @@ export interface User {
   phone: string | null;
   role: "admin" | "teacher" | "manager";
   is_active: boolean;
+  salary_rate?: number | null;
+  salary_bonus_per_student?: number | null;
+  salary_base_students?: number;
   created_at: string;
+}
+
+export interface EmployeeSalary {
+  id: string;
+  employee_id: string;
+  employee_name?: string | null;
+  lesson_id?: string | null;
+  lessons_count?: number | null;
+  rate?: number | null;
+  total?: number | null;
+  students_count?: number | null;
+  status: "pending" | "paid";
+  description?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  created_at: string;
+}
+
+export interface Payment {
+  id: string;
+  student_id: string;
+  group_id?: string | null;
+  amount: number;
+  status: "paid" | "pending" | "overdue";
+  due_date?: string | null;
+  created_at: string;
+  student_name?: string | null;
+  group_name?: string | null;
+  description?: string | null;
 }
 
 // Student types
@@ -26,7 +58,30 @@ export type StudentStatus = "active" | "inactive";
 export type StudentSource = "Сайт" | "Социальные сети" | "Рекомендация" | "Реклама" | "Другое";
 export type EducationType = "Школа" | "Гимназия" | "Лицей" | "СПО" | "Колледж" | "Университет" | "Другое";
 export type ParentRelation = "мама" | "папа" | "бабушка" | "дедушка" | "тетя" | "дядя";
-export type HistoryEventType = "added_to_db" | "added_to_group" | "removed_from_group" | "payment" | "status_change" | "parent_feedback_added" | "parent_feedback_deleted" | "student_info_updated";
+export type HistoryEventType = "added_to_db" | "added_to_group" | "removed_from_group" | "payment" | "status_change" | "parent_feedback_added" | "parent_feedback_deleted" | "student_info_updated" | "balance_replenishment" | "lesson_deduction";
+
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  lessons_count: number;
+  price_per_lesson: number;
+  total_price: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface SubscriptionPlanCreate {
+  name: string;
+  lessons_count: number;
+  price_per_lesson: number;
+}
+
+export interface SubscriptionPlanUpdate {
+  name?: string;
+  lessons_count?: number;
+  price_per_lesson?: number;
+  is_active?: boolean;
+}
 
 export interface ParentContact {
   id: string;
@@ -83,6 +138,9 @@ export interface Student {
   current_school?: string;
   class_number?: number;
   status: StudentStatus;
+  balance?: number;
+  subscription_plan?: SubscriptionPlan | null;
+  lessons_remaining?: number | null;
   created_at: string;
   parent_contacts: ParentContact[];
   groups: GroupInfo[];

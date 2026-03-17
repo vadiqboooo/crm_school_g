@@ -446,7 +446,7 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
                             {canViewStudent ? (
                               <button
                                 type="button"
-                                onClick={() => navigate(`/students/${student.id}`)}
+                                onClick={() => navigate(`/students/${student.id}`, { state: { from: "lesson", groupId: lesson.group_id, lessonId: lesson.id } })}
                                 className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors text-left"
                               >
                                 {student.name}

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from app.models.student import StudentStatus, ParentRelation, HistoryEventType, ContactType, ParentReaction, StudentSource, EducationType
 from app.models.lesson import AttendanceStatus
+from app.schemas.finance import SubscriptionPlanResponse
 
 
 class ParentContactCreate(BaseModel):
@@ -111,6 +112,9 @@ class StudentResponse(BaseModel):
     current_school: Optional[str]
     class_number: Optional[int]
     status: StudentStatus
+    balance: float = 0.0
+    subscription_plan: Optional[SubscriptionPlanResponse] = None
+    lessons_remaining: Optional[int] = None
     created_at: datetime_type
     parent_contacts: list[ParentContactResponse] = []
     groups: list[GroupInfoResponse] = []
@@ -118,6 +122,15 @@ class StudentResponse(BaseModel):
     comments: list[StudentCommentResponse] = []
 
     model_config = {"from_attributes": True}
+
+
+class StudentPaymentCreate(BaseModel):
+    amount: float
+    description: Optional[str] = None
+
+
+class StudentSubscriptionAssign(BaseModel):
+    subscription_plan_id: Optional[UUID] = None
 
 
 class StudentPerformanceRecord(BaseModel):

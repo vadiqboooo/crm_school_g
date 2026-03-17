@@ -10,6 +10,7 @@ import httpx
 
 from app.database import get_db
 from app.models.student import Student, ParentContact, StudentHistory, HistoryEventType, ParentFeedback, StudentComment, StudentSource, EducationType
+from app.models.finance import SubscriptionPlan, Payment, PaymentStatus
 from app.models.group import GroupStudent, Group
 from app.models.lesson import Lesson, LessonAttendance
 from app.models.subject import Subject
@@ -22,6 +23,7 @@ from app.schemas.student import (
     StudentPerformanceRecord, StudentPerformanceResponse,
     ParentFeedbackCreate, ParentFeedbackUpdate, ParentFeedbackResponse,
     StudentCommentCreate, StudentCommentResponse,
+    StudentPaymentCreate, StudentSubscriptionAssign,
 )
 from app.schemas.report import WeeklyReportResponse, WeeklyReportUpdate, WeeklyReportParentCommentUpdate
 from app.auth.dependencies import get_current_user, get_manager_location_id
@@ -42,7 +44,8 @@ async def list_students(
     query = select(Student).options(
         selectinload(Student.parent_contacts),
         selectinload(Student.groups).selectinload(GroupStudent.group).selectinload(Group.location),
-        selectinload(Student.comments).selectinload(StudentComment.author)
+        selectinload(Student.comments).selectinload(StudentComment.author),
+        selectinload(Student.subscription_plan),
     ).where(Student.status == "active")
 
     # If manager and not requesting all students, filter by location
@@ -134,6 +137,13 @@ async def list_students(
             "current_school": student.current_school,
             "class_number": student.class_number,
             "status": student.status,
+            "balance": float(student.balance) if student.balance is not None else 0.0,
+            "subscription_plan": student.subscription_plan,
+            "lessons_remaining": (
+                int(float(student.balance) // float(student.subscription_plan.price_per_lesson))
+                if student.subscription_plan and student.subscription_plan.price_per_lesson
+                else None
+            ),
             "created_at": student.created_at,
             "parent_contacts": student.parent_contacts,
             "groups": groups_to_show,
@@ -203,7 +213,8 @@ async def get_student(
             selectinload(Student.parent_contacts),
             selectinload(Student.groups).selectinload(GroupStudent.group).selectinload(Group.location),
             selectinload(Student.history),
-            selectinload(Student.comments).selectinload(StudentComment.author)
+            selectinload(Student.comments).selectinload(StudentComment.author),
+            selectinload(Student.subscription_plan),
         )
         .where(Student.id == student_id)
     )
@@ -250,6 +261,13 @@ async def get_student(
         "current_school": student.current_school,
         "class_number": student.class_number,
         "status": student.status,
+        "balance": float(student.balance) if student.balance is not None else 0.0,
+        "subscription_plan": student.subscription_plan,
+        "lessons_remaining": (
+            int(float(student.balance) // float(student.subscription_plan.price_per_lesson))
+            if student.subscription_plan and student.subscription_plan.price_per_lesson
+            else None
+        ),
         "created_at": student.created_at,
         "parent_contacts": student.parent_contacts,
         "groups": [
@@ -1247,3 +1265,225 @@ async def delete_student_comment(
     await db.delete(comment)
     await db.commit()
     return {"detail": "Comment deleted successfully"}
+
+
+# ─── Balance / Subscription ───────────────────────────────────────────────────
+
+async def _load_student_with_subscription(student_id: UUID, db: AsyncSession) -> Student:
+    result = await db.execute(
+        select(Student)
+        .options(
+            selectinload(Student.parent_contacts),
+            selectinload(Student.groups).selectinload(GroupStudent.group).selectinload(Group.location),
+            selectinload(Student.history),
+            selectinload(Student.comments).selectinload(StudentComment.author),
+            selectinload(Student.subscription_plan),
+        )
+        .where(Student.id == student_id)
+    )
+    return result.scalar_one_or_none()
+
+
+def _student_to_response(student: Student) -> StudentResponse:
+    return StudentResponse(
+        id=student.id,
+        first_name=student.first_name,
+        last_name=student.last_name,
+        phone=student.phone,
+        telegram_id=student.telegram_id,
+        telegram_username=student.telegram_username,
+        bot_linked=student.bot_linked,
+        contract_number=student.contract_number,
+        source=student.source,
+        education_type=student.education_type,
+        current_school=student.current_school,
+        class_number=student.class_number,
+        status=student.status,
+        balance=float(student.balance) if student.balance is not None else 0.0,
+        subscription_plan=student.subscription_plan,
+        lessons_remaining=(
+            int(float(student.balance) // float(student.subscription_plan.price_per_lesson))
+            if student.subscription_plan and student.subscription_plan.price_per_lesson
+            else None
+        ),
+        created_at=student.created_at,
+        parent_contacts=student.parent_contacts,
+        groups=[
+            GroupInfoResponse(
+                id=gs.group.id,
+                name=gs.group.name,
+                school_location=gs.group.location.name if gs.group.location else None,
+            )
+            for gs in student.groups
+            if not gs.is_archived
+        ],
+        history=student.history,
+        comments=student.comments,
+    )
+
+
+@router.post("/{student_id}/payments", response_model=StudentResponse)
+async def add_student_payment(
+    student_id: UUID,
+    data: StudentPaymentCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Add payment to student balance and log it in history."""
+    student = await _load_student_with_subscription(student_id, db)
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    prev_balance = float(student.balance or 0)
+    new_balance = prev_balance + data.amount
+    student.balance = new_balance
+
+    description = f"Пополнение баланса: +{data.amount:.0f} руб."
+    if data.description:
+        description += f" ({data.description})"
+    if prev_balance < 0:
+        covered = min(abs(prev_balance), data.amount)
+        remaining_debt = abs(prev_balance) - covered
+        if remaining_debt > 0:
+            description += f" · Долг погашен частично (ещё -{remaining_debt:.0f} руб.)"
+        else:
+            description += f" · Долг погашен полностью"
+
+    history = StudentHistory(
+        student_id=student_id,
+        event_type=HistoryEventType.balance_replenishment,
+        description=description,
+    )
+    db.add(history)
+
+    # Create a Payment record so it appears in the Finances page
+    payment_record = Payment(
+        student_id=student_id,
+        group_id=None,
+        amount=data.amount,
+        status=PaymentStatus.paid,
+        description=data.description or None,
+    )
+    db.add(payment_record)
+
+    await db.commit()
+    student = await _load_student_with_subscription(student_id, db)
+    return _student_to_response(student)
+
+
+@router.post("/{student_id}/retroactive-deduction", response_model=StudentResponse)
+async def retroactive_deduction(
+    student_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Retroactively charge a student for conducted lessons that were not deducted."""
+    from app.models.lesson import Lesson
+    import re
+
+    student = await _load_student_with_subscription(student_id, db)
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    if not student.subscription_plan_id or not student.subscription_plan:
+        raise HTTPException(status_code=400, detail="Student has no subscription plan assigned")
+
+    price = float(student.subscription_plan.price_per_lesson)
+
+    # Get active group memberships (not trial, not archived)
+    gs_result = await db.execute(
+        select(GroupStudent).where(
+            GroupStudent.student_id == student_id,
+            GroupStudent.is_archived == False,
+            GroupStudent.is_trial == False,
+        )
+    )
+    group_ids = [gs.group_id for gs in gs_result.scalars().all()]
+    if not group_ids:
+        return _student_to_response(student)
+
+    # Count all conducted lessons in those groups
+    conducted_result = await db.execute(
+        select(Lesson).where(
+            Lesson.group_id.in_(group_ids),
+            Lesson.status == "conducted",
+        ).order_by(Lesson.date)
+    )
+    conducted_lessons = conducted_result.scalars().all()
+    if not conducted_lessons:
+        return _student_to_response(student)
+
+    # Count existing successful deduction entries (not "без абонемента")
+    existing_result = await db.execute(
+        select(StudentHistory).where(
+            StudentHistory.student_id == student_id,
+            StudentHistory.event_type == HistoryEventType.lesson_deduction,
+            StudentHistory.description.notlike("%без абонемента%"),
+        )
+    )
+    existing_deductions = existing_result.scalars().all()
+
+    # Build a date→count map of already-deducted lessons
+    from collections import Counter
+    deducted_counter: Counter = Counter()
+    for h in existing_deductions:
+        m = re.search(r"(\d{4}-\d{2}-\d{2})", h.description)
+        if m:
+            deducted_counter[m.group(1)] += 1
+
+    # Find uncharged lessons per date
+    uncharged: list[Lesson] = []
+    conducted_counter: Counter = Counter()
+    for lesson in conducted_lessons:
+        date_str = str(lesson.date)
+        conducted_counter[date_str] += 1
+        if deducted_counter[date_str] < conducted_counter[date_str]:
+            uncharged.append(lesson)
+            deducted_counter[date_str] += 1  # mark as now covered
+
+    if not uncharged:
+        return _student_to_response(student)
+
+    for lesson in uncharged:
+        new_balance = float(student.balance or 0) - price
+        student.balance = new_balance
+        debt_note = f" [долг: {abs(new_balance):.0f} руб.]" if new_balance < 0 else ""
+        history = StudentHistory(
+            student_id=student_id,
+            event_type=HistoryEventType.lesson_deduction,
+            description=(
+                f"Списание за урок {lesson.date}: "
+                f"-{price:.0f} руб. "
+                f"(абонемент: {student.subscription_plan.name})"
+                f"{debt_note} [ретроактивно]"
+            ),
+        )
+        db.add(history)
+
+    await db.commit()
+    student = await _load_student_with_subscription(student_id, db)
+    return _student_to_response(student)
+
+
+@router.patch("/{student_id}/subscription", response_model=StudentResponse)
+async def set_student_subscription(
+    student_id: UUID,
+    data: StudentSubscriptionAssign,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Assign or remove a subscription plan for a student."""
+    student = await _load_student_with_subscription(student_id, db)
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    if data.subscription_plan_id:
+        plan_result = await db.execute(
+            select(SubscriptionPlan).where(SubscriptionPlan.id == data.subscription_plan_id)
+        )
+        if not plan_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Subscription plan not found")
+
+    student.subscription_plan_id = data.subscription_plan_id
+    await db.commit()
+    student = await _load_student_with_subscription(student_id, db)
+    return _student_to_response(student)

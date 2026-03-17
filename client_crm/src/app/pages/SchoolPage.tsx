@@ -5,7 +5,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
-import { Plus, BookOpen, Users as UsersIcon, Edit, Trash2, MoreVertical, Loader2, Save } from "lucide-react";
+import { Plus, BookOpen, Users as UsersIcon, Edit, Trash2, MoreVertical, Loader2, Save, CreditCard, ToggleLeft, ToggleRight } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import {
   Table,
@@ -37,7 +37,7 @@ import {
   DialogTitle,
 } from "../components/ui/dialog";
 import { api } from "../lib/api";
-import type { Subject, User, Settings, SettingsUpdate, SchoolLocation, SchoolLocationCreate, Exam, ExamCreate } from "../types/api";
+import type { Subject, User, Settings, SettingsUpdate, SchoolLocation, SchoolLocationCreate, Exam, ExamCreate, SubscriptionPlan, SubscriptionPlanCreate } from "../types/api";
 import { useAuth } from "../contexts/AuthContext";
 import { SubjectEditDialog } from "../components/SubjectEditDialog";
 
@@ -50,9 +50,20 @@ export function SchoolPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [locations, setLocations] = useState<SchoolLocation[]>([]);
   const [examTemplates, setExamTemplates] = useState<Exam[]>([]);
+  const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState("subjects");
+
+  // Subscription dialog
+  const [subscriptionDialogOpen, setSubscriptionDialogOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
+  const [savingPlan, setSavingPlan] = useState(false);
+  const [subscriptionForm, setSubscriptionForm] = useState<SubscriptionPlanCreate>({
+    name: "",
+    lessons_count: 8,
+    price_per_lesson: 0,
+  });
 
   // Subject dialog
   const [subjectDialogOpen, setSubjectDialogOpen] = useState(false);
@@ -74,6 +85,9 @@ export function SchoolPage() {
     last_name: "",
     phone: "",
     role: "teacher" as "admin" | "teacher" | "manager",
+    salary_rate: "" as string,
+    salary_bonus_per_student: "" as string,
+    salary_base_students: "8" as string,
   });
 
   // Location dialog
@@ -142,12 +156,13 @@ export function SchoolPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [subjectsData, teachersData, settingsData, locationsData, templatesData] = await Promise.all([
+      const [subjectsData, teachersData, settingsData, locationsData, templatesData, plansData] = await Promise.all([
         api.getSubjects(),
         api.getEmployees(),
         api.getSettings(),
         api.getSchoolLocations(),
         api.getExamTemplates(),
+        api.getSubscriptionPlans(),
       ]);
 
       setSubjects(subjectsData);
@@ -155,6 +170,7 @@ export function SchoolPage() {
       setSettings(settingsData);
       setLocations(locationsData);
       setExamTemplates(templatesData);
+      setSubscriptionPlans(plansData);
       setSettingsForm({
         school_name: settingsData.school_name || "",
         description: settingsData.description || "",
@@ -168,6 +184,56 @@ export function SchoolPage() {
       console.error("Failed to load data:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOpenSubscriptionDialog = (plan?: SubscriptionPlan) => {
+    if (plan) {
+      setEditingPlan(plan);
+      setSubscriptionForm({ name: plan.name, lessons_count: plan.lessons_count, price_per_lesson: plan.price_per_lesson });
+    } else {
+      setEditingPlan(null);
+      setSubscriptionForm({ name: "", lessons_count: 8, price_per_lesson: 0 });
+    }
+    setSubscriptionDialogOpen(true);
+  };
+
+  const handleSaveSubscriptionPlan = async () => {
+    if (!subscriptionForm.name.trim() || !subscriptionForm.lessons_count || !subscriptionForm.price_per_lesson) return;
+    try {
+      setSavingPlan(true);
+      if (editingPlan) {
+        await api.updateSubscriptionPlan(editingPlan.id, subscriptionForm);
+      } else {
+        await api.createSubscriptionPlan(subscriptionForm);
+      }
+      await loadData();
+      setSubscriptionDialogOpen(false);
+    } catch (error) {
+      console.error("Failed to save subscription plan:", error);
+      alert("Ошибка при сохранении абонемента");
+    } finally {
+      setSavingPlan(false);
+    }
+  };
+
+  const handleDeleteSubscriptionPlan = async (id: string) => {
+    if (!confirm("Удалить абонемент? Студенты с этим абонементом потеряют привязку.")) return;
+    try {
+      await api.deleteSubscriptionPlan(id);
+      await loadData();
+    } catch (error) {
+      console.error("Failed to delete subscription plan:", error);
+      alert("Ошибка при удалении абонемента");
+    }
+  };
+
+  const handleTogglePlanActive = async (plan: SubscriptionPlan) => {
+    try {
+      await api.updateSubscriptionPlan(plan.id, { is_active: !plan.is_active });
+      await loadData();
+    } catch (error) {
+      console.error("Failed to toggle plan:", error);
     }
   };
 
@@ -237,6 +303,9 @@ export function SchoolPage() {
       last_name: employee.last_name,
       phone: employee.phone || "",
       role: employee.role,
+      salary_rate: employee.salary_rate != null ? String(employee.salary_rate) : "",
+      salary_bonus_per_student: employee.salary_bonus_per_student != null ? String(employee.salary_bonus_per_student) : "",
+      salary_base_students: String(employee.salary_base_students ?? 8),
     });
     setEmployeeDialogOpen(true);
   };
@@ -268,6 +337,9 @@ export function SchoolPage() {
           last_name: newEmployee.last_name,
           phone: newEmployee.phone || undefined,
           role: newEmployee.role,
+          salary_rate: newEmployee.salary_rate ? parseFloat(newEmployee.salary_rate) : null,
+          salary_bonus_per_student: newEmployee.salary_bonus_per_student ? parseFloat(newEmployee.salary_bonus_per_student) : null,
+          salary_base_students: newEmployee.salary_base_students ? parseInt(newEmployee.salary_base_students) : 8,
         });
         await loadData();
         setEmployeeDialogOpen(false);
@@ -278,6 +350,9 @@ export function SchoolPage() {
           last_name: "",
           phone: "",
           role: "teacher",
+          salary_rate: "",
+          salary_bonus_per_student: "",
+          salary_base_students: "8",
         });
       } catch (error) {
         console.error("Failed to update employee:", error);
@@ -310,6 +385,9 @@ export function SchoolPage() {
           last_name: "",
           phone: "",
           role: "teacher",
+          salary_rate: "",
+          salary_bonus_per_student: "",
+          salary_base_students: "8",
         });
       } catch (error) {
         console.error("Failed to create employee:", error);
@@ -489,6 +567,7 @@ export function SchoolPage() {
           <TabsTrigger value="teachers">Сотрудники</TabsTrigger>
           <TabsTrigger value="locations">Филиалы</TabsTrigger>
           <TabsTrigger value="exams">Экзамены</TabsTrigger>
+          <TabsTrigger value="subscriptions">Абонементы</TabsTrigger>
           <TabsTrigger value="settings">Настройки</TabsTrigger>
         </TabsList>
 
@@ -663,7 +742,12 @@ export function SchoolPage() {
                           </span>
                         </TableCell>
                         <TableCell>
-                          <span className="text-sm">{roleNames[teacher.role]}</span>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-sm">{roleNames[teacher.role]}</span>
+                            {teacher.role === "teacher" && teacher.salary_rate && (
+                              <span className="text-xs text-muted-foreground">{teacher.salary_rate} ₽/урок</span>
+                            )}
+                          </div>
                         </TableCell>
                         {isAdmin && (
                           <TableCell>
@@ -1056,7 +1140,158 @@ export function SchoolPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Subscriptions Tab */}
+        <TabsContent value="subscriptions">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Абонементы</h2>
+            {isAdmin && (
+              <Button
+                onClick={() => handleOpenSubscriptionDialog()}
+                className="bg-blue-600 hover:bg-blue-700 gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Добавить абонемент
+              </Button>
+            )}
+          </div>
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Название</TableHead>
+                    <TableHead className="text-center">Кол-во уроков</TableHead>
+                    <TableHead className="text-center">Цена за урок</TableHead>
+                    <TableHead className="text-center">Общая стоимость</TableHead>
+                    <TableHead className="text-center">Статус</TableHead>
+                    {isAdmin && <TableHead className="text-right">Действия</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {subscriptionPlans.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={isAdmin ? 6 : 5} className="text-center py-10 text-slate-500">
+                        Абонементы не созданы
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    subscriptionPlans.map((plan) => (
+                      <TableRow key={plan.id}>
+                        <TableCell className="font-medium">{plan.name}</TableCell>
+                        <TableCell className="text-center">{plan.lessons_count}</TableCell>
+                        <TableCell className="text-center">{plan.price_per_lesson.toLocaleString("ru-RU")} ₽</TableCell>
+                        <TableCell className="text-center font-semibold">{plan.total_price.toLocaleString("ru-RU")} ₽</TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant={plan.is_active ? "default" : "secondary"}>
+                            {plan.is_active ? "Активен" : "Неактивен"}
+                          </Badge>
+                        </TableCell>
+                        {isAdmin && (
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                  <MoreVertical className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleOpenSubscriptionDialog(plan)}>
+                                  <Edit className="w-4 h-4 mr-2" />
+                                  Редактировать
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleTogglePlanActive(plan)}>
+                                  {plan.is_active ? (
+                                    <><ToggleLeft className="w-4 h-4 mr-2" />Деактивировать</>
+                                  ) : (
+                                    <><ToggleRight className="w-4 h-4 mr-2" />Активировать</>
+                                  )}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-red-600"
+                                  onClick={() => handleDeleteSubscriptionPlan(plan.id)}
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  Удалить
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      {/* Subscription Plan Dialog */}
+      <Dialog open={subscriptionDialogOpen} onOpenChange={setSubscriptionDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingPlan ? "Редактировать абонемент" : "Новый абонемент"}</DialogTitle>
+            <DialogDescription>
+              Задайте параметры абонемента. Общая стоимость вычисляется автоматически.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="plan_name">Название</Label>
+              <Input
+                id="plan_name"
+                value={subscriptionForm.name}
+                onChange={(e) => setSubscriptionForm({ ...subscriptionForm, name: e.target.value })}
+                placeholder="Стандарт, Расширенный..."
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="plan_lessons">Кол-во уроков</Label>
+                <Input
+                  id="plan_lessons"
+                  type="number"
+                  min={1}
+                  value={subscriptionForm.lessons_count}
+                  onChange={(e) => setSubscriptionForm({ ...subscriptionForm, lessons_count: parseInt(e.target.value) || 0 })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="plan_price">Цена за урок (₽)</Label>
+                <Input
+                  id="plan_price"
+                  type="number"
+                  min={0}
+                  value={subscriptionForm.price_per_lesson}
+                  onChange={(e) => setSubscriptionForm({ ...subscriptionForm, price_per_lesson: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
+            </div>
+            {subscriptionForm.lessons_count > 0 && subscriptionForm.price_per_lesson > 0 && (
+              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 flex items-center justify-between">
+                <span className="text-sm text-blue-700">Общая стоимость</span>
+                <span className="font-bold text-blue-900">
+                  {(subscriptionForm.lessons_count * subscriptionForm.price_per_lesson).toLocaleString("ru-RU")} ₽
+                </span>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSubscriptionDialogOpen(false)} disabled={savingPlan}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSaveSubscriptionPlan}
+              disabled={savingPlan || !subscriptionForm.name.trim() || !subscriptionForm.lessons_count || !subscriptionForm.price_per_lesson}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {savingPlan ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Сохранение...</> : "Сохранить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create Subject Dialog */}
       <Dialog open={subjectDialogOpen} onOpenChange={setSubjectDialogOpen}>
@@ -1215,6 +1450,54 @@ export function SchoolPage() {
                 </Select>
               </div>
             </div>
+
+            {/* Salary rate section — only for teachers */}
+            {newEmployee.role === "teacher" && (
+              <div className="border-t pt-4 mt-2 space-y-3">
+                <p className="text-sm font-semibold text-muted-foreground">Ставка за урок</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="salary_base">База студентов</Label>
+                    <Input
+                      id="salary_base"
+                      type="number"
+                      min={1}
+                      value={newEmployee.salary_base_students}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, salary_base_students: e.target.value })}
+                      placeholder="8"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="salary_rate">Базовая ставка (₽)</Label>
+                    <Input
+                      id="salary_rate"
+                      type="number"
+                      min={0}
+                      value={newEmployee.salary_rate}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, salary_rate: e.target.value })}
+                      placeholder="1250"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="salary_bonus">Надбавка/студент (₽)</Label>
+                    <Input
+                      id="salary_bonus"
+                      type="number"
+                      min={0}
+                      value={newEmployee.salary_bonus_per_student}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, salary_bonus_per_student: e.target.value })}
+                      placeholder="100"
+                    />
+                  </div>
+                </div>
+                {newEmployee.salary_rate && (
+                  <p className="text-xs text-muted-foreground">
+                    При ≤{newEmployee.salary_base_students || 8} студентах: {parseFloat(newEmployee.salary_rate).toLocaleString("ru-RU")} ₽.
+                    {newEmployee.salary_bonus_per_student && ` За каждого сверх: +${parseFloat(newEmployee.salary_bonus_per_student).toLocaleString("ru-RU")} ₽.`}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button

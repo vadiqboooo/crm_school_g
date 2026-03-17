@@ -40,6 +40,9 @@ import type {
   LeadUpdate,
   LeadComment,
   LeadCommentCreate,
+  SubscriptionPlan,
+  SubscriptionPlanCreate,
+  SubscriptionPlanUpdate,
 } from "../types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -510,6 +513,9 @@ class ApiClient {
     last_name?: string;
     phone?: string;
     role?: "admin" | "teacher" | "manager";
+    salary_rate?: number | null;
+    salary_bonus_per_student?: number | null;
+    salary_base_students?: number;
   }): Promise<import("../types/api").User> {
     return this.request<import("../types/api").User>(`/employees/${id}`, {
       method: "PATCH",
@@ -857,6 +863,67 @@ class ApiClient {
   async addLeadComment(leadId: string, data: LeadCommentCreate): Promise<LeadComment> {
     return this.request<LeadComment>(`/leads/${leadId}/comments`, {
       method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Subscription plans
+  async getSubscriptionPlans(): Promise<SubscriptionPlan[]> {
+    return this.request<SubscriptionPlan[]>("/subscription-plans");
+  }
+
+  async createSubscriptionPlan(data: SubscriptionPlanCreate): Promise<SubscriptionPlan> {
+    return this.request<SubscriptionPlan>("/subscription-plans", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSubscriptionPlan(id: string, data: SubscriptionPlanUpdate): Promise<SubscriptionPlan> {
+    return this.request<SubscriptionPlan>(`/subscription-plans/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSubscriptionPlan(id: string): Promise<void> {
+    return this.request<void>(`/subscription-plans/${id}`, { method: "DELETE" });
+  }
+
+  // Student balance / subscription
+  async addStudentPayment(studentId: string, amount: number, description?: string): Promise<Student> {
+    return this.request<Student>(`/students/${studentId}/payments`, {
+      method: "POST",
+      body: JSON.stringify({ amount, description }),
+    });
+  }
+
+  async retroactiveDeduction(studentId: string): Promise<Student> {
+    return this.request<Student>(`/students/${studentId}/retroactive-deduction`, {
+      method: "POST",
+    });
+  }
+
+  async setStudentSubscription(studentId: string, planId: string | null): Promise<Student> {
+    return this.request<Student>(`/students/${studentId}/subscription`, {
+      method: "PATCH",
+      body: JSON.stringify({ subscription_plan_id: planId }),
+    });
+  }
+
+  async getPayments(studentId?: string): Promise<import("../types/api").Payment[]> {
+    const q = studentId ? `?student_id=${studentId}` : "";
+    return this.request<import("../types/api").Payment[]>(`/finances/payments${q}`);
+  }
+
+  async getSalaries(employeeId?: string): Promise<import("../types/api").EmployeeSalary[]> {
+    const q = employeeId ? `?employee_id=${employeeId}` : "";
+    return this.request<import("../types/api").EmployeeSalary[]>(`/finances/salaries${q}`);
+  }
+
+  async updateSalary(id: string, data: { status?: "paid" | "pending" }): Promise<import("../types/api").EmployeeSalary> {
+    return this.request<import("../types/api").EmployeeSalary>(`/finances/salaries/${id}`, {
+      method: "PATCH",
       body: JSON.stringify(data),
     });
   }

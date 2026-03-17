@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Text, ForeignKey, Integer, Boolean, Enum as SAEnum
+from sqlalchemy import String, Text, ForeignKey, Integer, Boolean, Numeric, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,6 +32,8 @@ class HistoryEventType(str, enum.Enum):
     parent_feedback_added = "parent_feedback_added"
     parent_feedback_deleted = "parent_feedback_deleted"
     student_info_updated = "student_info_updated"
+    balance_replenishment = "balance_replenishment"
+    lesson_deduction = "lesson_deduction"
 
 
 class ContactType(str, enum.Enum):
@@ -80,9 +82,12 @@ class Student(Base):
     current_school: Mapped[str | None] = mapped_column(String(200))
     class_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[StudentStatus] = mapped_column(SAEnum(StudentStatus, values_callable=lambda x: [e.value for e in x]), default=StudentStatus.active)
+    balance: Mapped[float] = mapped_column(Numeric(10, 2), default=0, server_default="0", nullable=False)
+    subscription_plan_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("subscription_plans.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     groups = relationship("GroupStudent", back_populates="student")
+    subscription_plan = relationship("SubscriptionPlan")
     parent_contacts = relationship("ParentContact", back_populates="student", cascade="all, delete-orphan")
     history = relationship("StudentHistory", back_populates="student", cascade="all, delete-orphan")
     lesson_attendances = relationship("LessonAttendance", back_populates="student")

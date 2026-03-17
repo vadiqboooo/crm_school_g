@@ -21,6 +21,9 @@ class EmployeeUpdate(BaseModel):
     phone: Optional[str] = None
     role: Optional[EmployeeRole] = None
     is_active: Optional[bool] = None
+    salary_rate: Optional[float] = None
+    salary_bonus_per_student: Optional[float] = None
+    salary_base_students: Optional[int] = None
 
 
 class EmployeeResponse(BaseModel):
@@ -31,6 +34,9 @@ class EmployeeResponse(BaseModel):
     phone: Optional[str]
     role: EmployeeRole
     is_active: bool
+    salary_rate: Optional[float] = None
+    salary_bonus_per_student: Optional[float] = None
+    salary_base_students: int = 8
     created_at: datetime_type
 
     model_config = {"from_attributes": True}

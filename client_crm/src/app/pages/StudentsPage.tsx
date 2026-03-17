@@ -52,6 +52,9 @@ import {
   Building2,
   BookOpen,
   Calendar,
+  TrendingUp,
+  TrendingDown,
+  CreditCard,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -72,13 +75,13 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "../components/ui/hover-card";
-import { useParams, useNavigate } from "react-router";
+import { useParams, useNavigate, useLocation } from "react-router";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { StudentPerformanceTab } from "../components/StudentPerformanceTab";
 import { StudentReportsPanel } from "../components/StudentReportsPanel";
-import type { Student, StudentCreate, StudentHistory, ParentRelation, WeeklyReport, GroupInfo, Schedule, Lead } from "../types/api";
+import type { Student, StudentCreate, StudentHistory, ParentRelation, WeeklyReport, GroupInfo, Schedule, Lead, SubscriptionPlan, Lesson } from "../types/api";
 
 const parentRelations: { value: ParentRelation; label: string }[] = [
   { value: "мама", label: "Мама" },
@@ -137,11 +140,13 @@ function TabNavComponent({
   activeTab,
   onTabChange,
   onBack,
+  backLabel = "Назад к списку",
 }: {
   tabs: { id: string; label: string }[];
   activeTab: string;
   onTabChange: (id: string) => void;
   onBack?: () => void;
+  backLabel?: string;
 }) {
   return (
     <div className="flex items-center gap-3">
@@ -151,7 +156,7 @@ function TabNavComponent({
           className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg hover:bg-accent transition-colors text-sm"
         >
           <ArrowLeft className="w-4 h-4" />
-          Назад к списку
+          {backLabel}
         </button>
       )}
       <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-xl w-fit">
@@ -191,6 +196,7 @@ function CopyButtonHelper({ text }: { text: string }) {
 /* Info Card Component */
 function InfoCardComponent({
   student,
+  studentHistory,
   isEditing,
   editFormData,
   updating,
@@ -200,8 +206,13 @@ function InfoCardComponent({
   onSave,
   onShare,
   onFormChange,
+  onOpenPayment,
+  onOpenSubscription,
+  onRetroactiveDeduction,
+  retroactiveLoading,
 }: {
   student: Student;
+  studentHistory: StudentHistory[];
   isEditing: boolean;
   editFormData: Student | null;
   updating: boolean;
@@ -211,12 +222,18 @@ function InfoCardComponent({
   onSave: () => void;
   onShare: () => void;
   onFormChange: (data: Student) => void;
+  onOpenPayment: () => void;
+  onOpenSubscription: () => void;
+  onRetroactiveDeduction: () => void;
+  retroactiveLoading?: boolean;
 }) {
   const navigate = useNavigate();
   const hasPhone = student.phone && student.phone.length > 0;
   const hasTelegram = student.telegram_username && student.telegram_username.length > 0;
 
   const [groupSchedules, setGroupSchedules] = useState<Array<{ id: string; name: string; color?: string; schedules: Schedule[] }>>([]);
+  const [groupLessonsMap, setGroupLessonsMap] = useState<Record<string, Lesson[]>>({});
+
   useEffect(() => {
     if (!student.groups || student.groups.length === 0) return;
     Promise.all(student.groups.map((g) => api.getGroup(g.id)))
@@ -229,12 +246,97 @@ function InfoCardComponent({
       .catch(console.error);
   }, [student.groups]);
 
+  useEffect(() => {
+    if (!student.groups || student.groups.length === 0) return;
+    Promise.all(student.groups.map((g) => api.getLessons(g.id).then((lessons) => ({ groupId: g.id, lessons }))))
+      .then((results) => {
+        const map: Record<string, Lesson[]> = {};
+        results.forEach((r) => { map[r.groupId] = r.lessons; });
+        setGroupLessonsMap(map);
+      })
+      .catch(console.error);
+  }, [student.groups]);
+
   const getDayAbbr = (day: string) => {
     const map: Record<string, string> = {
       "Понедельник": "Пн", "Вторник": "Вт", "Среда": "Ср",
       "Четверг": "Чт", "Пятница": "Пт", "Суббота": "Сб", "Воскресенье": "Вс",
     };
     return map[day] || day.slice(0, 2);
+  };
+
+  const getMonthAbbr = (m: number) => ["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"][m];
+
+  const computeAllGroupTiles = (): Array<{ lesson: Lesson; groupId: string; groupColor?: string; color: "green" | "red" | "blue" | "gray" }> => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const lastMonthYear = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
+    const lastMonth = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
+    const nextMonth = (today.getMonth() + 1) % 12;
+    const nextMonthYear = today.getMonth() === 11 ? today.getFullYear() + 1 : today.getFullYear();
+
+    // Merge all groups' lessons
+    const allLessons: Array<{ lesson: Lesson; groupId: string; groupColor?: string }> = [];
+    groupSchedules.forEach((gs) => {
+      (groupLessonsMap[gs.id] ?? []).forEach((l) => {
+        allLessons.push({ lesson: l, groupId: gs.id, groupColor: gs.color });
+      });
+    });
+
+    const sorted = allLessons
+      .filter(({ lesson }) => {
+        const d = new Date(lesson.date);
+        const lastMonthStart = new Date(lastMonthYear, lastMonth, 1);
+        const nextMonthEnd = new Date(nextMonthYear, nextMonth + 1, 0);
+        return d >= lastMonthStart && d <= nextMonthEnd;
+      })
+      .sort((a, b) => a.lesson.date.localeCompare(b.lesson.date));
+
+    const lastMonthItems = sorted.filter(({ lesson }) => {
+      const d = new Date(lesson.date); return d.getMonth() === lastMonth && d.getFullYear() === lastMonthYear;
+    }).slice(-5);
+    const currentMonthItems = sorted.filter(({ lesson }) => {
+      const d = new Date(lesson.date); return d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+    });
+    const nextMonthItems = sorted.filter(({ lesson }) => {
+      const d = new Date(lesson.date); return d.getMonth() === nextMonth && d.getFullYear() === nextMonthYear;
+    }).slice(0, 5);
+
+    const visible = [...lastMonthItems, ...currentMonthItems, ...nextMonthItems];
+
+    const deductedDates = new Set(
+      studentHistory
+        .filter((h) => h.event_type === "lesson_deduction")
+        .map((h) => { const m = h.description.match(/(\d{4}-\d{2}-\d{2})/); return m ? m[1] : null; })
+        .filter(Boolean) as string[]
+    );
+
+    const hasSubscription = !!student.subscription_plan;
+
+    return visible.map(({ lesson, groupId, groupColor }) => {
+      const lessonDate = new Date(lesson.date);
+      lessonDate.setHours(0, 0, 0, 0);
+      let color: "green" | "red" | "blue" | "gray";
+
+      if (lesson.status === "conducted") {
+        color = deductedDates.has(lesson.date) ? "green" : "red";
+      } else if (lessonDate >= today) {
+        // Blue if student has a subscription (deduction will happen regardless of balance)
+        color = hasSubscription ? "blue" : "gray";
+      } else {
+        color = "gray";
+      }
+      return { lesson, groupId, groupColor, color };
+    });
+  };
+
+  const tileColorClass = (color: "green" | "red" | "blue" | "gray") => {
+    switch (color) {
+      case "green": return "bg-emerald-100 text-emerald-700";
+      case "red":   return "bg-red-100 text-red-600";
+      case "blue":  return "bg-blue-100 text-blue-600";
+      case "gray":  return "bg-muted/60 text-muted-foreground/60";
+    }
   };
 
   const calcEndTime = (start: string, minutes: number) => {
@@ -251,6 +353,7 @@ function InfoCardComponent({
       <CardContent className="pt-6">
         {!isEditing ? (
           <>
+            {/* Header */}
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center gap-3">
                 <h3 className="text-lg font-semibold">Основная информация</h3>
@@ -263,67 +366,110 @@ function InfoCardComponent({
                 <button
                   onClick={onShare}
                   className="p-2 border border-border rounded-lg hover:bg-accent transition-colors"
+                  title="Скопировать ссылку"
                 >
                   {linkCopied ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
                 </button>
                 <button
                   onClick={onStartEdit}
                   className="p-2 border border-border rounded-lg hover:bg-accent transition-colors"
+                  title="Редактировать"
                 >
                   <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={onOpenSubscription}
+                  className="p-2 border border-border rounded-lg hover:bg-accent transition-colors"
+                  title="Назначить абонемент"
+                >
+                  <CreditCard className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            {/* Phone + Telegram + Source */}
-            <div className="flex items-center gap-5 mb-4">
-              <div className="flex items-center gap-2">
-                <Phone className={`w-4 h-4 ${hasPhone ? "text-foreground" : "text-muted-foreground/40"}`} />
-                <span className={hasPhone ? "text-foreground" : "text-muted-foreground"}>
-                  {hasPhone ? student.phone : "Не указан"}
-                </span>
+            {/* Two-column: left = contacts+education, right = source+balance */}
+            <div className="flex gap-4 mb-4">
+              {/* Left */}
+              <div className="flex-1 space-y-3">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <Phone className={`w-4 h-4 ${hasPhone ? "text-foreground" : "text-muted-foreground/40"}`} />
+                    <span className={hasPhone ? "text-foreground text-sm" : "text-muted-foreground text-sm"}>
+                      {hasPhone ? student.phone : "Не указан"}
+                    </span>
+                  </div>
+                  <div className="w-px h-4 bg-border" />
+                  <div className="flex items-center gap-2">
+                    <Send className={`w-4 h-4 ${hasTelegram ? "text-sky-500" : "text-muted-foreground/40"}`} />
+                    <span className={hasTelegram ? "text-foreground text-sm" : "text-muted-foreground text-sm"}>
+                      {hasTelegram ? `@${student.telegram_username}` : "Не указан"}
+                    </span>
+                    {hasTelegram && <CopyButtonHelper text={`@${student.telegram_username}`} />}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <GraduationCap className="w-4 h-4 text-muted-foreground" />
+                  <span className={student.class_number ? "" : "text-muted-foreground"}>
+                    {student.class_number ? `${student.class_number} класс` : "Класс не указан"}
+                  </span>
+                  {student.education_type && (
+                    <>
+                      <span className="text-muted-foreground">·</span>
+                      <span>{student.education_type}</span>
+                    </>
+                  )}
+                  {student.current_school && (
+                    <>
+                      <span className="text-muted-foreground">·</span>
+                      <span>{student.current_school}</span>
+                    </>
+                  )}
+                </div>
               </div>
-              <div className="w-px h-4 bg-border" />
-              <div className="flex items-center gap-2">
-                <Send className={`w-4 h-4 ${hasTelegram ? "text-sky-500" : "text-muted-foreground/40"}`} />
-                <span className={hasTelegram ? "text-foreground" : "text-muted-foreground"}>
-                  {hasTelegram ? `@${student.telegram_username}` : "Не указан"}
-                </span>
-                {hasTelegram && <CopyButtonHelper text={`@${student.telegram_username}`} />}
-              </div>
-              {student.source && (
-                <div className="ml-auto">
+
+              {/* Right: source + balance */}
+              <div className="flex flex-col items-end gap-2 min-w-[120px]">
+                {student.source && (
                   <Badge variant="outline" className="text-xs">
                     {student.source}
                   </Badge>
+                )}
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground">Баланс</p>
+                  <p className={`text-2xl font-bold tracking-tight leading-tight ${(student.balance ?? 0) >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                    {(student.balance ?? 0).toLocaleString("ru-RU")} ₽
+                  </p>
+                  {student.subscription_plan ? (
+                    <div className="mt-0.5 space-y-0.5">
+                      <p className="text-[10px] text-muted-foreground">{student.subscription_plan.name}</p>
+                      {student.lessons_remaining !== null && student.lessons_remaining !== undefined && (
+                        student.lessons_remaining > 0 ? (
+                          <p className="text-[10px] text-emerald-600 font-medium">{student.lessons_remaining} ур. оплачено</p>
+                        ) : student.lessons_remaining === 0 ? (
+                          <p className="text-[10px] text-orange-500 font-medium">Пополните баланс</p>
+                        ) : (
+                          <p className="text-[10px] text-red-500 font-medium">Долг: {Math.abs(student.lessons_remaining)} ур.</p>
+                        )
+                      )}
+                    </div>
+                  ) : (student.groups && student.groups.length > 0) ? (
+                    <p className="text-[10px] text-orange-500 font-medium mt-0.5">⚠ Нет абонемента</p>
+                  ) : null}
                 </div>
-              )}
-            </div>
-
-            {/* Education */}
-            <div className="flex items-center gap-2 mb-4">
-              <GraduationCap className="w-4 h-4 text-muted-foreground" />
-              <span className={student.class_number ? "" : "text-muted-foreground"}>
-                {student.class_number ? `${student.class_number} класс` : "Класс не указан"}
-              </span>
-              {student.education_type && (
-                <>
-                  <span className="text-muted-foreground">·</span>
-                  <span>{student.education_type}</span>
-                </>
-              )}
-              {student.current_school && (
-                <>
-                  <span className="text-muted-foreground">·</span>
-                  <span>{student.current_school}</span>
-                </>
-              )}
+                <button
+                  onClick={onOpenPayment}
+                  className="px-2.5 py-1 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-1"
+                >
+                  <Wallet className="w-3 h-3" />
+                  Оплата
+                </button>
+              </div>
             </div>
 
             {/* Groups + Schedule */}
             {student.groups && student.groups.length > 0 && (
               <>
-                <div className="border-t border-border my-4" />
+                <div className="border-t border-border my-3" />
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4 text-muted-foreground" />
@@ -339,7 +485,7 @@ function InfoCardComponent({
                         <div className="px-3 py-2 space-y-1.5">
                           <button
                             type="button"
-                            onClick={() => navigate(`/group/${gs.id}`)}
+                            onClick={() => navigate(`/group/${gs.id}`, { state: { from: "student", studentId: student.id } })}
                             className="text-sm font-semibold hover:underline transition-colors text-left leading-tight"
                             style={{ color: gs.color || "#2563eb" }}
                           >
@@ -361,7 +507,6 @@ function InfoCardComponent({
                         </div>
                       </div>
                     ))}
-                    {/* Placeholder cards while loading */}
                     {groupSchedules.length === 0 && student.groups.map((group) => (
                       <div
                         key={group.id}
@@ -370,7 +515,7 @@ function InfoCardComponent({
                         <div className="px-3 py-2">
                           <button
                             type="button"
-                            onClick={() => navigate(`/group/${group.id}`)}
+                            onClick={() => navigate(`/group/${group.id}`, { state: { from: "student", studentId: student.id } })}
                             className="text-sm font-semibold text-blue-600 hover:underline text-left"
                           >
                             {group.name}
@@ -382,6 +527,51 @@ function InfoCardComponent({
                 </div>
               </>
             )}
+
+            {/* Unified lesson tiles across all groups */}
+            {(() => {
+              const allTiles = computeAllGroupTiles();
+              if (allTiles.length === 0) return null;
+              const redCount = allTiles.filter((t) => t.color === "red").length;
+              const canRetroactive = redCount > 0 && !!student.subscription_plan;
+              return (
+                <div className="mt-3 space-y-2">
+                  {canRetroactive && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-100">
+                      <span className="text-xs text-red-600 flex-1">
+                        {redCount} {redCount === 1 ? "урок проведён" : redCount < 5 ? "урока проведено" : "уроков проведено"} без списания
+                      </span>
+                      <button
+                        onClick={onRetroactiveDeduction}
+                        disabled={retroactiveLoading}
+                        className="flex items-center gap-1 px-2.5 py-1 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-60"
+                      >
+                        {retroactiveLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                        Списать долг
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-1">
+                    {allTiles.map((tile) => {
+                      const d = new Date(tile.lesson.date);
+                      return (
+                        <button
+                          key={tile.lesson.id}
+                          type="button"
+                          onClick={() => navigate(`/group/${tile.groupId}`, { state: { from: "student", studentId: student.id } })}
+                          className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:opacity-75 transition-opacity ${tileColorClass(tile.color)}`}
+                          title={`${tile.lesson.date} — ${tile.color === "green" ? "Проведён, оплачен" : tile.color === "red" ? "Проведён, не оплачен" : tile.color === "blue" ? "Баланс покроет" : "Баланса не хватит"}`}
+                          style={tile.color === "gray" ? { borderLeft: `2px solid ${tile.groupColor || "#94a3b8"}` } : {}}
+                        >
+                          <span className="text-sm font-bold leading-none">{d.getDate()}</span>
+                          <span className="text-[10px] leading-none opacity-70 mt-0.5">{getMonthAbbr(d.getMonth())}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </>
         ) : (
           <>
@@ -940,6 +1130,7 @@ function StudentScheduleCard({ groups }: { groups: GroupInfo[] }) {
 export function StudentsPage() {
   const { studentId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const isManager = user?.role === "manager";
@@ -975,6 +1166,17 @@ export function StudentsPage() {
     status: "active",
     parent_contacts: [],
   });
+
+  // Payment & subscription dialogs
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentDescription, setPaymentDescription] = useState("");
+  const [paymentType, setPaymentType] = useState<"cash" | "card">("cash");
+  const [savingPayment, setSavingPayment] = useState(false);
+  const [subscriptionDialogOpen, setSubscriptionDialogOpen] = useState(false);
+  const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<string>("none");
+  const [savingSubscription, setSavingSubscription] = useState(false);
 
   // Edit mode in student card - separate for each section
   const [isEditingBasicInfo, setIsEditingBasicInfo] = useState(false);
@@ -1127,6 +1329,81 @@ export function StudentsPage() {
       setStudentLatestReports(reportsMap);
     } catch (error) {
       console.error("Failed to load latest reports:", error);
+    }
+  };
+
+  const handleOpenPaymentDialog = () => {
+    setPaymentAmount("");
+    setPaymentDescription("");
+    setPaymentType("cash");
+    setPaymentDialogOpen(true);
+  };
+
+  const handleAddPayment = async () => {
+    if (!selectedStudent || !paymentAmount) return;
+    const amount = parseFloat(paymentAmount);
+    if (isNaN(amount) || amount <= 0) return;
+    try {
+      setSavingPayment(true);
+      const typeLabel = paymentType === "cash" ? "наличные" : "безналичный";
+      const descParts = [typeLabel, paymentDescription].filter(Boolean).join(", ");
+      const updated = await api.addStudentPayment(selectedStudent.id, amount, descParts || undefined);
+      setSelectedStudent(updated);
+      setStudents((prev) => prev.map((s) => s.id === updated.id ? updated : s));
+      await loadStudentHistory(selectedStudent.id);
+      setPaymentDialogOpen(false);
+      toast.success("Оплата добавлена");
+    } catch {
+      toast.error("Ошибка при добавлении оплаты");
+    } finally {
+      setSavingPayment(false);
+    }
+  };
+
+  const [retroactiveLoading, setRetroactiveLoading] = useState(false);
+  const handleRetroactiveDeduction = async () => {
+    if (!selectedStudent) return;
+    try {
+      setRetroactiveLoading(true);
+      const updated = await api.retroactiveDeduction(selectedStudent.id);
+      setSelectedStudent(updated);
+      setStudents((prev) => prev.map((s) => s.id === updated.id ? updated : s));
+      // Refresh history
+      const hist = await api.getStudentHistory(selectedStudent.id);
+      setStudentHistory(hist);
+      toast.success("Долг за прошлые уроки списан");
+    } catch {
+      toast.error("Ошибка при списании");
+    } finally {
+      setRetroactiveLoading(false);
+    }
+  };
+
+  const handleOpenSubscriptionDialog = async () => {
+    try {
+      const plans = await api.getSubscriptionPlans();
+      setSubscriptionPlans(plans);
+      setSelectedPlanId(selectedStudent?.subscription_plan?.id ?? "none");
+      setSubscriptionDialogOpen(true);
+    } catch {
+      toast.error("Ошибка при загрузке абонементов");
+    }
+  };
+
+  const handleSaveSubscription = async () => {
+    if (!selectedStudent) return;
+    try {
+      setSavingSubscription(true);
+      const planId = selectedPlanId === "none" ? null : selectedPlanId;
+      const updated = await api.setStudentSubscription(selectedStudent.id, planId);
+      setSelectedStudent(updated);
+      setStudents((prev) => prev.map((s) => s.id === updated.id ? updated : s));
+      setSubscriptionDialogOpen(false);
+      toast.success("Абонемент обновлён");
+    } catch {
+      toast.error("Ошибка при обновлении абонемента");
+    } finally {
+      setSavingSubscription(false);
     }
   };
 
@@ -1307,7 +1584,18 @@ export function StudentsPage() {
   };
 
   const handleClosePanel = () => {
-    navigate("/students");
+    const state = location.state as { from?: string; groupId?: string; lessonId?: string } | null;
+    if (state?.from === "lesson" && state.groupId) {
+      // Came from a lesson — go back to group and reopen that lesson
+      navigate(`/group/${state.groupId}`, { state: { openLessonId: state.lessonId } });
+    } else if (state?.from === "group" && state.groupId) {
+      // Came from group info tab
+      navigate(`/group/${state.groupId}`);
+    } else if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate("/students");
+    }
   };
 
   const handleShareLink = () => {
@@ -1336,6 +1624,10 @@ export function StudentsPage() {
         return <XCircle className="w-4 h-4 text-red-600" />;
       case "payment":
         return <CheckCircle2 className="w-4 h-4 text-blue-600" />;
+      case "balance_replenishment":
+        return <TrendingUp className="w-4 h-4 text-emerald-600" />;
+      case "lesson_deduction":
+        return <TrendingDown className="w-4 h-4 text-orange-500" />;
       case "status_change":
         return <Clock className="w-4 h-4 text-orange-600" />;
       case "parent_feedback_added":
@@ -1877,6 +2169,11 @@ export function StudentsPage() {
               activeTab={activeTab}
               onTabChange={setActiveTab}
               onBack={handleClosePanel}
+              backLabel={
+                (location.state as { from?: string } | null)?.from === "lesson" ? "Назад к уроку" :
+                (location.state as { from?: string } | null)?.from === "group" ? "Назад к группе" :
+                "Назад к списку"
+              }
             />
           </div>
 
@@ -1887,6 +2184,7 @@ export function StudentsPage() {
               <div className="space-y-6">
                 <InfoCardComponent
                   student={selectedStudent}
+                  studentHistory={studentHistory ?? []}
                   isEditing={isEditingBasicInfo}
                   editFormData={editFormData}
                   updating={updating}
@@ -1896,6 +2194,10 @@ export function StudentsPage() {
                   onSave={handleSaveBasicInfo}
                   onShare={handleShareLink}
                   onFormChange={setEditFormData}
+                  onOpenPayment={handleOpenPaymentDialog}
+                  onOpenSubscription={handleOpenSubscriptionDialog}
+                  onRetroactiveDeduction={handleRetroactiveDeduction}
+                  retroactiveLoading={retroactiveLoading}
                 />
                 <ParentContactsComponent
                   student={selectedStudent}
@@ -1934,20 +2236,19 @@ export function StudentsPage() {
                       .slice()
                       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                       .map((entry) => (
-                        <div key={entry.id} className="border-l-2 border-blue-500 pl-4 py-2">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <p className="text-sm text-gray-900">{entry.description}</p>
-                              <p className="text-xs text-gray-500 mt-1">
-                                {new Date(entry.created_at).toLocaleString('ru-RU', {
-                                  year: 'numeric',
-                                  month: 'long',
-                                  day: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })}
-                              </p>
-                            </div>
+                        <div key={entry.id} className="flex items-start gap-3 border-l-2 border-blue-500 pl-4 py-2">
+                          <div className="mt-0.5 shrink-0">{getHistoryIcon(entry.event_type)}</div>
+                          <div className="flex-1">
+                            <p className="text-sm text-gray-900">{entry.description}</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {new Date(entry.created_at).toLocaleString('ru-RU', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </p>
                           </div>
                         </div>
                       ))
@@ -1981,6 +2282,111 @@ export function StudentsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>Отмена</Button>
             <Button onClick={handleCreateStudent} disabled={creating} className="bg-blue-600 hover:bg-blue-700">Создать</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Payment Dialog */}
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Добавить оплату</DialogTitle>
+            <DialogDescription>Пополнение баланса студента</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="payment_amount">Сумма (₽) *</Label>
+              <Input
+                id="payment_amount"
+                type="number"
+                min={1}
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                placeholder="5000"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Тип оплаты</Label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPaymentType("cash")}
+                  className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${paymentType === "cash" ? "bg-emerald-600 text-white border-emerald-600" : "border-border hover:bg-accent"}`}
+                >
+                  Наличные
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentType("card")}
+                  className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${paymentType === "card" ? "bg-blue-600 text-white border-blue-600" : "border-border hover:bg-accent"}`}
+                >
+                  Безналичный
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="payment_desc">Примечание</Label>
+              <Input
+                id="payment_desc"
+                value={paymentDescription}
+                onChange={(e) => setPaymentDescription(e.target.value)}
+                placeholder="Необязательно"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaymentDialogOpen(false)} disabled={savingPayment}>Отмена</Button>
+            <Button
+              onClick={handleAddPayment}
+              disabled={savingPayment || !paymentAmount || parseFloat(paymentAmount) <= 0}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              {savingPayment ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Сохранение...</> : "Добавить оплату"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Change Subscription Dialog */}
+      <Dialog open={subscriptionDialogOpen} onOpenChange={setSubscriptionDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Изменить абонемент</DialogTitle>
+            <DialogDescription>Выберите абонемент для студента</DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-3">
+            <Select value={selectedPlanId} onValueChange={setSelectedPlanId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Выберите абонемент" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Без абонемента</SelectItem>
+                {subscriptionPlans.filter((p) => p.is_active).map((plan) => (
+                  <SelectItem key={plan.id} value={plan.id}>
+                    {plan.name} — {plan.lessons_count} ур. · {plan.price_per_lesson.toLocaleString("ru-RU")} ₽/ур.
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedPlanId !== "none" && (() => {
+              const plan = subscriptionPlans.find((p) => p.id === selectedPlanId);
+              return plan ? (
+                <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
+                  Общая стоимость: <span className="font-bold">{plan.total_price.toLocaleString("ru-RU")} ₽</span>
+                </div>
+              ) : null;
+            })()}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSubscriptionDialogOpen(false)} disabled={savingSubscription}>Отмена</Button>
+            <Button
+              onClick={handleSaveSubscription}
+              disabled={savingSubscription}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {savingSubscription ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Сохранение...</> : "Сохранить"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

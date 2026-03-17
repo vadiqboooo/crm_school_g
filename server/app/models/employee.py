@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Boolean, Enum as SAEnum
+from sqlalchemy import String, Boolean, Integer, Numeric, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,6 +27,9 @@ class Employee(Base):
     phone: Mapped[str | None] = mapped_column(String(20))
     role: Mapped[EmployeeRole] = mapped_column(SAEnum(EmployeeRole), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    salary_rate: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    salary_bonus_per_student: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    salary_base_students: Mapped[int] = mapped_column(Integer, default=8, server_default="8", nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     groups = relationship("Group", back_populates="teacher")

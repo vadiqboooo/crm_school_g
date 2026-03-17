@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.finance import Payment, EmployeeSalary
@@ -24,11 +25,24 @@ async def list_payments(
     db: AsyncSession = Depends(get_db),
     _: Employee = Depends(get_current_user),
 ):
-    query = select(Payment).order_by(Payment.created_at.desc())
+    query = (
+        select(Payment)
+        .options(selectinload(Payment.student), selectinload(Payment.group))
+        .order_by(Payment.created_at.desc())
+    )
     if student_id:
         query = query.where(Payment.student_id == student_id)
     result = await db.execute(query)
-    return result.scalars().all()
+    payments = result.scalars().all()
+    out = []
+    for p in payments:
+        d = PaymentResponse.model_validate(p)
+        if p.student:
+            d.student_name = f"{p.student.first_name} {p.student.last_name}"
+        if p.group:
+            d.group_name = p.group.name
+        out.append(d)
+    return out
 
 
 @router.post("/payments", response_model=PaymentResponse, status_code=status.HTTP_201_CREATED)
@@ -88,11 +102,22 @@ async def list_salaries(
     db: AsyncSession = Depends(get_db),
     _: Employee = Depends(get_current_user),
 ):
-    query = select(EmployeeSalary).order_by(EmployeeSalary.created_at.desc())
+    query = (
+        select(EmployeeSalary)
+        .options(selectinload(EmployeeSalary.employee))
+        .order_by(EmployeeSalary.created_at.desc())
+    )
     if employee_id:
         query = query.where(EmployeeSalary.employee_id == employee_id)
     result = await db.execute(query)
-    return result.scalars().all()
+    salaries = result.scalars().all()
+    out = []
+    for s in salaries:
+        d = SalaryResponse.model_validate(s)
+        if s.employee:
+            d.employee_name = f"{s.employee.first_name} {s.employee.last_name}"
+        out.append(d)
+    return out
 
 
 @router.post("/salaries", response_model=SalaryResponse, status_code=status.HTTP_201_CREATED)

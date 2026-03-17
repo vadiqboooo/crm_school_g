@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from app.routers import auth, employees, subjects, groups, students, lessons, exams, exam_templates, finances, reports, settings, schedules, school_locations, leads
+from app.routers import auth, employees, subjects, groups, students, lessons, exams, exam_templates, finances, reports, settings, schedules, school_locations, leads, subscriptions
 
 app = FastAPI(title="CRM School API", version="1.0.0")
 
@@ -34,6 +34,7 @@ app.include_router(reports.router)
 app.include_router(settings.router)
 app.include_router(school_locations.router)
 app.include_router(leads.router)
+app.include_router(subscriptions.router)
 
 
 @app.get("/")

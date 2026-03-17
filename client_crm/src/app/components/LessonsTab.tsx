@@ -20,9 +20,10 @@ import type { Lesson } from "../types/api";
 interface LessonsTabProps {
   groupId: string;
   groupName: string;
+  initialLessonId?: string | null;
 }
 
-export function LessonsTab({ groupId, groupName }: LessonsTabProps) {
+export function LessonsTab({ groupId, groupName, initialLessonId }: LessonsTabProps) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
@@ -38,6 +39,14 @@ export function LessonsTab({ groupId, groupName }: LessonsTabProps) {
   useEffect(() => {
     loadLessons();
   }, [groupId]);
+
+  // Auto-open lesson when returning from a student card
+  useEffect(() => {
+    if (initialLessonId && lessons.length > 0 && !selectedLesson) {
+      const lesson = lessons.find((l) => l.id === initialLessonId);
+      if (lesson) setSelectedLesson(lesson);
+    }
+  }, [initialLessonId, lessons]);
 
   const loadLessons = async () => {
     try {

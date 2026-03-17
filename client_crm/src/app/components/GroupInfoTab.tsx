@@ -21,6 +21,7 @@ import {
 } from "./ui/dialog";
 import { Calendar, Clock, GraduationCap, Users, BookOpen, Plus, Trash2, Sparkles, UserPlus, Edit, Save, X } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 import type { Group, ScheduleCreate, Student, Subject, User, SchoolLocation } from "../types/api";
 import { api } from "../lib/api";
@@ -33,6 +34,8 @@ interface GroupInfoTabProps {
 
 export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const { groupId: urlGroupId } = useParams();
   const isAdmin = user?.role === "admin";
   const isManager = user?.role === "manager";
 
@@ -801,9 +804,13 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                           </div>
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
-                              <p className="font-medium text-sm">
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/students/${student.id}`, { state: { from: "group", groupId: urlGroupId || group.id } })}
+                                className="font-medium text-sm text-blue-600 hover:underline text-left"
+                              >
                                 {student.first_name} {student.last_name}
-                              </p>
+                              </button>
                               {gs.is_trial && (
                                 <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700">
                                   Пробное

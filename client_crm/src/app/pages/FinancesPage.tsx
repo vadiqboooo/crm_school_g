@@ -1,376 +1,374 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { DollarSign, TrendingUp, Users, Clock } from "lucide-react";
+import { Badge } from "../components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../components/ui/select";
+import { ChevronDown, ChevronRight, DollarSign, Loader2, TrendingUp, Users } from "lucide-react";
+import { api } from "../lib/api";
+import type { Payment, EmployeeSalary } from "../types/api";
 
-interface FinanceStats {
-  title: string;
-  value: string;
-  change: string;
-  icon: React.ElementType;
-  color: string;
+interface TeacherGroup {
+  employee_id: string;
+  employee_name: string;
+  records: EmployeeSalary[];
+  totalPending: number;
+  totalPaid: number;
+  pendingCount: number;
 }
 
-const financeStats: FinanceStats[] = [
-  {
-    title: "Доход за месяц",
-    value: "₽485,000",
-    change: "+12% от прошлого месяца",
-    icon: DollarSign,
-    color: "bg-green-500",
-  },
-  {
-    title: "Расходы за месяц",
-    value: "₽320,000",
-    change: "+5% от прошлого месяца",
-    icon: TrendingUp,
-    color: "bg-red-500",
-  },
-  {
-    title: "Оплативших студентов",
-    value: "138/143",
-    change: "96% оплатили",
-    icon: Users,
-    color: "bg-blue-500",
-  },
-  {
-    title: "Ожидают оплаты",
-    value: "5",
-    change: "₽25,000",
-    icon: Clock,
-    color: "bg-orange-500",
-  },
-];
-
-interface StudentPayment {
-  id: string;
-  name: string;
-  group: string;
-  amount: number;
-  status: "paid" | "pending" | "overdue";
-  dueDate: string;
+function statusBadge(status: string) {
+  switch (status) {
+    case "paid":
+      return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Оплачено</Badge>;
+    case "pending":
+      return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Ожидает</Badge>;
+    case "overdue":
+      return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Просрочено</Badge>;
+    default:
+      return <Badge variant="secondary">{status}</Badge>;
+  }
 }
 
-const mockPayments: StudentPayment[] = [
-  {
-    id: "1",
-    name: "Антипин Саша",
-    group: "Математика 11А",
-    amount: 8000,
-    status: "paid",
-    dueDate: "2026-02-01",
-  },
-  {
-    id: "2",
-    name: "Бяков Матвей",
-    group: "Математика 11А",
-    amount: 8000,
-    status: "paid",
-    dueDate: "2026-02-01",
-  },
-  {
-    id: "3",
-    name: "Килин Егор",
-    group: "Физика 10Б",
-    amount: 7500,
-    status: "pending",
-    dueDate: "2026-02-15",
-  },
-  {
-    id: "4",
-    name: "Алиев Андрей",
-    group: "Математика 11А",
-    amount: 8000,
-    status: "overdue",
-    dueDate: "2026-01-30",
-  },
-];
-
-interface TeacherSalary {
-  id: string;
-  name: string;
-  lessons: number;
-  rate: number;
-  total: number;
-  status: "paid" | "pending";
+function salaryStatusBadge(status: string) {
+  return status === "paid"
+    ? <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Выплачено</Badge>
+    : <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Не выплачено</Badge>;
 }
 
-const mockSalaries: TeacherSalary[] = [
-  {
-    id: "1",
-    name: "Божко В.Д.",
-    lessons: 48,
-    rate: 1500,
-    total: 72000,
-    status: "paid",
-  },
-  {
-    id: "2",
-    name: "Иванова А.С.",
-    lessons: 38,
-    rate: 1500,
-    total: 57000,
-    status: "paid",
-  },
-  {
-    id: "3",
-    name: "Петров И.М.",
-    lessons: 52,
-    rate: 1500,
-    total: 78000,
-    status: "pending",
-  },
-];
+function fmt(n: number) {
+  return n.toLocaleString("ru-RU");
+}
 
 export function FinancesPage() {
-  const [payments] = useState<StudentPayment[]>(mockPayments);
-  const [salaries] = useState<TeacherSalary[]>(mockSalaries);
-  const [filterMonth, setFilterMonth] = useState("2026-02");
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [salaries, setSalaries] = useState<EmployeeSalary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedTeachers, setExpandedTeachers] = useState<Set<string>>(new Set());
+  const [payingAll, setPayingAll] = useState<string | null>(null);
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "paid":
-        return "bg-green-100 text-green-800";
-      case "pending":
-        return "bg-yellow-100 text-yellow-800";
-      case "overdue":
-        return "bg-red-100 text-red-800";
-      default:
-        return "bg-slate-100 text-slate-800";
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [p, s] = await Promise.all([api.getPayments(), api.getSalaries()]);
+      setPayments(p);
+      setSalaries(s);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Group salaries by teacher
+  const teacherGroups: TeacherGroup[] = Object.values(
+    salaries.reduce((acc, s) => {
+      const key = s.employee_id;
+      if (!acc[key]) {
+        acc[key] = {
+          employee_id: s.employee_id,
+          employee_name: s.employee_name || "—",
+          records: [],
+          totalPending: 0,
+          totalPaid: 0,
+          pendingCount: 0,
+        };
+      }
+      acc[key].records.push(s);
+      if (s.status === "pending") {
+        acc[key].totalPending += s.total || 0;
+        acc[key].pendingCount++;
+      } else {
+        acc[key].totalPaid += s.total || 0;
+      }
+      return acc;
+    }, {} as Record<string, TeacherGroup>)
+  ).sort((a, b) => b.totalPending - a.totalPending);
+
+  const totalIncome = payments
+    .filter((p) => p.status === "paid")
+    .reduce((sum, p) => sum + p.amount, 0);
+
+  const totalPending = payments
+    .filter((p) => p.status === "pending" || p.status === "overdue")
+    .reduce((sum, p) => sum + p.amount, 0);
+
+  const totalSalaryPending = salaries
+    .filter((s) => s.status === "pending")
+    .reduce((sum, s) => sum + (s.total || 0), 0);
+
+  const toggleTeacher = (id: string) => {
+    setExpandedTeachers((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handlePayAll = async (group: TeacherGroup) => {
+    setPayingAll(group.employee_id);
+    try {
+      const pending = group.records.filter((r) => r.status === "pending");
+      await Promise.all(pending.map((r) => api.updateSalary(r.id, { status: "paid" })));
+      await load();
+    } finally {
+      setPayingAll(null);
     }
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case "paid":
-        return "Оплачено";
-      case "pending":
-        return "Ожидает";
-      case "overdue":
-        return "Просрочено";
-      default:
-        return status;
-    }
+  const handlePayRecord = async (id: string) => {
+    await api.updateSalary(id, { status: "paid" });
+    await load();
   };
 
   return (
     <div className="container mx-auto px-6 py-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-semibold text-slate-900">Финансы</h1>
-          <p className="text-slate-600 mt-1">
-            Учет оплат студентов и зарплаты у��ителей
-          </p>
-        </div>
-        <Select value={filterMonth} onValueChange={setFilterMonth}>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="2026-02">Февраль 2026</SelectItem>
-            <SelectItem value="2026-01">Январь 2026</SelectItem>
-            <SelectItem value="2025-12">Декабрь 2025</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="mb-6">
+        <h1 className="text-3xl font-semibold text-slate-900">Финансы</h1>
+        <p className="text-slate-600 mt-1">Учёт оплат студентов и зарплат учителей</p>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {financeStats.map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <Card key={stat.title}>
-              <CardContent className="pt-6">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-600">
-                      {stat.title}
-                    </p>
-                    <p className="text-2xl font-bold text-slate-900 mt-2">
-                      {stat.value}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-2">
-                      {stat.change}
-                    </p>
-                  </div>
-                  <div className={`w-12 h-12 rounded-lg ${stat.color} flex items-center justify-center`}>
-                    <Icon className="w-6 h-6 text-white" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-slate-500">Поступления (оплачено)</p>
+                <p className="text-2xl font-bold text-slate-900 mt-1">₽{fmt(totalIncome)}</p>
+              </div>
+              <div className="w-10 h-10 rounded-lg bg-green-500 flex items-center justify-center">
+                <DollarSign className="w-5 h-5 text-white" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-slate-500">Ожидают оплаты</p>
+                <p className="text-2xl font-bold text-slate-900 mt-1">₽{fmt(totalPending)}</p>
+                <p className="text-xs text-slate-400 mt-1">
+                  {payments.filter((p) => p.status !== "paid").length} платежей
+                </p>
+              </div>
+              <div className="w-10 h-10 rounded-lg bg-orange-500 flex items-center justify-center">
+                <Users className="w-5 h-5 text-white" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-slate-500">К выплате учителям</p>
+                <p className="text-2xl font-bold text-slate-900 mt-1">₽{fmt(totalSalaryPending)}</p>
+                <p className="text-xs text-slate-400 mt-1">
+                  {salaries.filter((s) => s.status === "pending").length} записей
+                </p>
+              </div>
+              <div className="w-10 h-10 rounded-lg bg-purple-500 flex items-center justify-center">
+                <TrendingUp className="w-5 h-5 text-white" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <Tabs defaultValue="payments" className="space-y-6">
+      <Tabs defaultValue="payments" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="payments">Оплаты студентов</TabsTrigger>
+          <TabsTrigger value="payments">Поступления от студентов</TabsTrigger>
           <TabsTrigger value="salaries">Зарплаты учителей</TabsTrigger>
         </TabsList>
 
+        {/* Payments tab */}
         <TabsContent value="payments">
           <Card>
             <CardHeader>
-              <CardTitle>Оплаты за {filterMonth}</CardTitle>
+              <CardTitle>История поступлений</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b bg-slate-50">
-                      <th className="text-left px-6 py-4 text-sm font-semibold text-slate-700">
-                        Студент
-                      </th>
-                      <th className="text-left px-6 py-4 text-sm font-semibold text-slate-700">
-                        Группа
-                      </th>
-                      <th className="text-right px-6 py-4 text-sm font-semibold text-slate-700">
-                        Сумма
-                      </th>
-                      <th className="text-left px-6 py-4 text-sm font-semibold text-slate-700">
-                        Срок оплаты
-                      </th>
-                      <th className="text-center px-6 py-4 text-sm font-semibold text-slate-700">
-                        Статус
-                      </th>
-                      <th className="text-right px-6 py-4 text-sm font-semibold text-slate-700">
-                        Действия
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payments.map((payment) => (
-                      <tr key={payment.id} className="border-b hover:bg-slate-50">
-                        <td className="px-6 py-4">
-                          <div className="font-medium text-slate-900">
-                            {payment.name}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">
-                          {payment.group}
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <span className="font-semibold text-slate-900">
-                            ₽{payment.amount.toLocaleString()}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">
-                          {new Date(payment.dueDate).toLocaleDateString("ru-RU")}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(
-                              payment.status
-                            )}`}
-                          >
-                            {getStatusText(payment.status)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          {payment.status !== "paid" && (
-                            <Button size="sm" variant="outline">
-                              Отметить оплату
-                            </Button>
-                          )}
-                        </td>
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+                </div>
+              ) : payments.length === 0 ? (
+                <div className="py-12 text-center text-slate-400">Платежей пока нет</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b bg-slate-50 text-sm font-semibold text-slate-600">
+                        <th className="text-left px-6 py-3">Студент</th>
+                        <th className="text-left px-6 py-3">Группа</th>
+                        <th className="text-right px-6 py-3">Сумма</th>
+                        <th className="text-left px-6 py-3">Дата</th>
+                        <th className="text-center px-6 py-3">Статус</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {payments.map((p) => (
+                        <tr key={p.id} className="border-b hover:bg-slate-50">
+                          <td className="px-6 py-3">
+                            <span className="font-medium text-slate-900">
+                              {p.student_name || "—"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3 text-sm text-slate-500">
+                            {p.group_name ? (
+                              p.group_name
+                            ) : (
+                              <span className="inline-flex items-center gap-1">
+                                <span className="px-1.5 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700 font-medium">Пополнение баланса</span>
+                                {p.description && <span className="text-slate-400">· {p.description}</span>}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-6 py-3 text-right">
+                            <span className="font-semibold text-emerald-600">
+                              +₽{fmt(p.amount)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3 text-sm text-slate-500">
+                            {new Date(p.created_at).toLocaleDateString("ru-RU")}
+                          </td>
+                          <td className="px-6 py-3 text-center">
+                            {statusBadge(p.status)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
+        {/* Salaries tab */}
         <TabsContent value="salaries">
-          <Card>
-            <CardHeader>
-              <CardTitle>Зарплаты за {filterMonth}</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b bg-slate-50">
-                      <th className="text-left px-6 py-4 text-sm font-semibold text-slate-700">
-                        Учитель
-                      </th>
-                      <th className="text-center px-6 py-4 text-sm font-semibold text-slate-700">
-                        Уроков
-                      </th>
-                      <th className="text-right px-6 py-4 text-sm font-semibold text-slate-700">
-                        Ставка
-                      </th>
-                      <th className="text-right px-6 py-4 text-sm font-semibold text-slate-700">
-                        Итого
-                      </th>
-                      <th className="text-center px-6 py-4 text-sm font-semibold text-slate-700">
-                        Статус
-                      </th>
-                      <th className="text-right px-6 py-4 text-sm font-semibold text-slate-700">
-                        Действия
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {salaries.map((salary) => (
-                      <tr key={salary.id} className="border-b hover:bg-slate-50">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white font-semibold">
-                              {salary.name.charAt(0)}
-                            </div>
-                            <div className="font-medium text-slate-900">
-                              {salary.name}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-blue-100 text-blue-800 text-sm font-semibold">
-                            {salary.lessons}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right text-sm text-slate-600">
-                          ₽{salary.rate.toLocaleString()}
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <span className="text-lg font-bold text-slate-900">
-                            ₽{salary.total.toLocaleString()}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(
-                              salary.status
-                            )}`}
-                          >
-                            {getStatusText(salary.status)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          {salary.status !== "paid" && (
-                            <Button size="sm" variant="outline">
-                              Отметить выплату
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          <div className="space-y-3">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
               </div>
-            </CardContent>
-          </Card>
+            ) : teacherGroups.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center text-slate-400">
+                  Записей о зарплатах пока нет. Они появятся после проведения уроков учителями с установленными ставками.
+                </CardContent>
+              </Card>
+            ) : (
+              teacherGroups.map((group) => {
+                const isExpanded = expandedTeachers.has(group.employee_id);
+                const isPaying = payingAll === group.employee_id;
+                return (
+                  <Card key={group.employee_id}>
+                    {/* Teacher summary row */}
+                    <div
+                      className="flex items-center gap-4 px-6 py-4 cursor-pointer hover:bg-slate-50 rounded-t-lg"
+                      onClick={() => toggleTeacher(group.employee_id)}
+                    >
+                      <button className="text-slate-400">
+                        {isExpanded
+                          ? <ChevronDown className="w-4 h-4" />
+                          : <ChevronRight className="w-4 h-4" />}
+                      </button>
+
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white text-sm font-semibold shrink-0">
+                        {group.employee_name.charAt(0)}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-slate-900">{group.employee_name}</div>
+                        <div className="text-xs text-slate-400">
+                          {group.records.length} уроков · выплачено ₽{fmt(group.totalPaid)}
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <div className="text-lg font-bold text-slate-900">
+                          ₽{fmt(group.totalPending)}
+                        </div>
+                        <div className="text-xs text-slate-400">к выплате</div>
+                      </div>
+
+                      {group.pendingCount > 0 && (
+                        <Button
+                          size="sm"
+                          disabled={isPaying}
+                          onClick={(e) => { e.stopPropagation(); handlePayAll(group); }}
+                        >
+                          {isPaying
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                            : null}
+                          Выплатить всё
+                        </Button>
+                      )}
+                      {group.pendingCount === 0 && (
+                        <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+                          Выплачено
+                        </Badge>
+                      )}
+                    </div>
+
+                    {/* Expanded lesson records */}
+                    {isExpanded && (
+                      <CardContent className="p-0 border-t">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="bg-slate-50 text-xs font-semibold text-slate-500">
+                              <th className="text-left px-6 py-2">Описание</th>
+                              <th className="text-center px-4 py-2">Студентов</th>
+                              <th className="text-right px-4 py-2">Ставка</th>
+                              <th className="text-right px-4 py-2">Итого</th>
+                              <th className="text-center px-4 py-2">Статус</th>
+                              <th className="px-4 py-2"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {group.records.map((r) => (
+                              <tr key={r.id} className="border-t hover:bg-slate-50">
+                                <td className="px-6 py-2.5 text-sm text-slate-700 max-w-xs">
+                                  <div>{r.description || `Урок от ${new Date(r.created_at).toLocaleDateString("ru-RU")}`}</div>
+                                </td>
+                                <td className="px-4 py-2.5 text-center text-sm text-slate-500">
+                                  {r.students_count ?? "—"}
+                                </td>
+                                <td className="px-4 py-2.5 text-right text-sm text-slate-500">
+                                  ₽{fmt(r.rate || 0)}
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-semibold text-slate-900">
+                                  ₽{fmt(r.total || 0)}
+                                </td>
+                                <td className="px-4 py-2.5 text-center">
+                                  {salaryStatusBadge(r.status)}
+                                </td>
+                                <td className="px-4 py-2.5 text-right">
+                                  {r.status === "pending" && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="text-xs h-7"
+                                      onClick={() => handlePayRecord(r.id)}
+                                    >
+                                      Выплатить
+                                    </Button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </CardContent>
+                    )}
+                  </Card>
+                );
+              })
+            )}
+          </div>
         </TabsContent>
       </Tabs>
     </div>
