@@ -148,7 +148,8 @@ async def list_students(
             "parent_contacts": student.parent_contacts,
             "groups": groups_to_show,
             "history": [],
-            "comments": student.comments
+            "comments": student.comments,
+            "portal_login": student.portal_login,
         }
         students_data.append(StudentResponse(**student_dict))
 
@@ -196,7 +197,8 @@ async def create_student(
         "parent_contacts": student.parent_contacts,
         "groups": [],  # New students don't have groups yet
         "history": student.history,
-        "comments": []  # New students don't have comments yet
+        "comments": [],  # New students don't have comments yet
+        "portal_login": student.portal_login,
     }
     return StudentResponse(**student_dict)
 
@@ -280,7 +282,8 @@ async def get_student(
             if not gs.is_archived
         ],
         "history": student.history,
-        "comments": student.comments
+        "comments": student.comments,
+        "portal_login": student.portal_login,
     }
     return StudentResponse(**student_dict)
 
@@ -392,7 +395,8 @@ async def update_student(
             if not gs.is_archived
         ],
         "history": student.history,
-        "comments": student.comments
+        "comments": student.comments,
+        "portal_login": student.portal_login,
     }
     return StudentResponse(**student_dict)
 

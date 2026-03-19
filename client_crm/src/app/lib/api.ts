@@ -927,6 +927,35 @@ class ApiClient {
       body: JSON.stringify(data),
     });
   }
+
+  // ── Exam Portal Sessions ───────────────────────────────────────────────────
+  async getExamPortalSessions(): Promise<import("../types/api").ExamPortalSession[]> {
+    return this.request<import("../types/api").ExamPortalSession[]>("/exam-sessions/");
+  }
+
+  async createExamPortalSession(data: import("../types/api").ExamPortalSessionCreate): Promise<import("../types/api").ExamPortalSession> {
+    return this.request<import("../types/api").ExamPortalSession>("/exam-sessions/", { method: "POST", body: JSON.stringify(data) });
+  }
+
+  async updateExamPortalSession(id: string, data: import("../types/api").ExamPortalSessionUpdate): Promise<import("../types/api").ExamPortalSession> {
+    return this.request<import("../types/api").ExamPortalSession>(`/exam-sessions/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+  }
+
+  async deleteExamPortalSession(id: string): Promise<void> {
+    return this.request<void>(`/exam-sessions/${id}`, { method: "DELETE" });
+  }
+
+  async addExamTimeSlot(sessionId: string, data: import("../types/api").ExamTimeSlotCreate): Promise<import("../types/api").ExamPortalSession> {
+    return this.request<import("../types/api").ExamPortalSession>(`/exam-sessions/${sessionId}/slots`, { method: "POST", body: JSON.stringify(data) });
+  }
+
+  async deleteExamTimeSlot(sessionId: string, slotId: string): Promise<void> {
+    return this.request<void>(`/exam-sessions/${sessionId}/slots/${slotId}`, { method: "DELETE" });
+  }
+
+  async generatePortalCredentials(studentId: string): Promise<{ student_id: string; portal_login: string; plain_password: string }> {
+    return this.request(`/students/${studentId}/generate-portal-credentials`, { method: "POST" });
+  }
 }
 
 export const api = new ApiClient(API_URL);

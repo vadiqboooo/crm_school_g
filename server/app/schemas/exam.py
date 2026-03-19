@@ -16,6 +16,7 @@ class ExamCreate(BaseModel):
     task_topics: Optional[dict[str, list[str]]] = None
     comment: Optional[str] = None
     is_template: Optional[bool] = False
+    is_registration_open: Optional[bool] = None
 
 
 class ExamUpdate(BaseModel):
@@ -28,6 +29,7 @@ class ExamUpdate(BaseModel):
     selected_tasks: Optional[list[int]] = None
     task_topics: Optional[dict[str, list[str]]] = None
     comment: Optional[str] = None
+    is_registration_open: Optional[bool] = None
 
 
 class GroupInfoForExam(BaseModel):
@@ -70,6 +72,7 @@ class ExamResponse(BaseModel):
     task_topics: Optional[Any]
     comment: Optional[str]
     is_template: bool
+    is_registration_open: bool = False
     created_by: Optional[UUID]
     created_by_first_name: Optional[str] = None
     created_by_last_name: Optional[str] = None

@@ -120,6 +120,7 @@ class StudentResponse(BaseModel):
     groups: list[GroupInfoResponse] = []
     history: list[StudentHistoryResponse] = []
     comments: list[StudentCommentResponse] = []
+    portal_login: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

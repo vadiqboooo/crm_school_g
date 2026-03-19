@@ -26,6 +26,9 @@ class Exam(Base):
     # Template flag
     is_template: Mapped[bool] = mapped_column(default=False, nullable=False)
 
+    # Registration open/closed for student portal
+    is_registration_open: Mapped[bool] = mapped_column(default=False, nullable=False, server_default="false")
+
     # Metadata
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"))
     created_by_first_name: Mapped[str | None] = mapped_column(String(100))

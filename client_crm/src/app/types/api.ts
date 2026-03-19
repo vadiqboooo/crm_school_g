@@ -146,6 +146,7 @@ export interface Student {
   groups: GroupInfo[];
   history: StudentHistory[];
   comments: StudentComment[];
+  portal_login?: string | null;
 }
 
 export interface StudentCreate {
@@ -526,6 +527,7 @@ export interface Exam {
   task_topics?: { [key: string]: string[] };
   comment?: string;
   is_template: boolean;
+  is_registration_open: boolean;
   created_by?: string;
   created_by_first_name?: string;
   created_by_last_name?: string;
@@ -554,6 +556,7 @@ export interface ExamCreate {
   task_topics?: { [key: string]: string[] };
   comment?: string;
   is_template?: boolean;
+  is_registration_open?: boolean;
 }
 
 export interface ExamUpdate {
@@ -565,6 +568,7 @@ export interface ExamUpdate {
   selected_tasks?: number[];
   task_topics?: { [key: string]: string[] };
   comment?: string;
+  is_registration_open?: boolean;
 }
 
 export interface ExamResult {
@@ -893,4 +897,43 @@ export interface LeadUpdate {
 
 export interface LeadCommentCreate {
   content: string;
+}
+
+// Exam Portal Sessions (управление из CRM, запись через клиентский портал)
+export interface ExamTimeSlotData {
+  id: string;
+  date: string;
+  start_time: string;
+  total_seats: number;
+  registered_count: number;
+  available_seats: number;
+}
+
+export interface ExamPortalSession {
+  id: string;
+  exam_id: string;
+  exam_title: string;
+  school_location_id: string | null;
+  school_location_name: string | null;
+  is_active: boolean;
+  notes: string | null;
+  slots: ExamTimeSlotData[];
+}
+
+export interface ExamPortalSessionCreate {
+  exam_id: string;
+  school_location_id?: string | null;
+  is_active?: boolean;
+  notes?: string | null;
+}
+
+export interface ExamPortalSessionUpdate {
+  is_active?: boolean;
+  notes?: string | null;
+}
+
+export interface ExamTimeSlotCreate {
+  date: string;
+  start_time: string;
+  total_seats: number;
 }

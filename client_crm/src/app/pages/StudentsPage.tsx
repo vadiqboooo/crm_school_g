@@ -55,6 +55,7 @@ import {
   TrendingUp,
   TrendingDown,
   CreditCard,
+  KeyRound,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -210,6 +211,8 @@ function InfoCardComponent({
   onOpenSubscription,
   onRetroactiveDeduction,
   retroactiveLoading,
+  onGenerateCredentials,
+  generatingCreds,
 }: {
   student: Student;
   studentHistory: StudentHistory[];
@@ -226,6 +229,8 @@ function InfoCardComponent({
   onOpenSubscription: () => void;
   onRetroactiveDeduction: () => void;
   retroactiveLoading?: boolean;
+  onGenerateCredentials: () => void;
+  generatingCreds?: boolean;
 }) {
   const navigate = useNavigate();
   const hasPhone = student.phone && student.phone.length > 0;
@@ -572,6 +577,26 @@ function InfoCardComponent({
                 </div>
               );
             })()}
+
+            {/* Portal credentials */}
+            <div className="border-t border-border mt-3 pt-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-xs text-muted-foreground shrink-0">Портал:</span>
+                {student.portal_login ? (
+                  <span className="text-xs font-mono bg-muted px-2 py-0.5 rounded truncate">{student.portal_login}</span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">нет доступа</span>
+                )}
+              </div>
+              <button
+                onClick={onGenerateCredentials}
+                disabled={generatingCreds}
+                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors disabled:opacity-60"
+              >
+                {generatingCreds ? <Loader2 className="w-3 h-3 animate-spin" /> : <KeyRound className="w-3 h-3" />}
+                {student.portal_login ? "Сбросить пароль" : "Создать доступ"}
+              </button>
+            </div>
           </>
         ) : (
           <>
@@ -1376,6 +1401,28 @@ export function StudentsPage() {
       toast.error("Ошибка при списании");
     } finally {
       setRetroactiveLoading(false);
+    }
+  };
+
+  const [credsDialogOpen, setCredsDialogOpen] = useState(false);
+  const [credsResult, setCredsResult] = useState<{ login: string; password: string } | null>(null);
+  const [generatingCreds, setGeneratingCreds] = useState(false);
+
+  const handleGenerateCredentials = async () => {
+    if (!selectedStudent) return;
+    try {
+      setGeneratingCreds(true);
+      const result = await api.generatePortalCredentials(selectedStudent.id);
+      setCredsResult({ login: result.portal_login, password: result.plain_password });
+      // Update student in state so portal_login shows immediately
+      const updated = { ...selectedStudent, portal_login: result.portal_login };
+      setSelectedStudent(updated as typeof selectedStudent);
+      setStudents((prev) => prev.map((s) => s.id === updated.id ? updated : s));
+      setCredsDialogOpen(true);
+    } catch {
+      toast.error("Ошибка при создании учётных данных");
+    } finally {
+      setGeneratingCreds(false);
     }
   };
 
@@ -2198,6 +2245,8 @@ export function StudentsPage() {
                   onOpenSubscription={handleOpenSubscriptionDialog}
                   onRetroactiveDeduction={handleRetroactiveDeduction}
                   retroactiveLoading={retroactiveLoading}
+                  onGenerateCredentials={handleGenerateCredentials}
+                  generatingCreds={generatingCreds}
                 />
                 <ParentContactsComponent
                   student={selectedStudent}
@@ -2387,6 +2436,46 @@ export function StudentsPage() {
             >
               {savingSubscription ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Сохранение...</> : "Сохранить"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Portal Credentials Dialog */}
+      <Dialog open={credsDialogOpen} onOpenChange={setCredsDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Учётные данные для портала</DialogTitle>
+            <DialogDescription>
+              Сохраните или передайте ученику. Пароль показывается один раз.
+            </DialogDescription>
+          </DialogHeader>
+          {credsResult && (
+            <div className="space-y-3 py-2">
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Логин</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 bg-muted px-3 py-2 rounded-lg text-sm font-mono">{credsResult.login}</code>
+                  <Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(credsResult.login)}>
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Пароль</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 bg-muted px-3 py-2 rounded-lg text-sm font-mono">{credsResult.password}</code>
+                  <Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(credsResult.password)}>
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+              <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
+                Домен для входа: <strong>web.garryschool.ru</strong>
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setCredsDialogOpen(false)}>Закрыть</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

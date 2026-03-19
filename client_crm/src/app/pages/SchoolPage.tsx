@@ -37,7 +37,7 @@ import {
   DialogTitle,
 } from "../components/ui/dialog";
 import { api } from "../lib/api";
-import type { Subject, User, Settings, SettingsUpdate, SchoolLocation, SchoolLocationCreate, Exam, ExamCreate, SubscriptionPlan, SubscriptionPlanCreate } from "../types/api";
+import type { Subject, User, Settings, SettingsUpdate, SchoolLocation, SchoolLocationCreate, Exam, ExamCreate, SubscriptionPlan, SubscriptionPlanCreate, ExamPortalSession, ExamTimeSlotCreate } from "../types/api";
 import { useAuth } from "../contexts/AuthContext";
 import { SubjectEditDialog } from "../components/SubjectEditDialog";
 
@@ -51,6 +51,15 @@ export function SchoolPage() {
   const [locations, setLocations] = useState<SchoolLocation[]>([]);
   const [examTemplates, setExamTemplates] = useState<Exam[]>([]);
   const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
+  const [examSessions, setExamSessions] = useState<ExamPortalSession[]>([]);
+  const [examDialogTab, setExamDialogTab] = useState<"settings" | "sessions">("settings");
+  const [savingSession, setSavingSession] = useState(false);
+  const [slotDialogOpen, setSlotDialogOpen] = useState(false);
+  const [slotSessionId, setSlotSessionId] = useState<string | null>(null);
+  const [slotForm, setSlotForm] = useState<ExamTimeSlotCreate>({ date: "", start_time: "09:00", total_seats: 10 });
+  const [savingSlot, setSavingSlot] = useState(false);
+  const [addSessionLocationId, setAddSessionLocationId] = useState("none");
+  const [addSessionNotes, setAddSessionNotes] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState("subjects");
@@ -107,10 +116,7 @@ export function SchoolPage() {
   const [editingExamTemplate, setEditingExamTemplate] = useState<Exam | null>(null);
   const [examTemplateForm, setExamTemplateForm] = useState<ExamCreate>({
     title: "",
-    subject: "",
-    difficulty: "",
-    threshold_score: undefined,
-    comment: "",
+    is_registration_open: false,
   });
 
   // Transliteration function
@@ -156,13 +162,14 @@ export function SchoolPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [subjectsData, teachersData, settingsData, locationsData, templatesData, plansData] = await Promise.all([
+      const [subjectsData, teachersData, settingsData, locationsData, templatesData, plansData, sessionsData] = await Promise.all([
         api.getSubjects(),
         api.getEmployees(),
         api.getSettings(),
         api.getSchoolLocations(),
         api.getExamTemplates(),
         api.getSubscriptionPlans(),
+        api.getExamPortalSessions(),
       ]);
 
       setSubjects(subjectsData);
@@ -171,6 +178,7 @@ export function SchoolPage() {
       setLocations(locationsData);
       setExamTemplates(templatesData);
       setSubscriptionPlans(plansData);
+      setExamSessions(sessionsData);
       setSettingsForm({
         school_name: settingsData.school_name || "",
         description: settingsData.description || "",
@@ -483,25 +491,19 @@ export function SchoolPage() {
 
   const handleOpenCreateExamTemplate = () => {
     setEditingExamTemplate(null);
-    setExamTemplateForm({
-      title: "",
-      subject: "",
-      difficulty: "",
-      threshold_score: undefined,
-      comment: "",
-    });
+    setExamDialogTab("settings");
+    setExamTemplateForm({ title: "", is_registration_open: false });
     setExamTemplateDialogOpen(true);
   };
 
-  const handleOpenEditExamTemplate = (template: Exam) => {
+  const handleOpenEditExamTemplate = (template: Exam, tab: "settings" | "sessions" = "settings") => {
     setEditingExamTemplate(template);
+    setExamDialogTab(tab);
+    setAddSessionLocationId("none");
+    setAddSessionNotes("");
     setExamTemplateForm({
       title: template.title,
-      subject: template.subject || "",
-      subject_id: template.subject_id,
-      difficulty: template.difficulty || "",
-      threshold_score: template.threshold_score,
-      comment: template.comment || "",
+      is_registration_open: template.is_registration_open ?? false,
     });
     setExamTemplateDialogOpen(true);
   };
@@ -539,6 +541,58 @@ export function SchoolPage() {
       console.error("Failed to delete exam template:", error);
       alert("Ошибка при удалении шаблона экзамена");
     }
+  };
+
+  // ── Exam Portal Session handlers ─────────────────────────────────────────
+  const handleCreateSession = async () => {
+    if (!editingExamTemplate) return;
+    setSavingSession(true);
+    try {
+      await api.createExamPortalSession({
+        exam_id: editingExamTemplate.id,
+        school_location_id: addSessionLocationId === "none" ? null : addSessionLocationId,
+        notes: addSessionNotes || null,
+        is_active: false,
+      });
+      setAddSessionLocationId("none");
+      setAddSessionNotes("");
+      const updated = await api.getExamPortalSessions();
+      setExamSessions(updated);
+    } catch { alert("Ошибка при создании сессии"); }
+    finally { setSavingSession(false); }
+  };
+
+  const handleDeleteSession = async (id: string) => {
+    if (!confirm("Удалить сессию записи? Все записи учеников будут удалены.")) return;
+    try {
+      await api.deleteExamPortalSession(id);
+      setExamSessions(prev => prev.filter(s => s.id !== id));
+    } catch { alert("Ошибка при удалении"); }
+  };
+
+  const handleOpenAddSlot = (sessionId: string) => {
+    setSlotSessionId(sessionId);
+    setSlotForm({ date: "", start_time: "09:00", total_seats: 10 });
+    setSlotDialogOpen(true);
+  };
+
+  const handleAddSlot = async () => {
+    if (!slotSessionId || !slotForm.date) return alert("Укажите дату");
+    setSavingSlot(true);
+    try {
+      const updated = await api.addExamTimeSlot(slotSessionId, slotForm);
+      setExamSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
+      setSlotDialogOpen(false);
+    } catch { alert("Ошибка при добавлении слота"); }
+    finally { setSavingSlot(false); }
+  };
+
+  const handleDeleteSlot = async (sessionId: string, slotId: string) => {
+    try {
+      await api.deleteExamTimeSlot(sessionId, slotId);
+      const updated = await api.getExamPortalSessions();
+      setExamSessions(updated);
+    } catch { alert("Ошибка при удалении слота"); }
   };
 
   if (loading) {
@@ -954,21 +1008,17 @@ export function SchoolPage() {
                   </DropdownMenu>
                 </CardHeader>
                 <CardContent>
-                  {template.difficulty && (
-                    <p className="text-sm text-slate-600 mb-1">
-                      <strong>Сложность:</strong> {template.difficulty}
-                    </p>
-                  )}
-                  {template.threshold_score && (
-                    <p className="text-sm text-slate-600 mb-1">
-                      <strong>Проходной балл:</strong> {template.threshold_score}
-                    </p>
-                  )}
-                  {template.comment && (
-                    <p className="text-sm text-slate-600 mt-2">
-                      {template.comment}
-                    </p>
-                  )}
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold ${
+                    template.is_registration_open
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-muted text-muted-foreground"
+                  }`}>
+                    {template.is_registration_open ? (
+                      <><ToggleRight className="w-3.5 h-3.5" /> Запись открыта</>
+                    ) : (
+                      <><ToggleLeft className="w-3.5 h-3.5" /> Запись закрыта</>
+                    )}
+                  </span>
                 </CardContent>
               </Card>
             ))}
@@ -981,6 +1031,7 @@ export function SchoolPage() {
               </CardContent>
             </Card>
           )}
+
         </TabsContent>
 
         {/* Settings Tab */}
@@ -1656,9 +1707,56 @@ export function SchoolPage() {
         isCreate={isCreateSubject}
       />
 
+      {/* ── Add Time Slot Dialog ──────────────────────────────────────── */}
+      <Dialog open={slotDialogOpen} onOpenChange={setSlotDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Добавить слот</DialogTitle>
+            <DialogDescription>Дата, время и количество мест для одного слота</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Дата проведения</Label>
+              <Input
+                type="date"
+                value={slotForm.date}
+                onChange={e => setSlotForm(f => ({ ...f, date: e.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Время начала</Label>
+                <Input
+                  type="time"
+                  value={slotForm.start_time}
+                  onChange={e => setSlotForm(f => ({ ...f, start_time: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Количество мест</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={slotForm.total_seats}
+                  onChange={e => setSlotForm(f => ({ ...f, total_seats: parseInt(e.target.value) || 10 }))}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSlotDialogOpen(false)}>Отмена</Button>
+            <Button onClick={handleAddSlot} disabled={savingSlot || !slotForm.date}>
+              {savingSlot && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              Добавить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Exam Template Dialog */}
       <Dialog open={examTemplateDialogOpen} onOpenChange={setExamTemplateDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>
               {editingExamTemplate ? "Редактировать шаблон экзамена" : "Создать шаблон экзамена"}
@@ -1667,112 +1765,180 @@ export function SchoolPage() {
               Этот шаблон можно будет использовать при создании экзаменов в группах
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="exam_title">Название экзамена *</Label>
-              <Input
-                id="exam_title"
-                value={examTemplateForm.title}
-                onChange={(e) =>
-                  setExamTemplateForm({ ...examTemplateForm, title: e.target.value })
-                }
-                placeholder="ЕГЭ по математике, ОГЭ по русскому..."
-                required
-              />
-            </div>
+          <Tabs value={examDialogTab} onValueChange={(v) => setExamDialogTab(v as "settings" | "sessions")} className="flex-1 overflow-hidden flex flex-col">
+            <TabsList className="shrink-0">
+              <TabsTrigger value="settings">Настройки</TabsTrigger>
+              {editingExamTemplate && <TabsTrigger value="sessions">Запись на экзамен</TabsTrigger>}
+            </TabsList>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="exam_subject">Предмет</Label>
-                <Select
-                  value={examTemplateForm.subject_id || ""}
-                  onValueChange={(value) => {
-                    const selectedSubject = subjects.find(s => s.id === value);
-                    setExamTemplateForm({
-                      ...examTemplateForm,
-                      subject_id: value,
-                      subject: selectedSubject?.name
-                    });
-                  }}
+            <TabsContent value="settings" className="flex-1 overflow-y-auto mt-0">
+              <div className="grid gap-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="exam_title">Название экзамена *</Label>
+                  <Input
+                    id="exam_title"
+                    value={examTemplateForm.title}
+                    onChange={(e) =>
+                      setExamTemplateForm({ ...examTemplateForm, title: e.target.value })
+                    }
+                    placeholder="ЕГЭ по математике, ОГЭ по русскому..."
+                    required
+                  />
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div>
+                    <p className="text-sm font-medium">Открыта запись</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Ученики смогут записаться через портал</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setExamTemplateForm({ ...examTemplateForm, is_registration_open: !examTemplateForm.is_registration_open })}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                      examTemplateForm.is_registration_open
+                        ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                        : "bg-muted text-muted-foreground hover:bg-accent"
+                    }`}
+                  >
+                    {examTemplateForm.is_registration_open ? (
+                      <><ToggleRight className="w-4 h-4" /> Открыта</>
+                    ) : (
+                      <><ToggleLeft className="w-4 h-4" /> Закрыта</>
+                    )}
+                  </button>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2 pb-1">
+                <Button
+                  variant="outline"
+                  onClick={() => setExamTemplateDialogOpen(false)}
+                  disabled={creatingExamTemplate}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Выберите предмет" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {subjects.map((subject) => (
-                      <SelectItem key={subject.id} value={subject.id}>
-                        {subject.name}{subject.exam_type && ` (${subject.exam_type})`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  Отмена
+                </Button>
+                <Button
+                  onClick={handleSaveExamTemplate}
+                  disabled={creatingExamTemplate || !examTemplateForm.title.trim()}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {creatingExamTemplate ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Сохранение...
+                    </>
+                  ) : (
+                    "Сохранить"
+                  )}
+                </Button>
               </div>
+            </TabsContent>
 
-              <div className="space-y-2">
-                <Label htmlFor="exam_difficulty">Сложность</Label>
-                <Input
-                  id="exam_difficulty"
-                  value={examTemplateForm.difficulty || ""}
-                  onChange={(e) =>
-                    setExamTemplateForm({ ...examTemplateForm, difficulty: e.target.value })
+            {editingExamTemplate && (
+              <TabsContent value="sessions" className="flex-1 overflow-y-auto mt-0 space-y-4 py-4">
+                {/* Add session form */}
+                <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
+                  <p className="text-sm font-semibold">Добавить сессию записи</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Локация</Label>
+                      <Select value={addSessionLocationId} onValueChange={setAddSessionLocationId}>
+                        <SelectTrigger><SelectValue placeholder="Все локации" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Все локации</SelectItem>
+                          {locations.map(l => (
+                            <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Примечание</Label>
+                      <Input
+                        value={addSessionNotes}
+                        onChange={e => setAddSessionNotes(e.target.value)}
+                        placeholder="Не забудьте паспорт"
+                      />
+                    </div>
+                  </div>
+                  <Button size="sm" onClick={handleCreateSession} disabled={savingSession} className="gap-1.5">
+                    {savingSession ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                    Добавить сессию
+                  </Button>
+                </div>
+
+                {/* Sessions list for this exam */}
+                {(() => {
+                  const thisSessions = examSessions.filter(s => s.exam_id === editingExamTemplate.id);
+                  if (thisSessions.length === 0) {
+                    return (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        Сессий записи нет. Добавьте сессию выше.
+                      </p>
+                    );
                   }
-                  placeholder="Базовый, Профильный..."
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="exam_threshold">Проходной балл</Label>
-              <Input
-                id="exam_threshold"
-                type="number"
-                value={examTemplateForm.threshold_score || ""}
-                onChange={(e) =>
-                  setExamTemplateForm({
-                    ...examTemplateForm,
-                    threshold_score: e.target.value ? parseInt(e.target.value) : undefined,
-                  })
-                }
-                placeholder="0"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="exam_comment">Комментарий</Label>
-              <Textarea
-                id="exam_comment"
-                value={examTemplateForm.comment || ""}
-                onChange={(e) =>
-                  setExamTemplateForm({ ...examTemplateForm, comment: e.target.value })
-                }
-                placeholder="Дополнительная информация об экзамене..."
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setExamTemplateDialogOpen(false)}
-              disabled={creatingExamTemplate}
-            >
-              Отмена
-            </Button>
-            <Button
-              onClick={handleSaveExamTemplate}
-              disabled={creatingExamTemplate || !examTemplateForm.title.trim()}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              {creatingExamTemplate ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Сохранение...
-                </>
-              ) : (
-                "Сохранить"
-              )}
-            </Button>
-          </DialogFooter>
+                  return (
+                    <div className="space-y-3">
+                      {thisSessions.map(session => (
+                        <Card key={session.id}>
+                          <CardHeader className="pb-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {session.school_location_name ? (
+                                  <Badge variant="outline" className="text-xs">{session.school_location_name}</Badge>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">Все локации</span>
+                                )}
+                                {session.notes && (
+                                  <span className="text-xs text-muted-foreground">{session.notes}</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <Button variant="outline" size="sm" className="gap-1 text-xs h-7 px-2" onClick={() => handleOpenAddSlot(session.id)}>
+                                  <Plus className="w-3 h-3" /> Слот
+                                </Button>
+                                <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50 h-7 w-7 p-0"
+                                  onClick={() => handleDeleteSession(session.id)}>
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="pt-0">
+                            {session.slots.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">Нет слотов — нажмите «Слот» чтобы добавить</p>
+                            ) : (
+                              <div className="flex flex-wrap gap-2">
+                                {session.slots.map(slot => (
+                                  <div key={slot.id} className="group/slot flex items-center gap-2 bg-muted/50 border border-border rounded-lg px-3 py-1.5 text-sm">
+                                    <span className="font-medium">{new Date(slot.date).toLocaleDateString("ru", { day: "numeric", month: "short" })}</span>
+                                    <span className="text-muted-foreground">·</span>
+                                    <span>{slot.start_time}</span>
+                                    <span className="text-muted-foreground">·</span>
+                                    <span className={slot.available_seats === 0 ? "text-red-500" : slot.available_seats <= 3 ? "text-amber-600" : "text-emerald-600"}>
+                                      {slot.available_seats}/{slot.total_seats} мест
+                                    </span>
+                                    {slot.registered_count > 0 && (
+                                      <span className="text-xs text-muted-foreground">({slot.registered_count} зап.)</span>
+                                    )}
+                                    <button
+                                      onClick={() => handleDeleteSlot(session.id, slot.id)}
+                                      className="opacity-0 group-hover/slot:opacity-100 text-muted-foreground hover:text-red-500 transition-all"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </TabsContent>
+            )}
+          </Tabs>
         </DialogContent>
       </Dialog>
     </div>
