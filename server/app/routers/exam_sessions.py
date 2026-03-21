@@ -24,7 +24,9 @@ from app.database import get_db
 from app.models.employee import Employee
 from app.models.exam import Exam
 from app.models.exam_portal import ExamPortalSession, ExamTimeSlot, ExamRegistration
+from app.models.group import GroupStudent
 from app.models.student import Student
+from app.models.subject import Subject
 from app.routers.student_auth import (
     generate_login, generate_password, make_unique_login, hash_password
 )
@@ -71,6 +73,79 @@ class PortalCredentialsResponse(BaseModel):
     student_id: str
     portal_login: str
     plain_password: str   # возвращаем один раз для передачи ученику
+
+
+# ── Registration list ─────────────────────────────────────────────────────────
+
+@router.get("/registrations")
+async def list_all_registrations(
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(ExamRegistration)
+        .options(
+            selectinload(ExamRegistration.student),
+            selectinload(ExamRegistration.subject),
+            selectinload(ExamRegistration.time_slot)
+            .selectinload(ExamTimeSlot.session)
+            .selectinload(ExamPortalSession.exam),
+            selectinload(ExamRegistration.time_slot)
+            .selectinload(ExamTimeSlot.session)
+            .selectinload(ExamPortalSession.school_location),
+        )
+        .order_by(ExamRegistration.registered_at.desc())
+    )
+    registrations = result.scalars().all()
+
+    return [
+        {
+            "id": str(r.id),
+            "student_id": str(r.student_id),
+            "student_name": f"{r.student.last_name} {r.student.first_name}" if r.student else "—",
+            "subject_name": (
+                r.subject.name if r.subject
+                else r.time_slot.session.exam.subject if r.time_slot.session.exam.subject
+                else None
+            ),
+            "exam_title": r.time_slot.session.exam.title,
+            "school_location_name": (
+                r.time_slot.session.school_location.name
+                if r.time_slot.session.school_location else None
+            ),
+            "date": str(r.time_slot.date),
+            "start_time": r.time_slot.start_time,
+            "registered_at": r.registered_at.isoformat(),
+            "exam_type": r.subject.exam_type if r.subject else None,
+            "attendance": r.attendance,
+            "passed": r.passed,
+        }
+        for r in registrations
+    ]
+
+
+class MarkRegistrationRequest(BaseModel):
+    attendance: Optional[str] = None   # "present" | "absent" | None
+    passed: Optional[bool] = None
+
+
+@router.patch("/registrations/{reg_id}")
+async def mark_registration(
+    reg_id: uuid.UUID,
+    body: MarkRegistrationRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    result = await db.execute(select(ExamRegistration).where(ExamRegistration.id == reg_id))
+    reg = result.scalar_one_or_none()
+    if not reg:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    if "attendance" in body.model_fields_set:
+        reg.attendance = body.attendance
+    if "passed" in body.model_fields_set:
+        reg.passed = body.passed
+    await db.commit()
+    return {"ok": True}
 
 
 # ── Session endpoints ─────────────────────────────────────────────────────────
@@ -237,16 +312,20 @@ async def generate_portal_credentials(
     if not student:
         raise HTTPException(status_code=404, detail="Студент не найден")
 
-    base_login = generate_login(student.last_name, student.first_name)
-    # If student already has a login, reuse it; otherwise generate unique
     if student.portal_login:
         login = student.portal_login
     else:
+        base_login = generate_login(student.last_name, student.first_name)
         login = await make_unique_login(base_login, db)
+        student.portal_login = login
 
-    plain_password = generate_password()
-    student.portal_login = login
-    student.portal_password_hash = hash_password(plain_password)
+    if student.portal_password_hash and student.portal_password_plain:
+        plain_password = student.portal_password_plain
+    else:
+        plain_password = generate_password()
+        student.portal_password_hash = hash_password(plain_password)
+        student.portal_password_plain = plain_password
+
     await db.commit()
 
     return PortalCredentialsResponse(
@@ -254,6 +333,83 @@ async def generate_portal_credentials(
         portal_login=login,
         plain_password=plain_password,
     )
+
+
+@students_router.post("/generate-portal-credentials-bulk")
+async def generate_portal_credentials_bulk(
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Генерирует логин/пароль для всех активных студентов."""
+    result = await db.execute(
+        select(Student).where(Student.status == "active").order_by(Student.last_name, Student.first_name)
+    )
+    students = result.scalars().all()
+    credentials = []
+    for student in students:
+        if student.portal_login:
+            login = student.portal_login
+        else:
+            base_login = generate_login(student.last_name, student.first_name)
+            login = await make_unique_login(base_login, db)
+            student.portal_login = login
+        if student.portal_password_hash and student.portal_password_plain:
+            plain_password = student.portal_password_plain
+        else:
+            plain_password = generate_password()
+            student.portal_password_hash = hash_password(plain_password)
+            student.portal_password_plain = plain_password
+        credentials.append({
+            "student_id": str(student.id),
+            "student_name": f"{student.last_name} {student.first_name}",
+            "portal_login": login,
+            "plain_password": plain_password,
+        })
+    await db.commit()
+    return credentials
+
+
+@students_router.post("/group/{group_id}/generate-portal-credentials")
+async def generate_group_portal_credentials(
+    group_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Генерирует логин/пароль для всех активных студентов группы."""
+    result = await db.execute(
+        select(Student)
+        .join(GroupStudent, Student.id == GroupStudent.student_id)
+        .where(
+            GroupStudent.group_id == group_id,
+            GroupStudent.is_archived == False,
+            GroupStudent.is_trial == False,
+            Student.status == "active",
+        )
+        .order_by(Student.last_name, Student.first_name)
+    )
+    students = result.scalars().all()
+    credentials = []
+    for student in students:
+        if student.portal_login:
+            login = student.portal_login
+        else:
+            base_login = generate_login(student.last_name, student.first_name)
+            login = await make_unique_login(base_login, db)
+            student.portal_login = login
+        if student.portal_password_hash and student.portal_password_plain:
+            plain_password = student.portal_password_plain
+        else:
+            plain_password = generate_password()
+            student.portal_password_hash = hash_password(plain_password)
+            student.portal_password_plain = plain_password
+        credentials.append({
+            "student_id": str(student.id),
+            "student_name": f"{student.last_name} {student.first_name}",
+            "portal_login": login,
+            "plain_password": plain_password,
+        })
+    await db.commit()
+    return credentials
 
 
 # ── Helper ─────────────────────────────────────────────────────────────────────

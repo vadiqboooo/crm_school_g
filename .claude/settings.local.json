@@ -39,7 +39,9 @@
       "Bash(ls:*)",
       "Bash(npx:*)",
       "Bash(./node_modules/.bin/tsc:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(sed -i 's/container mx-auto px-6 py-4 min-h-\\\\[88px\\\\]/container mx-auto px-4 sm:px-6 py-3 sm:py-4 min-h-[72px] sm:min-h-[88px]/g' HomePage.tsx GroupPage.tsx)",
+      "Bash(sed -i 's/container mx-auto px-6 py-8/container mx-auto px-4 sm:px-6 py-4 sm:py-8/g' HomePage.tsx)"
     ]
   }
 }

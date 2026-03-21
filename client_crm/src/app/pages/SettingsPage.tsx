@@ -7,7 +7,7 @@ import { School, Mail, Phone, MapPin } from "lucide-react";
 
 export function SettingsPage() {
   return (
-    <div className="container mx-auto px-6 py-8 max-w-4xl">
+    <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-8 max-w-4xl">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-3xl font-semibold text-slate-900">Настройки</h1>

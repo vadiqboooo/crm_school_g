@@ -134,12 +134,61 @@ export default function ExamRegisterPage() {
     <div className="bg-cream min-h-screen pb-8">
       {/* Header */}
       <div className="px-5 pt-12 pb-4 flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="w-9 h-9 rounded-full bg-white shadow-sm flex items-center justify-center">
+        <button onClick={() => navigate(-1)} className="w-9 h-9 rounded-full bg-white shadow-sm flex items-center justify-center shrink-0">
           <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" strokeWidth={2.5}>
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
         <h1 className="text-lg font-bold text-gray-900">Запись на экзамен</h1>
+        {studentExamTypes.size > 0 && (
+          <div className="ml-auto flex gap-1 shrink-0">
+            {[...studentExamTypes].map(type => (
+              <span key={type} className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                type === "ЕГЭ" ? "bg-violet-100 text-violet-700" : "bg-emerald-100 text-emerald-700"
+              }`}>
+                {type}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Step indicator */}
+      <div className="px-5 mb-5">
+        <div className="flex items-center gap-0">
+          {[
+            { num: 1, label: "Школа", done: !!selectedLocation },
+            { num: 2, label: "Предмет", done: !!selectedSubject },
+            { num: 3, label: "Дата и время", done: false },
+          ].map((step, i) => {
+            const currentStep = !selectedLocation ? 1 : !selectedSubject ? 2 : 3;
+            const isActive = step.num === currentStep;
+            const isDone = step.num < currentStep;
+            return (
+              <div key={step.num} className="flex items-center flex-1">
+                <div className="flex flex-col items-center flex-1">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+                    isDone ? "bg-brand-700 text-white" :
+                    isActive ? "bg-brand-100 text-brand-700 border-2 border-brand-700" :
+                    "bg-gray-100 text-gray-400"
+                  }`}>
+                    {isDone ? (
+                      <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={3}>
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    ) : step.num}
+                  </div>
+                  <span className={`text-[10px] mt-1 font-medium ${isActive ? "text-brand-700" : isDone ? "text-brand-700" : "text-gray-400"}`}>
+                    {step.label}
+                  </span>
+                </div>
+                {i < 2 && (
+                  <div className={`h-0.5 flex-1 mb-4 mx-1 transition-colors ${isDone ? "bg-brand-700" : "bg-gray-200"}`} />
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="px-5 space-y-5">
@@ -203,16 +252,18 @@ export default function ExamRegisterPage() {
                   <button
                     key={subj.id}
                     onClick={() => handleSelectSubject(subj)}
-                    className={`w-full px-4 py-3 text-left text-sm flex items-center justify-between transition-colors ${
+                    className={`w-full px-4 py-3 text-left text-sm flex items-center gap-2 transition-colors ${
                       selectedSubject?.id === subj.id ? "bg-brand-700/10 text-brand-700 font-semibold" : "text-gray-700"
                     }`}
                   >
-                    <span>{subj.name}</span>
                     {subj.exam_type && (
-                      <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full ml-2 shrink-0">
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                        subj.exam_type === "ЕГЭ" ? "bg-violet-100 text-violet-700" : "bg-emerald-100 text-emerald-700"
+                      }`}>
                         {subj.exam_type}
                       </span>
                     )}
+                    <span>{subj.name}</span>
                   </button>
                 ))}
               </div>

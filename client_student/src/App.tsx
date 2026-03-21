@@ -14,18 +14,24 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return isAuthenticated() ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
+function AnimatedRoutes() {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
+      <Route path="/exams" element={<ProtectedRoute><ExamsPage /></ProtectedRoute>} />
+      <Route path="/exams/register" element={<ProtectedRoute><ExamRegisterPage /></ProtectedRoute>} />
+      <Route path="/results" element={<ProtectedRoute><ResultsPage /></ProtectedRoute>} />
+      <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
-        <Route path="/exams" element={<ProtectedRoute><ExamsPage /></ProtectedRoute>} />
-        <Route path="/exams/register" element={<ProtectedRoute><ExamRegisterPage /></ProtectedRoute>} />
-        <Route path="/results" element={<ProtectedRoute><ResultsPage /></ProtectedRoute>} />
-        <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <AnimatedRoutes />
     </BrowserRouter>
   );
 }

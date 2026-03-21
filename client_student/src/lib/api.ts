@@ -119,6 +119,27 @@ class StudentApiClient {
   async getResults() {
     return this.request<ExamResult[]>("/student-portal/results");
   }
+
+  async verifyPassword(password: string) {
+    return this.request<{ valid: boolean }>("/student-portal/verify-password", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    });
+  }
+
+  async updateSettings(data: {
+    portal_login?: string;
+    old_password?: string;
+    new_password?: string;
+    phone?: string;
+    email?: string;
+    chat_display_name?: string;
+  }) {
+    return this.request<{ message: string }>("/student-portal/settings", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
 }
 
 export const api = new StudentApiClient();
@@ -132,6 +153,9 @@ export interface StudentProfile {
   portal_login: string | null;
   class_number: number | null;
   balance: number;
+  phone: string | null;
+  email: string | null;
+  chat_display_name: string | null;
   groups: Array<{
     id: string; name: string; subject: string | null; exam_type: string | null;
     schedules: Array<{ day: string; start_time: string; duration: number }>;
@@ -182,9 +206,11 @@ export interface ExamSession {
 
 export interface MyRegistration {
   id: string;
+  session_id: string;
   exam_title: string;
   subject_name: string | null;
   subject_id: string | null;
+  exam_type: string | null;
   school_location_id: string | null;
   school_location_name: string | null;
   date: string;

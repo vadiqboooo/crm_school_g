@@ -1,8 +1,8 @@
 import uuid
 import enum
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 
-from sqlalchemy import String, Text, ForeignKey, Integer, Boolean, Numeric, Enum as SAEnum
+from sqlalchemy import String, Text, ForeignKey, Integer, Boolean, Numeric, Date, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -84,8 +84,15 @@ class Student(Base):
     status: Mapped[StudentStatus] = mapped_column(SAEnum(StudentStatus, values_callable=lambda x: [e.value for e in x]), default=StudentStatus.active)
     balance: Mapped[float] = mapped_column(Numeric(10, 2), default=0, server_default="0", nullable=False)
     subscription_plan_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("subscription_plans.id", ondelete="SET NULL"), nullable=True)
+    discount_type: Mapped[str | None] = mapped_column(String(10), nullable=True)   # "fixed" | "percent"
+    discount_value: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    discount_valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    discount_valid_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     portal_login: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
     portal_password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    portal_password_plain: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    chat_display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     groups = relationship("GroupStudent", back_populates="student")

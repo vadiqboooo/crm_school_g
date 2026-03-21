@@ -2,13 +2,14 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, useLocation } from "react-router";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { Button } from "../components/ui/button";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, KeyRound } from "lucide-react";
 import { LessonsTab } from "../components/LessonsTab";
 import { ExamsTab } from "../components/ExamsTab";
 import { GroupInfoTab } from "../components/GroupInfoTab";
 import { PerformanceTab } from "../components/PerformanceTab";
+import { PrintCredentialsModal } from "../components/PrintCredentialsModal";
 import { api } from "../lib/api";
-import type { Group } from "../types/api";
+import type { Group, PortalCredential } from "../types/api";
 
 export function GroupPage() {
   const { groupId } = useParams();
@@ -31,6 +32,8 @@ export function GroupPage() {
   const [group, setGroup] = useState<Group | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [generatingCreds, setGeneratingCreds] = useState(false);
+  const [printCredentials, setPrintCredentials] = useState<PortalCredential[] | null>(null);
   // If returning from a student that was opened from a lesson, force lessons tab
   const [activeTab, setActiveTab] = useState(openLessonId ? "lessons" : "lessons");
 
@@ -63,7 +66,7 @@ export function GroupPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto px-6 py-8">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-8">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         </div>
@@ -73,7 +76,7 @@ export function GroupPage() {
 
   if (error || !group) {
     return (
-      <div className="container mx-auto px-6 py-8">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-8">
         <div className="text-center">
           <p className="text-slate-600 mb-4">{error || "Группа не найдена"}</p>
           <Button onClick={handleBack}>
@@ -87,27 +90,51 @@ export function GroupPage() {
 
   return (
     <>
+      {printCredentials && (
+        <PrintCredentialsModal
+          title={`Группа: ${group.name}`}
+          credentials={printCredentials}
+          onClose={() => setPrintCredentials(null)}
+        />
+      )}
+
       {/* Group Info Header */}
       <div className="bg-white border-b">
-        <div className="container mx-auto px-6 py-4 min-h-[88px] flex items-center">
-          <div className="flex items-center gap-4">
+        <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-4 min-h-[72px] sm:min-h-[88px] flex items-center">
+          <div className="flex items-center justify-between w-full gap-4">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="sm" onClick={handleBack}>
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                {backToStudent ? "Назад к ученику" : "Назад к списку"}
+              </Button>
+              <h2 className="text-xl sm:text-2xl font-semibold text-slate-900">{group.name}</h2>
+            </div>
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
-              onClick={handleBack}
+              disabled={generatingCreds}
+              onClick={async () => {
+                setGeneratingCreds(true);
+                try {
+                  const creds = await api.generateGroupCredentials(groupId!);
+                  setPrintCredentials(creds);
+                } catch (e) {
+                  console.error(e);
+                } finally {
+                  setGeneratingCreds(false);
+                }
+              }}
+              className="flex items-center gap-2 shrink-0"
             >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              {backToStudent ? "Назад к ученику" : "Назад к списку"}
+              {generatingCreds ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+              <span className="hidden sm:inline">Выдать доступы</span>
             </Button>
-            <h2 className="text-2xl font-semibold text-slate-900">
-              {group.name}
-            </h2>
           </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <main className="container mx-auto px-6 py-8">
+      <main className="container mx-auto px-4 sm:px-6 py-4 sm:py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="bg-white border mb-6">
             <TabsTrigger value="lessons">Уроки</TabsTrigger>

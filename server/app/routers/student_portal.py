@@ -42,10 +42,22 @@ class StudentProfileResponse(BaseModel):
     portal_login: str | None
     class_number: int | None
     balance: float
+    phone: str | None
+    email: str | None
+    chat_display_name: str | None
     groups: list[dict]
 
     class Config:
         from_attributes = True
+
+
+class UpdateSettingsRequest(BaseModel):
+    portal_login: str | None = None
+    old_password: str | None = None
+    new_password: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    chat_display_name: str | None = None
 
 
 class TodayLessonResponse(BaseModel):
@@ -92,9 +104,11 @@ class ExamSessionResponse(BaseModel):
 
 class MyRegistrationResponse(BaseModel):
     id: str
+    session_id: str
     exam_title: str
     subject_name: str | None
     subject_id: str | None
+    exam_type: str | None
     school_location_id: str | None
     school_location_name: str | None
     date: str
@@ -173,6 +187,9 @@ async def get_my_profile(
         portal_login=s.portal_login,
         class_number=s.class_number,
         balance=float(s.balance),
+        phone=s.phone,
+        email=s.email,
+        chat_display_name=s.chat_display_name,
         groups=groups_data,
     )
 
@@ -220,10 +237,14 @@ async def get_today_schedule(
     result = []
     for lesson in lessons:
         g = lesson.group
-        # Find schedule for today's day of week
-        schedule = g.schedules[0] if g.schedules else None
-        start_time = schedule.start_time.strftime("%H:%M") if schedule else "00:00"
-        duration = schedule.duration_minutes if schedule else 90
+        # Use lesson's own time (set at generation time from schedule)
+        if lesson.time:
+            start_time = lesson.time.strftime("%H:%M")
+            duration = lesson.duration or 90
+        else:
+            schedule = g.schedules[0] if g.schedules else None
+            start_time = schedule.start_time.strftime("%H:%M") if schedule else "00:00"
+            duration = schedule.duration_minutes if schedule else 90
         end_time = _calc_end_time(start_time, duration)
 
         # Is lesson happening now?
@@ -457,6 +478,7 @@ async def my_registrations(
     return [
         MyRegistrationResponse(
             id=str(r.id),
+            session_id=str(r.time_slot.session_id),
             exam_title=r.time_slot.session.exam.title,
             subject_name=(
                 r.subject.name if r.subject else
@@ -465,6 +487,7 @@ async def my_registrations(
                 else r.time_slot.session.exam.subject
             ),
             subject_id=str(r.subject_id) if r.subject_id else None,
+            exam_type=r.subject.exam_type if r.subject else None,
             school_location_id=str(r.time_slot.session.school_location_id) if r.time_slot.session.school_location_id else None,
             date=str(r.time_slot.date),
             start_time=r.time_slot.start_time,
@@ -477,6 +500,62 @@ async def my_registrations(
         )
         for r in registrations
     ]
+
+
+class VerifyPasswordRequest(BaseModel):
+    password: str
+
+
+@router.post("/verify-password")
+async def verify_student_password(
+    body: VerifyPasswordRequest,
+    student: Student = Depends(get_current_student_dep),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.auth.security import verify_password
+    s_result = await db.execute(select(Student).where(Student.id == student.id))
+    s = s_result.scalar_one()
+    if not s.portal_password_hash:
+        raise HTTPException(status_code=400, detail="Пароль не установлен")
+    return {"valid": verify_password(body.password, s.portal_password_hash)}
+
+
+@router.patch("/settings")
+async def update_settings(
+    body: UpdateSettingsRequest,
+    student: Student = Depends(get_current_student_dep),
+    db: AsyncSession = Depends(get_db),
+):
+    s_result = await db.execute(select(Student).where(Student.id == student.id))
+    s = s_result.scalar_one()
+
+    if body.portal_login is not None and body.portal_login != s.portal_login:
+        taken = await db.execute(
+            select(Student).where(Student.portal_login == body.portal_login, Student.id != s.id)
+        )
+        if taken.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Логин уже занят")
+        s.portal_login = body.portal_login
+
+    if body.new_password is not None and body.new_password.strip():
+        from app.auth.security import hash_password, verify_password
+        if not body.old_password:
+            raise HTTPException(status_code=400, detail="Введите старый пароль")
+        if not s.portal_password_hash or not verify_password(body.old_password, s.portal_password_hash):
+            raise HTTPException(status_code=400, detail="Старый пароль неверный")
+        s.portal_password_hash = hash_password(body.new_password)
+
+    if body.phone is not None:
+        s.phone = body.phone or None
+
+    if body.email is not None:
+        s.email = body.email or None
+
+    if body.chat_display_name is not None:
+        s.chat_display_name = body.chat_display_name or None
+
+    await db.commit()
+    return {"message": "Настройки сохранены"}
 
 
 @router.get("/results", response_model=list[ExamResultResponse])

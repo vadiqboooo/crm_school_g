@@ -11,21 +11,29 @@ export default function BottomNav() {
   const { pathname } = useLocation();
 
   return (
-    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white border-t border-gray-100 flex z-50">
+    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white flex items-center px-4 py-3 z-50">
+      {/* Top separator line */}
+      <div className="absolute inset-x-0 top-0 h-px bg-gray-100" />
+
       {tabs.map(({ path, label, icon: Icon }) => {
         const active = pathname === path || (path !== "/" && pathname.startsWith(path));
         return (
           <button
             key={path}
             onClick={() => navigate(path)}
-            className="flex-1 flex flex-col items-center justify-center py-3 gap-0.5"
+            className="flex-1 flex items-center justify-center transition-all duration-200"
           >
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${active ? "bg-brand-700" : "bg-transparent"}`}>
-              <Icon className={active ? "text-white" : "text-gray-400"} />
-            </div>
-            <span className={`text-[10px] font-semibold tracking-wide ${active ? "text-brand-700" : "text-gray-400"}`}>
-              {label}
-            </span>
+            {active ? (
+              <div className="flex items-center gap-2 bg-brand-700 text-white px-5 py-2.5 rounded-full transition-all duration-200">
+                <Icon className="text-white" />
+                <span className="text-xs font-bold tracking-wide">{label}</span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-0.5 transition-all duration-200">
+                <Icon className="text-gray-400" />
+                <span className="text-[10px] font-semibold text-gray-400 tracking-wide">{label}</span>
+              </div>
+            )}
           </button>
         );
       })}

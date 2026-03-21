@@ -72,6 +72,10 @@ class StudentUpdate(BaseModel):
     class_number: Optional[int] = None
     status: Optional[StudentStatus] = None
     parent_contacts: Optional[list[ParentContactCreate]] = None
+    discount_type: Optional[str] = None       # "fixed" | "percent" | None (to clear)
+    discount_value: Optional[float] = None
+    discount_valid_from: Optional[date] = None
+    discount_valid_until: Optional[date] = None
 
 
 class StudentCommentAuthor(BaseModel):
@@ -121,6 +125,10 @@ class StudentResponse(BaseModel):
     history: list[StudentHistoryResponse] = []
     comments: list[StudentCommentResponse] = []
     portal_login: Optional[str] = None
+    discount_type: Optional[str] = None
+    discount_value: Optional[float] = None
+    discount_valid_from: Optional[date] = None
+    discount_valid_until: Optional[date] = None
 
     model_config = {"from_attributes": True}
 

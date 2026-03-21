@@ -5,7 +5,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
-import { Plus, BookOpen, Users as UsersIcon, Edit, Trash2, MoreVertical, Loader2, Save, CreditCard, ToggleLeft, ToggleRight } from "lucide-react";
+import { Plus, BookOpen, Users as UsersIcon, Edit, Trash2, MoreVertical, Loader2, Save, CreditCard, ToggleLeft, ToggleRight, KeyRound } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import {
   Table,
@@ -37,9 +37,10 @@ import {
   DialogTitle,
 } from "../components/ui/dialog";
 import { api } from "../lib/api";
-import type { Subject, User, Settings, SettingsUpdate, SchoolLocation, SchoolLocationCreate, Exam, ExamCreate, SubscriptionPlan, SubscriptionPlanCreate, ExamPortalSession, ExamTimeSlotCreate } from "../types/api";
+import type { Subject, User, Settings, SettingsUpdate, SchoolLocation, SchoolLocationCreate, Exam, ExamCreate, SubscriptionPlan, SubscriptionPlanCreate, ExamPortalSession, ExamTimeSlotCreate, PortalCredential } from "../types/api";
 import { useAuth } from "../contexts/AuthContext";
 import { SubjectEditDialog } from "../components/SubjectEditDialog";
+import { PrintCredentialsModal } from "../components/PrintCredentialsModal";
 
 export function SchoolPage() {
   const { user } = useAuth();
@@ -71,7 +72,7 @@ export function SchoolPage() {
   const [subscriptionForm, setSubscriptionForm] = useState<SubscriptionPlanCreate>({
     name: "",
     lessons_count: 8,
-    price_per_lesson: 0,
+    price: 0,
   });
 
   // Subject dialog
@@ -109,6 +110,10 @@ export function SchoolPage() {
     description: "",
     manager_id: undefined,
   });
+
+  // Credentials
+  const [generatingAllCreds, setGeneratingAllCreds] = useState(false);
+  const [printAllCredentials, setPrintAllCredentials] = useState<PortalCredential[] | null>(null);
 
   // Exam template dialog
   const [examTemplateDialogOpen, setExamTemplateDialogOpen] = useState(false);
@@ -198,16 +203,22 @@ export function SchoolPage() {
   const handleOpenSubscriptionDialog = (plan?: SubscriptionPlan) => {
     if (plan) {
       setEditingPlan(plan);
-      setSubscriptionForm({ name: plan.name, lessons_count: plan.lessons_count, price_per_lesson: plan.price_per_lesson });
+      setSubscriptionForm({
+        name: plan.name,
+        lessons_count: plan.lessons_count,
+        price: plan.price,
+        valid_from: plan.valid_from ?? null,
+        valid_until: plan.valid_until ?? null,
+      });
     } else {
       setEditingPlan(null);
-      setSubscriptionForm({ name: "", lessons_count: 8, price_per_lesson: 0 });
+      setSubscriptionForm({ name: "", lessons_count: 8, price: 0, valid_from: null, valid_until: null });
     }
     setSubscriptionDialogOpen(true);
   };
 
   const handleSaveSubscriptionPlan = async () => {
-    if (!subscriptionForm.name.trim() || !subscriptionForm.lessons_count || !subscriptionForm.price_per_lesson) return;
+    if (!subscriptionForm.name.trim() || !subscriptionForm.lessons_count || !subscriptionForm.price) return;
     try {
       setSavingPlan(true);
       if (editingPlan) {
@@ -597,7 +608,7 @@ export function SchoolPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto px-6 py-8">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-8">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         </div>
@@ -606,7 +617,14 @@ export function SchoolPage() {
   }
 
   return (
-    <div className="container mx-auto px-6 py-8">
+    <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-8">
+      {printAllCredentials && (
+        <PrintCredentialsModal
+          title="Все ученики"
+          credentials={printAllCredentials}
+          onClose={() => setPrintAllCredentials(null)}
+        />
+      )}
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-3xl font-semibold text-slate-900">Школа</h1>
@@ -740,15 +758,36 @@ export function SchoolPage() {
         <TabsContent value="teachers">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold">Сотрудники</h2>
-            {isAdmin && (
+            <div className="flex items-center gap-2">
               <Button
+                variant="outline"
                 className="gap-2"
-                onClick={handleOpenCreateEmployee}
+                disabled={generatingAllCreds}
+                onClick={async () => {
+                  setGeneratingAllCreds(true);
+                  try {
+                    const creds = await api.generateAllCredentials();
+                    setPrintAllCredentials(creds);
+                  } catch (e) {
+                    console.error(e);
+                  } finally {
+                    setGeneratingAllCreds(false);
+                  }
+                }}
               >
-                <Plus className="w-4 h-4" />
-                Добавить сотрудника
+                {generatingAllCreds ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+                <span className="hidden sm:inline">Выдать доступы всем</span>
               </Button>
-            )}
+              {isAdmin && (
+                <Button
+                  className="gap-2"
+                  onClick={handleOpenCreateEmployee}
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="hidden sm:inline">Добавить сотрудника</span>
+                </Button>
+              )}
+            </div>
           </div>
 
           <Card>
@@ -1213,8 +1252,9 @@ export function SchoolPage() {
                   <TableRow>
                     <TableHead>Название</TableHead>
                     <TableHead className="text-center">Кол-во уроков</TableHead>
-                    <TableHead className="text-center">Цена за урок</TableHead>
-                    <TableHead className="text-center">Общая стоимость</TableHead>
+                    <TableHead className="text-center">Стоимость</TableHead>
+                    <TableHead className="text-center">За урок</TableHead>
+                    <TableHead className="text-center">Срок действия</TableHead>
                     <TableHead className="text-center">Статус</TableHead>
                     {isAdmin && <TableHead className="text-right">Действия</TableHead>}
                   </TableRow>
@@ -1222,7 +1262,7 @@ export function SchoolPage() {
                 <TableBody>
                   {subscriptionPlans.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={isAdmin ? 6 : 5} className="text-center py-10 text-slate-500">
+                      <TableCell colSpan={isAdmin ? 7 : 6} className="text-center py-10 text-slate-500">
                         Абонементы не созданы
                       </TableCell>
                     </TableRow>
@@ -1231,8 +1271,19 @@ export function SchoolPage() {
                       <TableRow key={plan.id}>
                         <TableCell className="font-medium">{plan.name}</TableCell>
                         <TableCell className="text-center">{plan.lessons_count}</TableCell>
-                        <TableCell className="text-center">{plan.price_per_lesson.toLocaleString("ru-RU")} ₽</TableCell>
-                        <TableCell className="text-center font-semibold">{plan.total_price.toLocaleString("ru-RU")} ₽</TableCell>
+                        <TableCell className="text-center font-semibold">{plan.price.toLocaleString("ru-RU")} ₽</TableCell>
+                        <TableCell className="text-center text-slate-500">{(plan.price_per_lesson ?? 0).toLocaleString("ru-RU")} ₽</TableCell>
+                        <TableCell className="text-center text-sm text-slate-600">
+                          {plan.valid_from || plan.valid_until ? (
+                            <span>
+                              {plan.valid_from ? new Date(plan.valid_from).toLocaleDateString("ru-RU") : "∞"}
+                              {" — "}
+                              {plan.valid_until ? new Date(plan.valid_until).toLocaleDateString("ru-RU") : "∞"}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">Бессрочно</span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-center">
                           <Badge variant={plan.is_active ? "default" : "secondary"}>
                             {plan.is_active ? "Активен" : "Неактивен"}
@@ -1285,7 +1336,7 @@ export function SchoolPage() {
           <DialogHeader>
             <DialogTitle>{editingPlan ? "Редактировать абонемент" : "Новый абонемент"}</DialogTitle>
             <DialogDescription>
-              Задайте параметры абонемента. Общая стоимость вычисляется автоматически.
+              Укажите стоимость абонемента. Цена за урок вычисляется автоматически.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -1310,21 +1361,41 @@ export function SchoolPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="plan_price">Цена за урок (₽)</Label>
+                <Label htmlFor="plan_price">Стоимость абонемента (₽)</Label>
                 <Input
                   id="plan_price"
                   type="number"
                   min={0}
-                  value={subscriptionForm.price_per_lesson}
-                  onChange={(e) => setSubscriptionForm({ ...subscriptionForm, price_per_lesson: parseFloat(e.target.value) || 0 })}
+                  value={subscriptionForm.price}
+                  onChange={(e) => setSubscriptionForm({ ...subscriptionForm, price: parseFloat(e.target.value) || 0 })}
                 />
               </div>
             </div>
-            {subscriptionForm.lessons_count > 0 && subscriptionForm.price_per_lesson > 0 && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="plan_valid_from">Действует с</Label>
+                <Input
+                  id="plan_valid_from"
+                  type="date"
+                  value={subscriptionForm.valid_from ?? ""}
+                  onChange={(e) => setSubscriptionForm({ ...subscriptionForm, valid_from: e.target.value || null })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="plan_valid_until">Действует до</Label>
+                <Input
+                  id="plan_valid_until"
+                  type="date"
+                  value={subscriptionForm.valid_until ?? ""}
+                  onChange={(e) => setSubscriptionForm({ ...subscriptionForm, valid_until: e.target.value || null })}
+                />
+              </div>
+            </div>
+            {subscriptionForm.lessons_count > 0 && subscriptionForm.price > 0 && (
               <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 flex items-center justify-between">
-                <span className="text-sm text-blue-700">Общая стоимость</span>
+                <span className="text-sm text-blue-700">Цена за 1 урок</span>
                 <span className="font-bold text-blue-900">
-                  {(subscriptionForm.lessons_count * subscriptionForm.price_per_lesson).toLocaleString("ru-RU")} ₽
+                  {(subscriptionForm.price / subscriptionForm.lessons_count).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽
                 </span>
               </div>
             )}
@@ -1335,7 +1406,7 @@ export function SchoolPage() {
             </Button>
             <Button
               onClick={handleSaveSubscriptionPlan}
-              disabled={savingPlan || !subscriptionForm.name.trim() || !subscriptionForm.lessons_count || !subscriptionForm.price_per_lesson}
+              disabled={savingPlan || !subscriptionForm.name.trim() || !subscriptionForm.lessons_count || !subscriptionForm.price}
               className="bg-blue-600 hover:bg-blue-700"
             >
               {savingPlan ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Сохранение...</> : "Сохранить"}

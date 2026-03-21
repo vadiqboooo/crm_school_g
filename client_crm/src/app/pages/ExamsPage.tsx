@@ -42,7 +42,7 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
-import type { Exam, ExamResult, Student, Subject, User } from "../types/api";
+import type { Exam, ExamResult, Student, Subject, User, ExamRegistrationItem } from "../types/api";
 
 interface StudentWithResults {
   student: Student;
@@ -70,6 +70,23 @@ export function ExamsPage() {
   const [examTemplates, setExamTemplates] = useState<Exam[]>([]);
   const [allResults, setAllResults] = useState<ExamResult[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pageTab, setPageTab] = useState<"results" | "registrations">("results");
+  const [registrationItems, setRegistrationItems] = useState<ExamRegistrationItem[]>([]);
+  const [registrationsLoading, setRegistrationsLoading] = useState(false);
+  const [regSearch, setRegSearch] = useState("");
+  const [regSchool, setRegSchool] = useState("all");
+  const [regSubject, setRegSubject] = useState("all");
+  const [regDate, setRegDate] = useState("all");
+  const [regTime, setRegTime] = useState("all");
+  const [regExamType, setRegExamType] = useState("all");
+  // Mark modal state
+  const [markingReg, setMarkingReg] = useState<ExamRegistrationItem | null>(null);
+  const [markAttendance, setMarkAttendance] = useState<"present" | "absent" | null>(null);
+  const [markPassed, setMarkPassed] = useState<boolean | null>(null);
+  const [markSaving, setMarkSaving] = useState(false);
+  // Mobile filter sheets
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [showMobileResultFilters, setShowMobileResultFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterSubject, setFilterSubject] = useState<string>("all");
   const [filterTeacher, setFilterTeacher] = useState<string>("all");
@@ -197,6 +214,61 @@ export function ExamsPage() {
       year: "numeric",
     });
   };
+
+  const handleTabChange = (tab: "results" | "registrations") => {
+    setPageTab(tab);
+    if (tab === "registrations" && registrationItems.length === 0) {
+      setRegistrationsLoading(true);
+      api.getExamRegistrations()
+        .then(setRegistrationItems)
+        .catch(console.error)
+        .finally(() => setRegistrationsLoading(false));
+    }
+  };
+
+  const openMarkModal = (reg: ExamRegistrationItem) => {
+    setMarkingReg(reg);
+    setMarkAttendance(reg.attendance ?? null);
+    setMarkPassed(reg.passed ?? null);
+  };
+
+  const saveMarkModal = async () => {
+    if (!markingReg) return;
+    setMarkSaving(true);
+    try {
+      await api.updateRegistrationMark(markingReg.id, {
+        attendance: markAttendance,
+        passed: markPassed,
+      });
+      setRegistrationItems(prev =>
+        prev.map(r => r.id === markingReg.id ? { ...r, attendance: markAttendance, passed: markPassed } : r)
+      );
+      setMarkingReg(null);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setMarkSaving(false);
+    }
+  };
+
+  const regSchools = [...new Set(registrationItems.map(r => r.school_location_name).filter(Boolean))] as string[];
+  const regSubjects = [...new Set(registrationItems.map(r => r.subject_name).filter(Boolean))] as string[];
+  const regDates = [...new Set(registrationItems.map(r => r.date))].sort();
+  const regTimes = [...new Set(registrationItems.map(r => r.start_time.slice(0, 5)))].sort();
+
+  const filteredRegistrations = registrationItems.filter(r => {
+    const q = regSearch.toLowerCase();
+    const matchSearch = !q ||
+      r.student_name.toLowerCase().includes(q) ||
+      (r.subject_name ?? "").toLowerCase().includes(q) ||
+      r.exam_title.toLowerCase().includes(q);
+    const matchSchool = regSchool === "all" || r.school_location_name === regSchool;
+    const matchSubject = regSubject === "all" || r.subject_name === regSubject;
+    const matchDate = regDate === "all" || r.date === regDate;
+    const matchTime = regTime === "all" || r.start_time.slice(0, 5) === regTime;
+    const matchExamType = regExamType === "all" || r.exam_type === regExamType;
+    return matchSearch && matchSchool && matchSubject && matchDate && matchTime && matchExamType;
+  });
 
   const toggleStudentExpand = (studentId: string) => {
     setExpandedStudentId(expandedStudentId === studentId ? null : studentId);
@@ -513,7 +585,7 @@ export function ExamsPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto px-6 py-8">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-8">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         </div>
@@ -522,38 +594,426 @@ export function ExamsPage() {
   }
 
   return (
-    <div className="container mx-auto px-6 py-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Экзамены и пробники</h1>
-          <p className="text-slate-600 mt-1">
-            {isTeacher
-              ? "Просмотр результатов работ, которые вы проверили"
-              : "Просмотр результатов всех студентов"}
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-sm text-slate-600">
-            <FileText className="w-5 h-5" />
-            <span>Работ: {worksCount}</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-slate-600">
-            <GraduationCap className="w-5 h-5" />
-            <span>Студентов: {filteredStudents.length}</span>
-          </div>
-          <Button
-            onClick={() => setIsAddResultDialogOpen(true)}
-            className="gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Добавить результат
-          </Button>
-        </div>
+    <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-8">
+      {/* Header — desktop only title */}
+      <div className="hidden sm:block mb-6">
+        <h1 className="text-2xl font-semibold text-slate-900">Экзамены и пробники</h1>
+        <p className="text-slate-500 mt-1 text-sm">
+          {isTeacher ? "Просмотр результатов работ, которые вы проверили" : "Просмотр результатов всех студентов"}
+        </p>
       </div>
 
-      {/* Filters */}
-      <Card className="mb-6">
+      {/* Page tabs */}
+      <div className="flex gap-1 mb-4 bg-slate-100 p-1 rounded-lg w-full sm:w-fit">
+        <button
+          onClick={() => handleTabChange("results")}
+          className={`flex-1 sm:flex-none px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+            pageTab === "results" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Результаты
+        </button>
+        <button
+          onClick={() => handleTabChange("registrations")}
+          className={`flex-1 sm:flex-none px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+            pageTab === "registrations" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Записи на экзамен
+        </button>
+      </div>
+
+      {/* Stats + Add button — only on results tab */}
+      {pageTab === "results" && (
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-sm text-slate-500">
+            {worksCount} {worksCount === 1 ? "работа" : worksCount < 5 ? "работы" : "работ"} · {filteredStudents.length} студентов
+          </span>
+          {!isTeacher && (
+            <Button
+              onClick={() => setIsAddResultDialogOpen(true)}
+              className="gap-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl px-4 h-9 text-sm font-semibold"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Добавить результат</span>
+              <span className="sm:hidden">Добавить</span>
+            </Button>
+          )}
+        </div>
+      )}
+
+      {pageTab === "registrations" ? (
+        <div>
+          {/* Stats row */}
+          <div className="flex items-center mb-4">
+            <span className="text-sm text-slate-500">
+              {new Set(filteredRegistrations.map(r => r.student_id)).size} студентов · {filteredRegistrations.length} {filteredRegistrations.length === 1 ? "запись" : filteredRegistrations.length < 5 ? "записи" : "записей"}
+            </span>
+          </div>
+
+          {/* Toolbar */}
+          <div className="flex items-center gap-3 mb-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+              <Input
+                placeholder="Поиск по имени или предмету..."
+                value={regSearch}
+                onChange={e => setRegSearch(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            {/* Desktop filters inline */}
+            <div className="hidden sm:flex items-center gap-2 flex-wrap">
+              <Select value={regSchool} onValueChange={setRegSchool}>
+                <SelectTrigger className="w-40 h-9 text-sm"><SelectValue placeholder="Школа" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все школы</SelectItem>
+                  {regSchools.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={regExamType} onValueChange={setRegExamType}>
+                <SelectTrigger className="w-32 h-9 text-sm"><SelectValue placeholder="Тип" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все типы</SelectItem>
+                  <SelectItem value="ЕГЭ">ЕГЭ</SelectItem>
+                  <SelectItem value="ОГЭ">ОГЭ</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={regSubject} onValueChange={setRegSubject}>
+                <SelectTrigger className="w-40 h-9 text-sm"><SelectValue placeholder="Предмет" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все предметы</SelectItem>
+                  {regSubjects.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={regDate} onValueChange={setRegDate}>
+                <SelectTrigger className="w-32 h-9 text-sm"><SelectValue placeholder="Дата" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все даты</SelectItem>
+                  {regDates.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={regTime} onValueChange={setRegTime}>
+                <SelectTrigger className="w-28 h-9 text-sm"><SelectValue placeholder="Время" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Любое</SelectItem>
+                  {regTimes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {(regSchool !== "all" || regSubject !== "all" || regDate !== "all" || regTime !== "all" || regExamType !== "all") && (
+                <button onClick={() => { setRegSchool("all"); setRegSubject("all"); setRegDate("all"); setRegTime("all"); setRegExamType("all"); }} className="h-9 px-3 text-sm text-slate-500 hover:text-slate-700 border rounded-md hover:bg-slate-50">
+                  Сбросить
+                </button>
+              )}
+            </div>
+            {/* Mobile: filter button */}
+            <button
+              className="sm:hidden flex items-center gap-1.5 h-9 px-3 border rounded-md text-sm text-slate-600 hover:bg-slate-50 shrink-0"
+              onClick={() => setShowMobileFilters(true)}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" /></svg>
+              Фильтры
+              {(regSchool !== "all" || regSubject !== "all" || regDate !== "all" || regTime !== "all" || regExamType !== "all") && (
+                <span className="w-2 h-2 rounded-full bg-violet-600 ml-0.5" />
+              )}
+            </button>
+          </div>
+
+          {registrationsLoading ? (
+            <div className="flex items-center justify-center h-40">
+              <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+            </div>
+          ) : filteredRegistrations.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Calendar className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                <p className="text-slate-500">Нет записей на экзамены</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {/* Desktop table */}
+              <Card className="hidden sm:block">
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-slate-50">
+                          <TableHead className="w-10 text-center">№</TableHead>
+                          <TableHead>Ученик</TableHead>
+                          <TableHead>Предмет</TableHead>
+                          <TableHead>Дата и время</TableHead>
+                          <TableHead>Присутствие</TableHead>
+                          <TableHead>Результат</TableHead>
+                          <TableHead className="w-10" />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredRegistrations.map((r, idx) => (
+                          <TableRow key={r.id} className="hover:bg-slate-50/60">
+                            <TableCell className="text-center text-slate-400 text-sm">{idx + 1}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-400 to-violet-600 flex items-center justify-center text-white text-xs font-semibold shrink-0">
+                                  {r.student_name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                                </div>
+                                <span className="font-medium text-slate-900 whitespace-nowrap">{r.student_name}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-slate-700">{r.subject_name ?? <span className="text-slate-400">—</span>}</TableCell>
+                            <TableCell className="text-slate-700 whitespace-nowrap">
+                              {new Date(r.date).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" })}, {r.start_time.slice(0, 5)}
+                            </TableCell>
+                            <TableCell>
+                              {r.attendance === "present" ? (
+                                <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-0">Присутствовал</Badge>
+                              ) : r.attendance === "absent" ? (
+                                <Badge className="bg-red-100 text-red-700 hover:bg-red-100 border-0">Отсутствовал</Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-slate-500">Не отмечен</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {r.attendance === "present" && r.passed === true ? (
+                                <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-0">Сдал</Badge>
+                              ) : r.attendance === "present" && r.passed === false ? (
+                                <Badge className="bg-red-100 text-red-700 hover:bg-red-100 border-0">Не сдал</Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-slate-500">Не отмечен</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <button
+                                onClick={() => openMarkModal(r)}
+                                className="p-1.5 rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
+                              >
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M6 10a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm6 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm4 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" /></svg>
+                              </button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Mobile card list */}
+              <div className="sm:hidden space-y-2">
+                {filteredRegistrations.map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => openMarkModal(r)}
+                    className="w-full text-left bg-white rounded-xl border border-slate-200 px-4 py-3 flex items-start gap-3 hover:border-violet-300 transition-colors"
+                  >
+                    <div className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${
+                      r.attendance === "present" ? "bg-green-500" :
+                      r.attendance === "absent" ? "bg-red-400" : "bg-slate-300"
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-slate-900 text-sm">{r.student_name} · {r.subject_name ?? "—"}</div>
+                      <div className="text-xs text-slate-500 mt-0.5">
+                        {new Date(r.date).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}, {r.start_time.slice(0, 5)}
+                        {r.school_location_name && ` · ${r.school_location_name}`}
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      {r.attendance === "present" && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Присутствовал</span>}
+                      {r.attendance === "absent" && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">Отсутствовал</span>}
+                      {r.attendance === "present" && r.passed === true && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Сдал</span>}
+                      {r.attendance === "present" && r.passed === false && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">Не сдал</span>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Mobile filter bottom sheet */}
+          {showMobileFilters && (
+            <>
+              <div className="fixed inset-0 bg-black/40 z-50" onClick={() => setShowMobileFilters(false)} />
+              <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl z-50 p-6 max-h-[85vh] overflow-y-auto">
+                <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-5" />
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="text-lg font-semibold text-slate-900">Фильтры</h3>
+                  <button onClick={() => setShowMobileFilters(false)} className="p-1.5 rounded-full hover:bg-slate-100">
+                    <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+                {/* Школа */}
+                {regSchools.length > 0 && (
+                  <div className="mb-5">
+                    <p className="text-sm font-medium text-slate-700 mb-2">Школа</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button onClick={() => setRegSchool("all")} className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${regSchool === "all" ? "bg-violet-600 text-white border-violet-600" : "border-slate-200 text-slate-700"}`}>Все</button>
+                      {regSchools.map(s => (
+                        <button key={s} onClick={() => setRegSchool(s)} className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${regSchool === s ? "bg-violet-600 text-white border-violet-600" : "border-slate-200 text-slate-700"}`}>{s}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Тип экзамена */}
+                <div className="mb-5">
+                  <p className="text-sm font-medium text-slate-700 mb-2">Тип экзамена</p>
+                  <div className="flex gap-2">
+                    {["all", "ЕГЭ", "ОГЭ"].map(t => (
+                      <button key={t} onClick={() => setRegExamType(t)} className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${regExamType === t ? "bg-violet-600 text-white border-violet-600" : "border-slate-200 text-slate-700"}`}>{t === "all" ? "Все" : t}</button>
+                    ))}
+                  </div>
+                </div>
+                {/* Предмет */}
+                {regSubjects.length > 0 && (
+                  <div className="mb-5">
+                    <p className="text-sm font-medium text-slate-700 mb-2">Предмет</p>
+                    <Select value={regSubject} onValueChange={setRegSubject}>
+                      <SelectTrigger className="w-full"><SelectValue placeholder="Все предметы" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Все предметы</SelectItem>
+                        {regSubjects.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {/* Дата */}
+                {regDates.length > 0 && (
+                  <div className="mb-5">
+                    <p className="text-sm font-medium text-slate-700 mb-2">Дата</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button onClick={() => setRegDate("all")} className={`px-3 py-1.5 rounded-xl border text-sm font-medium ${regDate === "all" ? "bg-violet-600 text-white border-violet-600" : "border-slate-200 text-slate-700"}`}>Все</button>
+                      {regDates.map(d => (
+                        <button key={d} onClick={() => setRegDate(d)} className={`px-3 py-1.5 rounded-xl border text-sm font-medium ${regDate === d ? "bg-violet-600 text-white border-violet-600" : "border-slate-200 text-slate-700"}`}>
+                          {new Date(d).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Время */}
+                {regTimes.length > 0 && (
+                  <div className="mb-6">
+                    <p className="text-sm font-medium text-slate-700 mb-2">Время</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button onClick={() => setRegTime("all")} className={`px-4 py-2 rounded-xl border text-sm font-medium ${regTime === "all" ? "bg-violet-600 text-white border-violet-600" : "border-slate-200 text-slate-700"}`}>Любое</button>
+                      {regTimes.map(t => (
+                        <button key={t} onClick={() => setRegTime(t)} className={`px-4 py-2 rounded-xl border text-sm font-medium ${regTime === t ? "bg-violet-600 text-white border-violet-600" : "border-slate-200 text-slate-700"}`}>{t}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <button
+                  onClick={() => setShowMobileFilters(false)}
+                  className="w-full py-3.5 rounded-xl bg-violet-600 text-white font-semibold text-sm flex items-center justify-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+                  Применить фильтры
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* Mark attendance modal — bottom sheet on mobile, dialog on desktop */}
+          {markingReg && (
+            <>
+              <div className="fixed inset-0 bg-black/40 z-50" onClick={() => setMarkingReg(null)} />
+              {/* Mobile bottom sheet */}
+              <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl z-50 p-6 sm:hidden">
+                <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-5" />
+                <div className="flex items-start justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-slate-900">Отметка ученика</h3>
+                  <button onClick={() => setMarkingReg(null)} className="p-1.5 rounded-full hover:bg-slate-100">
+                    <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+                <p className="font-semibold text-slate-900">{markingReg.student_name}</p>
+                <p className="text-sm text-slate-500 mb-5">{markingReg.subject_name} · {new Date(markingReg.date).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}, {markingReg.start_time.slice(0, 5)}</p>
+                <p className="text-sm font-medium text-slate-700 mb-2">Присутствие</p>
+                <div className="flex gap-3 mb-5">
+                  <button onClick={() => setMarkAttendance("present")} className={`flex-1 py-2.5 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 ${markAttendance === "present" ? "bg-green-50 border-green-400 text-green-700" : "border-slate-200 text-slate-700"}`}>
+                    {markAttendance === "present" && <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>}
+                    Присутствовал
+                  </button>
+                  <button onClick={() => setMarkAttendance("absent")} className={`flex-1 py-2.5 rounded-xl border text-sm font-medium ${markAttendance === "absent" ? "bg-red-50 border-red-400 text-red-700" : "border-slate-200 text-slate-700"}`}>
+                    Отсутствовал
+                  </button>
+                </div>
+                {markAttendance === "present" && (
+                  <>
+                    <p className="text-sm font-medium text-slate-700 mb-2">Результат</p>
+                    <div className="flex gap-3 mb-6">
+                      <button onClick={() => setMarkPassed(true)} className={`flex-1 py-2.5 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 ${markPassed === true ? "bg-green-50 border-green-400 text-green-700" : "border-slate-200 text-slate-700"}`}>
+                        {markPassed === true && <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>}
+                        Сдал
+                      </button>
+                      <button onClick={() => setMarkPassed(false)} className={`flex-1 py-2.5 rounded-xl border text-sm font-medium ${markPassed === false ? "bg-red-50 border-red-400 text-red-700" : "border-slate-200 text-slate-700"}`}>
+                        Не сдал
+                      </button>
+                    </div>
+                  </>
+                )}
+                <button
+                  onClick={saveMarkModal}
+                  disabled={markSaving}
+                  className="w-full py-3.5 rounded-xl bg-violet-600 text-white font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  {markSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>}
+                  Сохранить
+                </button>
+              </div>
+              {/* Desktop dialog */}
+              <div className="hidden sm:flex fixed inset-0 items-center justify-center z-50 px-4">
+                <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-slate-900">Отметка ученика</h3>
+                    <button onClick={() => setMarkingReg(null)} className="p-1.5 rounded-full hover:bg-slate-100">
+                      <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                  <p className="font-semibold text-slate-900">{markingReg.student_name}</p>
+                  <p className="text-sm text-slate-500 mb-5">{markingReg.subject_name} · {new Date(markingReg.date).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}, {markingReg.start_time.slice(0, 5)}</p>
+                  <p className="text-sm font-medium text-slate-700 mb-2">Присутствие</p>
+                  <div className="flex gap-3 mb-5">
+                    <button onClick={() => setMarkAttendance("present")} className={`flex-1 py-2.5 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 ${markAttendance === "present" ? "bg-green-50 border-green-400 text-green-700" : "border-slate-200 text-slate-700"}`}>
+                      {markAttendance === "present" && <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>}
+                      Присутствовал
+                    </button>
+                    <button onClick={() => setMarkAttendance("absent")} className={`flex-1 py-2.5 rounded-xl border text-sm font-medium ${markAttendance === "absent" ? "bg-red-50 border-red-400 text-red-700" : "border-slate-200 text-slate-700"}`}>
+                      Отсутствовал
+                    </button>
+                  </div>
+                  {markAttendance === "present" && (
+                    <>
+                      <p className="text-sm font-medium text-slate-700 mb-2">Результат</p>
+                      <div className="flex gap-3 mb-6">
+                        <button onClick={() => setMarkPassed(true)} className={`flex-1 py-2.5 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 ${markPassed === true ? "bg-green-50 border-green-400 text-green-700" : "border-slate-200 text-slate-700"}`}>
+                          {markPassed === true && <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>}
+                          Сдал
+                        </button>
+                        <button onClick={() => setMarkPassed(false)} className={`flex-1 py-2.5 rounded-xl border text-sm font-medium ${markPassed === false ? "bg-red-50 border-red-400 text-red-700" : "border-slate-200 text-slate-700"}`}>
+                          Не сдал
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  <button
+                    onClick={saveMarkModal}
+                    disabled={markSaving}
+                    className="w-full py-3 rounded-xl bg-violet-600 text-white font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-60"
+                  >
+                    {markSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>}
+                    Сохранить
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
+
+      {pageTab === "results" && <>
+
+      {/* Filters — desktop */}
+      <Card className="hidden sm:block mb-6">
         <CardContent className="py-4">
           <div className={`grid grid-cols-1 gap-4 ${isAdmin ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
             <div className={`relative ${isAdmin ? "md:col-span-2" : "md:col-span-2"}`}>
@@ -566,31 +1026,22 @@ export function ExamsPage() {
               />
             </div>
             <Select value={filterSubject} onValueChange={setFilterSubject}>
-              <SelectTrigger>
-                <SelectValue placeholder="Все предметы" />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Все предметы" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Все предметы</SelectItem>
-                {subjects.map((subject) => (
-                  <SelectItem key={subject.id} value={subject.id}>
-                    {subject.name}
-                    {subject.exam_type && ` [${subject.exam_type}]`}
-                  </SelectItem>
+                {subjects.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>{s.name}{s.exam_type && ` [${s.exam_type}]`}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
             {isAdmin && (
               <Select value={filterTeacher} onValueChange={setFilterTeacher}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Все преподаватели" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Все преподаватели" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Все преподаватели</SelectItem>
                   <SelectItem value="none">Без преподавателя</SelectItem>
-                  {teachers.map((teacher) => (
-                    <SelectItem key={teacher.id} value={teacher.id}>
-                      {teacher.last_name} {teacher.first_name}
-                    </SelectItem>
+                  {teachers.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.last_name} {t.first_name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -598,6 +1049,81 @@ export function ExamsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Filters — mobile toolbar */}
+      <div className="sm:hidden flex items-center gap-3 mb-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+          <Input
+            placeholder="Поиск по имени..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <button
+          className="flex items-center gap-1.5 h-10 px-3 border rounded-md text-sm text-slate-600 hover:bg-slate-50 shrink-0 bg-white"
+          onClick={() => setShowMobileResultFilters(true)}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" /></svg>
+          Фильтры
+          {(filterSubject !== "all" || filterTeacher !== "all") && (
+            <span className="w-2 h-2 rounded-full bg-violet-600 ml-0.5" />
+          )}
+        </button>
+      </div>
+
+      {/* Mobile result filter bottom sheet */}
+      {showMobileResultFilters && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-50" onClick={() => setShowMobileResultFilters(false)} />
+          <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl z-50 p-6 max-h-[80vh] overflow-y-auto">
+            <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-5" />
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-semibold text-slate-900">Фильтры</h3>
+              <button onClick={() => setShowMobileResultFilters(false)} className="p-1.5 rounded-full hover:bg-slate-100">
+                <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            {/* Предмет */}
+            <div className="mb-5">
+              <p className="text-sm font-medium text-slate-700 mb-2">Предмет</p>
+              <Select value={filterSubject} onValueChange={setFilterSubject}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Все предметы" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все предметы</SelectItem>
+                  {subjects.map(s => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}{s.exam_type ? ` [${s.exam_type}]` : ""}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Преподаватель */}
+            {isAdmin && (
+              <div className="mb-6">
+                <p className="text-sm font-medium text-slate-700 mb-2">Преподаватель</p>
+                <Select value={filterTeacher} onValueChange={setFilterTeacher}>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="Все преподаватели" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Все преподаватели</SelectItem>
+                    <SelectItem value="none">Без преподавателя</SelectItem>
+                    {teachers.map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.last_name} {t.first_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <button
+              onClick={() => setShowMobileResultFilters(false)}
+              className="w-full py-3.5 rounded-xl bg-violet-600 text-white font-semibold text-sm flex items-center justify-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+              Применить фильтры
+            </button>
+          </div>
+        </>
+      )}
 
       {/* Students Table */}
       {filteredStudents.length === 0 ? (
@@ -608,7 +1134,105 @@ export function ExamsPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
+        <>
+        {/* ── Mobile list ───────────────────────────────────── */}
+        <div className="sm:hidden bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50">
+            <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Студент</span>
+            <div className="flex items-center gap-4">
+              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Кол-во</span>
+              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Балл</span>
+            </div>
+          </div>
+          {filteredStudents.map(({ student, results }, idx) => {
+            const isExpanded = expandedStudentId === student.id;
+            const avgScore = results.length > 0
+              ? (results.reduce((sum, r) => sum + r.final_score, 0) / results.length).toFixed(1)
+              : "0";
+            const lastExam = [...results].sort((a, b) => {
+              const dateA = (a as any).exam?.date ? new Date((a as any).exam.date).getTime() : 0;
+              const dateB = (b as any).exam?.date ? new Date((b as any).exam.date).getTime() : 0;
+              return dateB - dateA;
+            })[0];
+            const AVATAR_COLORS = [
+              "from-orange-400 to-orange-500",
+              "from-blue-400 to-blue-600",
+              "from-red-400 to-red-500",
+              "from-emerald-400 to-emerald-600",
+              "from-violet-400 to-violet-600",
+              "from-pink-400 to-pink-600",
+              "from-teal-400 to-teal-600",
+              "from-amber-400 to-amber-500",
+            ];
+            return (
+              <div key={student.id} className="border-b border-slate-100 last:border-0">
+                <button
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-slate-50"
+                  onClick={() => toggleStudentExpand(student.id)}
+                >
+                  <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${AVATAR_COLORS[idx % AVATAR_COLORS.length]} flex items-center justify-center text-white font-semibold text-sm shrink-0`}>
+                    {student.last_name.charAt(0)}{student.first_name.charAt(0)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-slate-900 text-sm">{student.last_name} {student.first_name}</div>
+                    <div className="text-xs text-slate-400 mt-0.5">
+                      {student.class_number ? `${student.class_number} класс` : ""}
+                      {(lastExam as any)?.exam?.title ? (student.class_number ? ` · ` : "") + (lastExam as any).exam.title : ""}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-sm font-medium text-slate-500 bg-slate-100 w-7 h-7 rounded-full flex items-center justify-center">{results.length}</span>
+                    <span className="text-sm font-semibold text-green-700 bg-green-50 px-2.5 py-1 rounded-lg min-w-[40px] text-center">{avgScore}</span>
+                    {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                  </div>
+                </button>
+                {isExpanded && (
+                  <div className="px-4 pb-4 space-y-2.5 bg-slate-50/60">
+                    {results.map((result) => {
+                      const resultExam = exams.find(e => e.id === result.exam_id) || (result as any).exam;
+                      const resultAnswers = result.answers || Array(27).fill(null);
+                      const { primary: calcPrimary, final: calcFinal } = calculateScores(resultAnswers, resultExam?.subject_rel);
+                      const isOGE = resultExam?.subject_rel?.exam_type === "ОГЭ";
+                      return (
+                        <div key={result.id} className="bg-white rounded-xl p-3 border border-slate-100 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium text-slate-900 text-sm leading-tight">{(result as any).exam?.title || resultExam?.title || "—"}</span>
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-lg shrink-0 ${isOGE ? "bg-violet-100 text-violet-700" : "bg-green-100 text-green-700"}`}>
+                              {calcFinal}{isOGE ? " оценка" : ""}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {resultExam?.subject_rel?.name && (
+                              <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-md font-medium">{resultExam.subject_rel.name}</span>
+                            )}
+                            {resultExam?.subject_rel?.exam_type && (
+                              <span className="text-xs text-slate-500">{resultExam.subject_rel.exam_type}</span>
+                            )}
+                            {calcPrimary > 0 && (
+                              <span className="text-xs text-slate-400">{calcPrimary} {calcPrimary === 1 ? "балл" : calcPrimary < 5 ? "балла" : "баллов"}</span>
+                            )}
+                          </div>
+                          {result.added_by_employee && (
+                            <div className="text-xs text-slate-400 flex items-center gap-1">
+                              <GraduationCap className="w-3 h-3" />
+                              {result.added_by_employee.last_name} {result.added_by_employee.first_name.charAt(0)}.
+                            </div>
+                          )}
+                          {result.student_comment && (
+                            <p className="text-xs text-slate-500 leading-relaxed">{result.student_comment}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ── Desktop table ─────────────────────────────────── */}
+        <Card className="hidden sm:block">
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <Table>
@@ -881,7 +1505,10 @@ export function ExamsPage() {
             </div>
           </CardContent>
         </Card>
+        </>
       )}
+
+      </>}
 
       {/* Edit Result Dialog */}
       <Dialog open={isEditResultDialogOpen} onOpenChange={setIsEditResultDialogOpen}>

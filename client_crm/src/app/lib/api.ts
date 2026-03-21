@@ -43,6 +43,8 @@ import type {
   SubscriptionPlan,
   SubscriptionPlanCreate,
   SubscriptionPlanUpdate,
+  ExamRegistrationItem,
+  PortalCredential,
 } from "../types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -955,6 +957,25 @@ class ApiClient {
 
   async generatePortalCredentials(studentId: string): Promise<{ student_id: string; portal_login: string; plain_password: string }> {
     return this.request(`/students/${studentId}/generate-portal-credentials`, { method: "POST" });
+  }
+
+  async getExamRegistrations(): Promise<ExamRegistrationItem[]> {
+    return this.request<ExamRegistrationItem[]>("/exam-sessions/registrations");
+  }
+
+  async updateRegistrationMark(id: string, data: { attendance?: string | null; passed?: boolean | null }): Promise<void> {
+    await this.request<void>(`/exam-sessions/registrations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async generateGroupCredentials(groupId: string): Promise<PortalCredential[]> {
+    return this.request<PortalCredential[]>(`/students/group/${groupId}/generate-portal-credentials`, { method: "POST" });
+  }
+
+  async generateAllCredentials(): Promise<PortalCredential[]> {
+    return this.request<PortalCredential[]>("/students/generate-portal-credentials-bulk", { method: "POST" });
   }
 }
 

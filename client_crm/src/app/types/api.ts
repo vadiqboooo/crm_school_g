@@ -64,8 +64,10 @@ export interface SubscriptionPlan {
   id: string;
   name: string;
   lessons_count: number;
-  price_per_lesson: number;
-  total_price: number;
+  price: number;
+  price_per_lesson?: number;
+  valid_from?: string | null;
+  valid_until?: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -73,13 +75,17 @@ export interface SubscriptionPlan {
 export interface SubscriptionPlanCreate {
   name: string;
   lessons_count: number;
-  price_per_lesson: number;
+  price: number;
+  valid_from?: string | null;
+  valid_until?: string | null;
 }
 
 export interface SubscriptionPlanUpdate {
   name?: string;
   lessons_count?: number;
-  price_per_lesson?: number;
+  price?: number;
+  valid_from?: string | null;
+  valid_until?: string | null;
   is_active?: boolean;
 }
 
@@ -141,6 +147,10 @@ export interface Student {
   balance?: number;
   subscription_plan?: SubscriptionPlan | null;
   lessons_remaining?: number | null;
+  discount_type?: "fixed" | "percent" | null;
+  discount_value?: number | null;
+  discount_valid_from?: string | null;
+  discount_valid_until?: string | null;
   created_at: string;
   parent_contacts: ParentContact[];
   groups: GroupInfo[];
@@ -189,6 +199,10 @@ export interface StudentUpdate {
     phone: string;
     telegram_username?: string;
   }>;
+  discount_type?: "fixed" | "percent" | null;
+  discount_value?: number | null;
+  discount_valid_from?: string | null;
+  discount_valid_until?: string | null;
 }
 
 export interface StudentPerformanceRecord {
@@ -936,4 +950,26 @@ export interface ExamTimeSlotCreate {
   date: string;
   start_time: string;
   total_seats: number;
+}
+
+export interface ExamRegistrationItem {
+  id: string;
+  student_id: string;
+  student_name: string;
+  subject_name: string | null;
+  exam_title: string;
+  school_location_name: string | null;
+  date: string;
+  start_time: string;
+  registered_at: string;
+  exam_type: string | null;
+  attendance: "present" | "absent" | null;
+  passed: boolean | null;
+}
+
+export interface PortalCredential {
+  student_id: string;
+  student_name: string;
+  portal_login: string;
+  plain_password: string;
 }

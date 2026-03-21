@@ -15,7 +15,9 @@ class SubscriptionPlan(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     lessons_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    price_per_lesson: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    valid_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
 

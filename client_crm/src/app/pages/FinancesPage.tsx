@@ -3,9 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
-import { ChevronDown, ChevronRight, DollarSign, Loader2, TrendingUp, Users } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, DollarSign, Loader2, TrendingUp, Users } from "lucide-react";
 import { api } from "../lib/api";
-import type { Payment, EmployeeSalary } from "../types/api";
+import type { Payment, EmployeeSalary, Student } from "../types/api";
 
 interface TeacherGroup {
   employee_id: string;
@@ -42,6 +42,7 @@ function fmt(n: number) {
 export function FinancesPage() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [salaries, setSalaries] = useState<EmployeeSalary[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedTeachers, setExpandedTeachers] = useState<Set<string>>(new Set());
   const [payingAll, setPayingAll] = useState<string | null>(null);
@@ -49,9 +50,10 @@ export function FinancesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [p, s] = await Promise.all([api.getPayments(), api.getSalaries()]);
+      const [p, s, st] = await Promise.all([api.getPayments(), api.getSalaries(), api.getStudents()]);
       setPayments(p);
       setSalaries(s);
+      setStudents(st);
     } finally {
       setLoading(false);
     }
@@ -121,8 +123,27 @@ export function FinancesPage() {
     await load();
   };
 
+  // Students awaiting payment: debt (balance < 0) or ≤2 lessons remaining
+  const awaitingPayment = students
+    .filter((s) => {
+      if (!s.subscription_plan) return false;
+      const hasDebt = (s.balance ?? 0) < 0;
+      const lowLessons = s.lessons_remaining !== null && s.lessons_remaining !== undefined && s.lessons_remaining <= 2;
+      return hasDebt || lowLessons;
+    })
+    .sort((a, b) => {
+      const aDebt = (a.balance ?? 0) < 0;
+      const bDebt = (b.balance ?? 0) < 0;
+      if (aDebt && !bDebt) return -1;
+      if (!aDebt && bDebt) return 1;
+      // Both debt: bigger debt first
+      if (aDebt && bDebt) return (a.balance ?? 0) - (b.balance ?? 0);
+      // Both low lessons: fewer lessons first
+      return (a.lessons_remaining ?? 99) - (b.lessons_remaining ?? 99);
+    });
+
   return (
-    <div className="container mx-auto px-6 py-8">
+    <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-8">
       <div className="mb-6">
         <h1 className="text-3xl font-semibold text-slate-900">Финансы</h1>
         <p className="text-slate-600 mt-1">Учёт оплат студентов и зарплат учителей</p>
@@ -177,11 +198,90 @@ export function FinancesPage() {
         </Card>
       </div>
 
-      <Tabs defaultValue="payments" className="space-y-4">
+      <Tabs defaultValue="awaiting" className="space-y-4">
         <TabsList>
+          <TabsTrigger value="awaiting" className="flex items-center gap-1.5">
+            Ожидают оплаты
+            {awaitingPayment.length > 0 && (
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-500 text-white text-xs font-bold leading-none">
+                {awaitingPayment.length}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="payments">Поступления от студентов</TabsTrigger>
           <TabsTrigger value="salaries">Зарплаты учителей</TabsTrigger>
         </TabsList>
+
+        {/* Awaiting payment tab */}
+        <TabsContent value="awaiting">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-orange-500" />
+                Требуют пополнения баланса
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+                </div>
+              ) : awaitingPayment.length === 0 ? (
+                <div className="py-12 text-center text-slate-400">Все студенты в порядке</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b bg-slate-50 text-sm font-semibold text-slate-600">
+                        <th className="text-left px-6 py-3">Студент</th>
+                        <th className="text-left px-6 py-3">Абонемент</th>
+                        <th className="text-center px-6 py-3">Осталось уроков</th>
+                        <th className="text-right px-6 py-3">Баланс</th>
+                        <th className="text-center px-6 py-3">Статус</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {awaitingPayment.map((s) => {
+                        const hasDebt = (s.balance ?? 0) < 0;
+                        return (
+                          <tr key={s.id} className={`border-b hover:bg-slate-50 ${hasDebt ? "bg-red-50/40" : ""}`}>
+                            <td className="px-6 py-3">
+                              <span className="font-medium text-slate-900">
+                                {s.last_name} {s.first_name}
+                              </span>
+                            </td>
+                            <td className="px-6 py-3 text-sm text-slate-500">
+                              {s.subscription_plan?.name ?? "—"}
+                            </td>
+                            <td className="px-6 py-3 text-center">
+                              {s.lessons_remaining !== null && s.lessons_remaining !== undefined ? (
+                                <span className={`font-semibold ${s.lessons_remaining <= 0 ? "text-red-600" : s.lessons_remaining === 1 ? "text-orange-500" : "text-yellow-600"}`}>
+                                  {s.lessons_remaining}
+                                </span>
+                              ) : "—"}
+                            </td>
+                            <td className="px-6 py-3 text-right">
+                              <span className={`font-semibold ${hasDebt ? "text-red-600" : "text-slate-700"}`}>
+                                {hasDebt ? "−" : ""}₽{fmt(Math.abs(s.balance ?? 0))}
+                              </span>
+                            </td>
+                            <td className="px-6 py-3 text-center">
+                              {hasDebt ? (
+                                <Badge className="bg-red-100 text-red-700 hover:bg-red-100">Долг</Badge>
+                              ) : (
+                                <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100">Мало уроков</Badge>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* Payments tab */}
         <TabsContent value="payments">

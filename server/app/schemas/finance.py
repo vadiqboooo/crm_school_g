@@ -9,13 +9,17 @@ from app.models.finance import PaymentStatus, SalaryStatus
 class SubscriptionPlanCreate(BaseModel):
     name: str
     lessons_count: int
-    price_per_lesson: float
+    price: float  # total subscription price
+    valid_from: Optional[date_type] = None
+    valid_until: Optional[date_type] = None
 
 
 class SubscriptionPlanUpdate(BaseModel):
     name: Optional[str] = None
     lessons_count: Optional[int] = None
-    price_per_lesson: Optional[float] = None
+    price: Optional[float] = None
+    valid_from: Optional[date_type] = None
+    valid_until: Optional[date_type] = None
     is_active: Optional[bool] = None
 
 
@@ -23,16 +27,19 @@ class SubscriptionPlanResponse(BaseModel):
     id: UUID
     name: str
     lessons_count: int
-    price_per_lesson: float
-    total_price: float = 0.0
+    price: float          # total subscription price (stored)
+    price_per_lesson: float = 0.0  # computed: price / lessons_count
+    valid_from: Optional[date_type] = None
+    valid_until: Optional[date_type] = None
     is_active: bool
     created_at: datetime_type
 
     model_config = {"from_attributes": True}
 
     @model_validator(mode="after")
-    def compute_total(self) -> "SubscriptionPlanResponse":
-        self.total_price = round(self.lessons_count * self.price_per_lesson, 2)
+    def compute_per_lesson(self) -> "SubscriptionPlanResponse":
+        if self.lessons_count:
+            self.price_per_lesson = round(self.price / self.lessons_count, 2)
         return self
 
 

@@ -332,7 +332,7 @@ export function HomePage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto px-6 py-8">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-8">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         </div>
@@ -344,12 +344,12 @@ export function HomePage() {
     <div className="h-screen flex flex-col bg-background">
       {/* Header */}
       <div className="shrink-0 bg-white border-b z-20">
-        <div className="container mx-auto px-6 py-4 min-h-[88px]">
-          <div className="flex items-center justify-between">
+        <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-4 min-h-[72px] sm:min-h-[88px]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-semibold text-slate-900">Группы</h1>
+              <h1 className="text-xl sm:text-2xl font-semibold text-slate-900">Группы</h1>
               <div className="flex items-center gap-2 mt-1">
-                <p className="text-slate-600">Управление учебными группами</p>
+                <p className="text-sm sm:text-base text-slate-600">Управление учебными группами</p>
                 {hasActiveFilters && (
                   <Badge variant="secondary" className="gap-1">
                     <Filter className="w-3 h-3" />
@@ -359,7 +359,7 @@ export function HomePage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2">
               {/* Exam Type Filter - только для админов */}
               {isAdmin && (
                 <Popover>

@@ -140,8 +140,8 @@ async def list_students(
             "balance": float(student.balance) if student.balance is not None else 0.0,
             "subscription_plan": student.subscription_plan,
             "lessons_remaining": (
-                int(float(student.balance) // float(student.subscription_plan.price_per_lesson))
-                if student.subscription_plan and student.subscription_plan.price_per_lesson
+                int(float(student.balance) // round(float(student.subscription_plan.price) / student.subscription_plan.lessons_count, 2))
+                if student.subscription_plan and student.subscription_plan.price and student.subscription_plan.lessons_count
                 else None
             ),
             "created_at": student.created_at,
@@ -1391,7 +1391,7 @@ async def retroactive_deduction(
     if not student.subscription_plan_id or not student.subscription_plan:
         raise HTTPException(status_code=400, detail="Student has no subscription plan assigned")
 
-    price = float(student.subscription_plan.price_per_lesson)
+    price = round(float(student.subscription_plan.price) / student.subscription_plan.lessons_count, 2)
 
     # Get active group memberships (not trial, not archived)
     gs_result = await db.execute(

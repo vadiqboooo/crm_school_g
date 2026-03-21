@@ -62,6 +62,22 @@ services:
     depends_on:
       - backend
 
+  # Student Frontend (React/Vite)
+  frontend_student:
+    build:
+      context: ./client_student
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: https://crm.garryschool.ru/api
+    container_name: crm_frontend_student
+    restart: always
+    ports:
+      - "5174:80"
+    networks:
+      - crm_network
+    depends_on:
+      - backend
+
   # Nginx Reverse Proxy with SSL
   nginx:
     image: nginx:alpine
@@ -81,6 +97,7 @@ services:
     depends_on:
       - backend
       - frontend
+      - frontend_student
     command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
 
   # Certbot for SSL certificates

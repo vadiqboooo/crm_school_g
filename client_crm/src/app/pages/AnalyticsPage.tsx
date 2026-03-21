@@ -118,7 +118,7 @@ const teacherLoad: TeacherLoad[] = [
 
 export function AnalyticsPage() {
   return (
-    <div className="container mx-auto px-6 py-8">
+    <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-8">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-3xl font-semibold text-slate-900">

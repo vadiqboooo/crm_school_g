@@ -182,7 +182,32 @@ async def update_lesson(
             if not student:
                 continue
             if student.subscription_plan_id and student.subscription_plan:
-                price = float(student.subscription_plan.price_per_lesson)
+                base_plan_price = float(student.subscription_plan.price)
+                lessons_count = student.subscription_plan.lessons_count
+
+                # Apply discount if active
+                discount_note = ""
+                today = lesson.date  # date object
+                d_type = student.discount_type
+                d_value = float(student.discount_value) if student.discount_value else 0
+                d_from = student.discount_valid_from
+                d_until = student.discount_valid_until
+                discount_active = (
+                    d_type and d_value > 0
+                    and (d_from is None or today >= d_from)
+                    and (d_until is None or today <= d_until)
+                )
+                if discount_active:
+                    if d_type == "percent":
+                        effective_price = base_plan_price * (1 - d_value / 100)
+                        discount_note = f" [скидка −{d_value:.0f}%]"
+                    else:  # fixed
+                        effective_price = max(0, base_plan_price - d_value)
+                        discount_note = f" [скидка −{d_value:.0f} руб.]"
+                else:
+                    effective_price = base_plan_price
+
+                price = round(effective_price / lessons_count, 2)
                 new_balance = float(student.balance or 0) - price
                 student.balance = new_balance
                 debt_note = f" [долг: {abs(new_balance):.0f} руб.]" if new_balance < 0 else ""
@@ -193,6 +218,7 @@ async def update_lesson(
                         f"Списание за урок {lesson.date}: "
                         f"-{price:.0f} руб. "
                         f"(абонемент: {student.subscription_plan.name})"
+                        f"{discount_note}"
                         f"{debt_note}"
                     ),
                 )

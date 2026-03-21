@@ -337,10 +337,10 @@ function InfoCardComponent({
 
   const tileColorClass = (color: "green" | "red" | "blue" | "gray") => {
     switch (color) {
-      case "green": return "bg-emerald-100 text-emerald-700";
-      case "red":   return "bg-red-100 text-red-600";
-      case "blue":  return "bg-blue-100 text-blue-600";
-      case "gray":  return "bg-muted/60 text-muted-foreground/60";
+      case "green": return "bg-emerald-500 text-white shadow-sm";
+      case "red":   return "bg-red-400 text-white shadow-sm";
+      case "blue":  return "bg-blue-500 text-white shadow-sm";
+      case "gray":  return "bg-slate-200 text-slate-500 shadow-sm";
     }
   };
 
@@ -445,21 +445,48 @@ function InfoCardComponent({
                     {(student.balance ?? 0).toLocaleString("ru-RU")} ₽
                   </p>
                   {student.subscription_plan ? (
-                    <div className="mt-0.5 space-y-0.5">
-                      <p className="text-[10px] text-muted-foreground">{student.subscription_plan.name}</p>
+                    <div className="mt-1 space-y-0.5">
+                      <p className="text-xs font-semibold text-slate-700">{student.subscription_plan.name}</p>
+                      {(student.subscription_plan.valid_from || student.subscription_plan.valid_until) && (
+                        <p className="text-xs text-slate-500">
+                          {student.subscription_plan.valid_from
+                            ? new Date(student.subscription_plan.valid_from).toLocaleDateString("ru-RU")
+                            : "∞"}
+                          {" — "}
+                          {student.subscription_plan.valid_until
+                            ? new Date(student.subscription_plan.valid_until).toLocaleDateString("ru-RU")
+                            : "∞"}
+                        </p>
+                      )}
                       {student.lessons_remaining !== null && student.lessons_remaining !== undefined && (
                         student.lessons_remaining > 0 ? (
-                          <p className="text-[10px] text-emerald-600 font-medium">{student.lessons_remaining} ур. оплачено</p>
+                          <p className="text-xs text-emerald-600 font-medium">{student.lessons_remaining} ур. оплачено</p>
                         ) : student.lessons_remaining === 0 ? (
-                          <p className="text-[10px] text-orange-500 font-medium">Пополните баланс</p>
+                          <p className="text-xs text-orange-500 font-medium">Пополните баланс</p>
                         ) : (
-                          <p className="text-[10px] text-red-500 font-medium">Долг: {Math.abs(student.lessons_remaining)} ур.</p>
+                          <p className="text-xs text-red-500 font-medium">Долг: {Math.abs(student.lessons_remaining)} ур.</p>
                         )
                       )}
                     </div>
                   ) : (student.groups && student.groups.length > 0) ? (
-                    <p className="text-[10px] text-orange-500 font-medium mt-0.5">⚠ Нет абонемента</p>
+                    <p className="text-xs text-orange-500 font-semibold mt-1">⚠ Нет абонемента</p>
                   ) : null}
+                  {/* Active discount badge */}
+                  {(() => {
+                    if (!student.discount_type || !student.discount_value) return null;
+                    const today = new Date().toISOString().slice(0, 10);
+                    const from = student.discount_valid_from;
+                    const until = student.discount_valid_until;
+                    const active = (!from || today >= from) && (!until || today <= until);
+                    if (!active) return null;
+                    return (
+                      <div className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 text-xs font-semibold">
+                        🏷 {student.discount_type === "percent"
+                          ? `−${student.discount_value}%`
+                          : `−${(student.discount_value ?? 0).toLocaleString("ru-RU")} ₽`}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <button
                   onClick={onOpenPayment}
@@ -564,9 +591,8 @@ function InfoCardComponent({
                           key={tile.lesson.id}
                           type="button"
                           onClick={() => navigate(`/group/${tile.groupId}`, { state: { from: "student", studentId: student.id } })}
-                          className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:opacity-75 transition-opacity ${tileColorClass(tile.color)}`}
+                          className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:opacity-80 transition-opacity ${tileColorClass(tile.color)}`}
                           title={`${tile.lesson.date} — ${tile.color === "green" ? "Проведён, оплачен" : tile.color === "red" ? "Проведён, не оплачен" : tile.color === "blue" ? "Баланс покроет" : "Баланса не хватит"}`}
-                          style={tile.color === "gray" ? { borderLeft: `2px solid ${tile.groupColor || "#94a3b8"}` } : {}}
                         >
                           <span className="text-sm font-bold leading-none">{d.getDate()}</span>
                           <span className="text-[10px] leading-none opacity-70 mt-0.5">{getMonthAbbr(d.getMonth())}</span>
@@ -748,6 +774,62 @@ function InfoCardComponent({
                   onChange={(e) => onFormChange({ ...editFormData!, contract_number: e.target.value })}
                   placeholder="Номер договора"
                 />
+              </div>
+
+              {/* Discount */}
+              <div className="border-t border-border pt-4 space-y-3">
+                <label className="text-sm font-medium block">Скидка</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1.5 block">Тип</label>
+                    <select
+                      className={selectCls}
+                      value={editFormData?.discount_type || ""}
+                      onChange={(e) => onFormChange({ ...editFormData!, discount_type: e.target.value as any || null })}
+                    >
+                      <option value="">Нет скидки</option>
+                      <option value="fixed">Фиксированная (₽)</option>
+                      <option value="percent">Процентная (%)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1.5 block">
+                      {editFormData?.discount_type === "percent" ? "Процент (%)" : "Сумма (₽)"}
+                    </label>
+                    <input
+                      className={inputCls}
+                      type="number"
+                      min={0}
+                      max={editFormData?.discount_type === "percent" ? 100 : undefined}
+                      disabled={!editFormData?.discount_type}
+                      value={editFormData?.discount_value ?? ""}
+                      onChange={(e) => onFormChange({ ...editFormData!, discount_value: parseFloat(e.target.value) || null })}
+                      placeholder={editFormData?.discount_type === "percent" ? "10" : "500"}
+                    />
+                  </div>
+                </div>
+                {editFormData?.discount_type && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1.5 block">Действует с</label>
+                      <input
+                        className={inputCls}
+                        type="date"
+                        value={editFormData?.discount_valid_from || ""}
+                        onChange={(e) => onFormChange({ ...editFormData!, discount_valid_from: e.target.value || null })}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1.5 block">Действует до</label>
+                      <input
+                        className={inputCls}
+                        type="date"
+                        value={editFormData?.discount_valid_until || ""}
+                        onChange={(e) => onFormChange({ ...editFormData!, discount_valid_until: e.target.value || null })}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </>
@@ -1538,6 +1620,10 @@ export function StudentsPage() {
         source: editFormData.source || undefined,
         education_type: editFormData.education_type || undefined,
         contract_number: editFormData.contract_number || undefined,
+        discount_type: editFormData.discount_type || null,
+        discount_value: editFormData.discount_value ?? null,
+        discount_valid_from: editFormData.discount_valid_from || null,
+        discount_valid_until: editFormData.discount_valid_until || null,
         parent_contacts: editFormData.parent_contacts.map((contact) => ({
           name: contact.name,
           relation: contact.relation,
@@ -1690,7 +1776,7 @@ export function StudentsPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto px-6 py-8">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-8">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         </div>
@@ -1891,7 +1977,7 @@ export function StudentsPage() {
             <div className="max-w-full px-6 pt-6">
             {tabStrip}
             {/* Title Block */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4 sm:mb-6">
               <div>
                 <h1 className="text-3xl font-semibold text-slate-900">Студенты</h1>
                 <p className="text-slate-600 mt-1">
@@ -2196,7 +2282,7 @@ export function StudentsPage() {
         </div>
       ) : (
         /* Student Detail View - New Design */
-        <div className="container mx-auto px-6 py-8">
+        <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-8">
         <div className="animate-in slide-in-from-right duration-300 max-w-[1120px] mx-auto">
           {/* Header with Status Icon */}
           <StudentHeaderComponent
@@ -2343,6 +2429,46 @@ export function StudentsPage() {
             <DialogDescription>Пополнение баланса студента</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            {/* Discount hint */}
+            {(() => {
+              if (!selectedStudent?.discount_type || !selectedStudent.discount_value) return null;
+              const today = new Date().toISOString().slice(0, 10);
+              const from = selectedStudent.discount_valid_from;
+              const until = selectedStudent.discount_valid_until;
+              const active = (!from || today >= from) && (!until || today <= until);
+              if (!active) return null;
+              const plan = selectedStudent.subscription_plan;
+              const basePrice = plan?.price ?? null;
+              const discountedPrice = basePrice
+                ? selectedStudent.discount_type === "percent"
+                  ? Math.round(basePrice * (1 - selectedStudent.discount_value / 100))
+                  : Math.max(0, basePrice - selectedStudent.discount_value)
+                : null;
+              return (
+                <div className="rounded-xl bg-violet-50 border border-violet-200 p-3 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-violet-700 font-medium">🏷 Скидка активна</span>
+                    <span className="text-sm font-bold text-violet-800">
+                      {selectedStudent.discount_type === "percent"
+                        ? `−${selectedStudent.discount_value}%`
+                        : `−${selectedStudent.discount_value.toLocaleString("ru-RU")} ₽`}
+                    </span>
+                  </div>
+                  {plan && discountedPrice !== null && (
+                    <div className="flex items-center justify-between text-xs text-violet-600">
+                      <span>{plan.name}: {basePrice!.toLocaleString("ru-RU")} ₽</span>
+                      <button
+                        type="button"
+                        className="underline font-semibold"
+                        onClick={() => setPaymentAmount(String(discountedPrice))}
+                      >
+                        Подставить {discountedPrice.toLocaleString("ru-RU")} ₽
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div className="space-y-2">
               <Label htmlFor="payment_amount">Сумма (₽) *</Label>
               <Input
@@ -2413,7 +2539,7 @@ export function StudentsPage() {
                 <SelectItem value="none">Без абонемента</SelectItem>
                 {subscriptionPlans.filter((p) => p.is_active).map((plan) => (
                   <SelectItem key={plan.id} value={plan.id}>
-                    {plan.name} — {plan.lessons_count} ур. · {plan.price_per_lesson.toLocaleString("ru-RU")} ₽/ур.
+                    {plan.name} — {plan.lessons_count} ур. · {(plan.price ?? plan.price_per_lesson ?? 0).toLocaleString("ru-RU")} ₽
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -2422,7 +2548,7 @@ export function StudentsPage() {
               const plan = subscriptionPlans.find((p) => p.id === selectedPlanId);
               return plan ? (
                 <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
-                  Общая стоимость: <span className="font-bold">{plan.total_price.toLocaleString("ru-RU")} ₽</span>
+                  Стоимость: <span className="font-bold">{(plan.price ?? 0).toLocaleString("ru-RU")} ₽</span>{plan.price_per_lesson ? <span className="text-blue-600 ml-1">· {plan.price_per_lesson.toLocaleString("ru-RU")} ₽/ур.</span> : null}
                 </div>
               ) : null;
             })()}

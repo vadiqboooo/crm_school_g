@@ -56,6 +56,9 @@ class ExamRegistration(Base):
     time_slot_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("exam_time_slots.id", ondelete="CASCADE"), nullable=False)
     subject_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True)
     registered_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
+    # Отметка присутствия и результата (заполняется после экзамена)
+    attendance: Mapped[str | None] = mapped_column(String(20), nullable=True)  # "present" | "absent"
+    passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # True = сдал, False = не сдал
 
     student = relationship("Student", backref="exam_registrations")
     time_slot = relationship("ExamTimeSlot", back_populates="registrations")
