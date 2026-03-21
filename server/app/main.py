@@ -19,6 +19,7 @@ app.add_middleware(
         "http://localhost:5174",
         "https://crm.garryschool.ru",
         "https://web.garryschool.ru",
+        "https://web.rancheasy.ru",
     ],
     allow_credentials=True,
     allow_methods=["*"],
