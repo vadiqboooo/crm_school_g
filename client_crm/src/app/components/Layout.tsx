@@ -6,6 +6,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useState, useEffect, useCallback } from "react";
 import { useTasksWebSocket } from "../hooks/useTasksWebSocket";
 import { showTaskNotification, initializeAudio } from "../utils/notifications";
+import { useHeaderActions } from "../contexts/HeaderActionsContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +25,7 @@ export function Layout() {
   const isTeacher = user?.role === "teacher";
   const isManager = user?.role === "manager";
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const { headerActions } = useHeaderActions();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [uncompletedLessonsCount, setUncompletedLessonsCount] = useState(0);
   const [lastReportsUrl, setLastReportsUrl] = useState("/reports");
@@ -146,7 +148,7 @@ export function Layout() {
     <div className="min-h-screen bg-slate-50">
 
       {/* ── Mobile top bar ────────────────────────────────────── */}
-      <header className="lg:hidden fixed top-0 inset-x-0 h-14 bg-white border-b border-slate-200 flex items-center px-4 z-40 gap-3">
+      <header className={`lg:hidden fixed top-0 inset-x-0 h-14 bg-white border-b border-slate-200 flex items-center px-4 z-40 gap-3 ${location.pathname.startsWith("/group/") || location.pathname.startsWith("/students/") ? "hidden" : ""}`}>
         <button
           onClick={() => setMobileOpen(true)}
           className="p-1.5 -ml-1 rounded-md hover:bg-slate-100 transition-colors"
@@ -178,6 +180,11 @@ export function Layout() {
             })()}
           </span>
         </div>
+        {headerActions && (
+          <div className="ml-auto flex items-center">
+            {headerActions}
+          </div>
+        )}
       </header>
 
       {/* ── Mobile overlay backdrop ───────────────────────────── */}
@@ -331,7 +338,7 @@ export function Layout() {
       {/* ── Main Content ──────────────────────────────────────── */}
       <main
         className={`min-h-screen transition-all duration-300
-          pt-14 lg:pt-0
+          ${location.pathname.startsWith("/group/") || location.pathname.startsWith("/students/") ? "pt-0" : "pt-14"} lg:pt-0
           ${sidebarCollapsed ? "lg:ml-20" : "lg:ml-64"}
         `}
       >

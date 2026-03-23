@@ -14,7 +14,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "./ui/popover";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerFooter,
+} from "./ui/drawer";
+import { ArrowLeft, Loader2, Users, Settings2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -54,6 +61,7 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
   const [students, setStudents] = useState<StudentAttendance[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [gradeSettingsOpen, setGradeSettingsOpen] = useState(false);
   const [lessonWorkType, setLessonWorkType] = useState<WorkType>(lesson.work_type || "none");
   const [lessonGradingSystem, setLessonGradingSystem] = useState<GradingSystem>(lesson.grading_system || "5point");
   const [lessonTasksCount, setLessonTasksCount] = useState<string>(String(lesson.tasks_count || 10));
@@ -218,6 +226,36 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
     return `${day}.${month}.${year}`;
   };
 
+  const getInitials = (name: string) => {
+    const parts = name.trim().split(" ");
+    return parts.length >= 2 ? parts[0][0] + parts[1][0] : name.slice(0, 2);
+  };
+
+  const avatarColors = [
+    "bg-emerald-500", "bg-indigo-500", "bg-violet-500",
+    "bg-rose-500", "bg-amber-500", "bg-cyan-500", "bg-teal-500",
+  ];
+
+  const getAvatarColor = (name: string) => {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return avatarColors[Math.abs(hash) % avatarColors.length];
+  };
+
+  const statusOptions = [
+    { value: "present", label: "Присутствовал" },
+    { value: "absent",  label: "Отсутствовал" },
+    { value: "late",    label: "Опоздал" },
+    { value: "trial",   label: "Пробный урок" },
+  ];
+
+  const statusStyle = (status: string) => {
+    if (status === "present") return "bg-green-100 text-green-700 border-green-200";
+    if (status === "absent")  return "bg-red-100 text-red-700 border-red-200";
+    if (status === "late")    return "bg-amber-100 text-amber-700 border-amber-200";
+    return "bg-blue-100 text-blue-700 border-blue-200";
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -228,63 +266,348 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            onClick={onClose}
-            className="gap-2"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Назад к урокам
-          </Button>
-          <h2 className="text-2xl font-semibold">
-            Проведение урока — {formatDate(lesson.date)} {lesson.time ? `в ${lesson.time}` : ""}
-          </h2>
+      {/* Mobile Header */}
+      <div className="md:hidden flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          className="shrink-0 text-slate-600 hover:bg-transparent hover:text-slate-900"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </Button>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-base font-semibold text-slate-900">Проведение урока</h2>
+          <p className="text-xs text-slate-500">
+            {formatDate(lesson.date)}{lesson.time ? ` в ${lesson.time}` : ""}
+          </p>
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setGradeSettingsOpen(true)}
+          className="shrink-0 text-slate-400 hover:bg-transparent hover:text-slate-600"
+          title="Настройки оценок"
+        >
+          <Settings2 className="w-5 h-5" />
+        </Button>
       </div>
 
-      {/* Topic and Homework Section */}
-      <Card className="bg-slate-50">
+      {/* Mobile Grade Settings Drawer (slides from bottom) */}
+      <Drawer open={gradeSettingsOpen} onOpenChange={setGradeSettingsOpen} direction="bottom">
+        <DrawerContent>
+          <DrawerHeader>
+            <DrawerTitle>Настройки оценок</DrawerTitle>
+          </DrawerHeader>
+          <div className="px-4 space-y-4 overflow-y-auto">
+            <div>
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">
+                Тип работы (оценка за урок)
+              </label>
+              <Select value={lessonWorkType} onValueChange={setLessonWorkType}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Без оценки</SelectItem>
+                  <SelectItem value="control">Контрольная</SelectItem>
+                  <SelectItem value="test">Зачет</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {lessonWorkType === "control" && (
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">
+                  Система оценивания
+                </label>
+                <Select value={lessonGradingSystem} onValueChange={setLessonGradingSystem}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5point">5-бальная</SelectItem>
+                    <SelectItem value="tasks">По количеству заданий</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {lessonWorkType === "control" && lessonGradingSystem === "tasks" && (
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">
+                  Количество заданий
+                </label>
+                <Input
+                  type="number"
+                  value={lessonTasksCount}
+                  onChange={(e) => setLessonTasksCount(e.target.value)}
+                  placeholder="10"
+                />
+              </div>
+            )}
+            <div>
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">
+                Было ДЗ на прошлом уроке?
+              </label>
+              <Select
+                value={hadPreviousHomework ? "yes" : "no"}
+                onValueChange={(v) => setHadPreviousHomework(v === "yes")}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="yes">Да</SelectItem>
+                  <SelectItem value="no">Нет</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {hadPreviousHomework && (
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">
+                  Система оценивания ДЗ
+                </label>
+                <Select value={homeworkGradingSystem} onValueChange={setHomeworkGradingSystem}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5point">5-бальная</SelectItem>
+                    <SelectItem value="passfall">Зачет/Незачет</SelectItem>
+                    <SelectItem value="tasks">По количеству заданий</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {hadPreviousHomework && homeworkGradingSystem === "tasks" && (
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">
+                  Количество заданий ДЗ
+                </label>
+                <Input
+                  type="number"
+                  value={homeworkTasksCount}
+                  onChange={(e) => setHomeworkTasksCount(e.target.value)}
+                  placeholder="5"
+                />
+              </div>
+            )}
+          </div>
+          <DrawerFooter>
+            <Button className="w-full bg-blue-600 hover:bg-blue-700" onClick={() => setGradeSettingsOpen(false)}>
+              Готово
+            </Button>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
+
+      {/* Desktop Header */}
+      <div className="hidden md:flex items-center gap-3">
+        <Button variant="ghost" onClick={onClose} className="gap-2">
+          <ArrowLeft className="h-4 w-4" />
+          Назад к урокам
+        </Button>
+        <h2 className="text-2xl font-semibold">
+          Проведение урока — {formatDate(lesson.date)} {lesson.time ? `в ${lesson.time}` : ""}
+        </h2>
+      </div>
+
+      {/* Topic Card — Mobile (stacked) */}
+      <Card className="md:hidden bg-white">
+        <CardContent className="py-4 px-4 space-y-3">
+          <div>
+            <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide block mb-1">
+              Тема урока
+            </label>
+            <Input
+              value={lessonTopic}
+              onChange={(e) => setLessonTopic(e.target.value)}
+              placeholder="Например: Квадратные уравнения"
+              className={`text-sm transition-colors ${lessonTopic.trim() ? "border-green-500" : "border-yellow-400"}`}
+            />
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide block mb-1">
+              Домашнее задание
+            </label>
+            <Input
+              value={homework}
+              onChange={(e) => setHomework(e.target.value)}
+              placeholder="Например: Решить задачи №5-10"
+              className={`text-sm transition-colors ${homework.trim() ? "border-green-500" : "border-yellow-400"}`}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Topic Card — Desktop (inline) */}
+      <Card className="hidden md:block bg-slate-50">
         <CardContent className="py-3 px-4">
           <div className="space-y-3">
             <div className="flex items-center gap-3">
-              <label className="text-sm font-bold text-slate-900 shrink-0">
-                Тема урока:
-              </label>
+              <label className="text-sm font-bold text-slate-900 shrink-0">Тема урока:</label>
               <Input
                 value={lessonTopic}
                 onChange={(e) => setLessonTopic(e.target.value)}
                 placeholder="Например: Квадратные уравнения"
-                className={`h-8 text-sm transition-colors bg-transparent ${
-                  lessonTopic.trim() ? 'border-green-500' : 'border-yellow-400'
-                }`}
+                className={`h-8 text-sm transition-colors bg-transparent ${lessonTopic.trim() ? "border-green-500" : "border-yellow-400"}`}
               />
             </div>
             <div className="flex items-center gap-3">
-              <label className="text-sm font-bold text-slate-900 shrink-0">
-                Домашнее задание:
-              </label>
+              <label className="text-sm font-bold text-slate-900 shrink-0">Домашнее задание:</label>
               <Input
                 value={homework}
                 onChange={(e) => setHomework(e.target.value)}
                 placeholder="Например: Решить задачи №5-10"
-                className={`h-8 text-sm transition-colors bg-transparent ${
-                  homework.trim() ? 'border-green-500' : 'border-yellow-400'
-                }`}
+                className={`h-8 text-sm transition-colors bg-transparent ${homework.trim() ? "border-green-500" : "border-yellow-400"}`}
               />
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Attendance and Grades Section */}
+      {/* Attendance Section */}
       <div>
-        <h3 className="text-lg font-semibold mb-3">
+        <h3 className="text-base md:text-lg font-semibold mb-3 flex items-center gap-2">
+          <Users className="w-4 h-4 text-slate-500" />
           Посещаемость и оценки
         </h3>
-        <Card>
+
+        {/* Mobile Student Cards */}
+        <div className="flex flex-col gap-3 md:hidden">
+          {students.map((student) => (
+            <div key={student.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+              {/* Name + Status row */}
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 ${getAvatarColor(student.name)}`}>
+                    {getInitials(student.name)}
+                  </div>
+                  <div className="min-w-0">
+                    {canViewStudent ? (
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/students/${student.id}`, { state: { from: "lesson", groupId: lesson.group_id, lessonId: lesson.id } })}
+                        className="font-medium text-blue-600 hover:underline text-sm text-left truncate block"
+                      >
+                        {student.name}
+                      </button>
+                    ) : (
+                      <p className="font-medium text-slate-900 text-sm truncate">{student.name}</p>
+                    )}
+                    {student.isTrial && (
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                        Пробное
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <Select value={student.status} onValueChange={(v) => handleStatusChange(student.id, v)}>
+                  <SelectTrigger className={`shrink-0 border rounded-full px-3 h-7 text-xs font-medium w-auto ${statusStyle(student.status)}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {statusOptions.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Late minutes */}
+              {student.status === "late" && (
+                <div className="mb-3">
+                  <Input
+                    type="number"
+                    placeholder="Минут опоздания"
+                    value={student.lateMinutes || ""}
+                    onChange={(e) => handleLateMinutesChange(student.id, e.target.value)}
+                    className="w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                </div>
+              )}
+
+              {/* Grades */}
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <div>
+                  <label className="text-[11px] text-slate-500 mb-1 block">Оценка за урок</label>
+                  {lessonWorkType !== "none" ? (
+                    lessonWorkType === "control" && lessonGradingSystem === "tasks" ? (
+                      <Input
+                        placeholder={`0-${lessonTasksCount}`}
+                        value={student.lessonGrade}
+                        onChange={(e) => handleGradeChange(student.id, "lessonGrade", e.target.value)}
+                        className="text-center"
+                      />
+                    ) : lessonWorkType === "test" ? (
+                      <Select value={student.lessonGrade} onValueChange={(v) => handleGradeChange(student.id, "lessonGrade", v)}>
+                        <SelectTrigger className="w-full"><SelectValue placeholder="—" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pass">Зачет</SelectItem>
+                          <SelectItem value="fail">Незачет</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        placeholder="1-5"
+                        value={student.lessonGrade}
+                        onChange={(e) => handleGradeChange(student.id, "lessonGrade", e.target.value)}
+                        className="text-center"
+                      />
+                    )
+                  ) : (
+                    <Input placeholder="—" disabled className="text-center" />
+                  )}
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-500 mb-1 block">Оценка за ДЗ</label>
+                  {hadPreviousHomework ? (
+                    homeworkGradingSystem === "passfall" ? (
+                      <Select value={student.homeworkGrade} onValueChange={(v) => handleGradeChange(student.id, "homeworkGrade", v)}>
+                        <SelectTrigger className="w-full"><SelectValue placeholder="—" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pass">Зачет</SelectItem>
+                          <SelectItem value="fail">Незачет</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : homeworkGradingSystem === "tasks" ? (
+                      <Input
+                        placeholder={`0-${homeworkTasksCount}`}
+                        value={student.homeworkGrade}
+                        onChange={(e) => handleGradeChange(student.id, "homeworkGrade", e.target.value)}
+                        className="text-center"
+                      />
+                    ) : (
+                      <Input
+                        placeholder="1-5"
+                        value={student.homeworkGrade}
+                        onChange={(e) => handleGradeChange(student.id, "homeworkGrade", e.target.value)}
+                        className="text-center"
+                      />
+                    )
+                  ) : (
+                    <Input placeholder="—" disabled className="text-center" />
+                  )}
+                </div>
+              </div>
+
+              {/* Comment */}
+              <Textarea
+                value={student.comment}
+                onChange={(e) => handleCommentChange(student.id, e.target.value)}
+                placeholder="Комментарий..."
+                className={`resize-none transition-colors ${
+                  student.comment.trim()
+                    ? "border-green-400 bg-green-50"
+                    : "border-amber-200 bg-amber-50"
+                }`}
+                rows={2}
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop Table */}
+        <Card className="hidden md:block">
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -321,7 +644,6 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
                                 </SelectContent>
                               </Select>
                             </div>
-                            
                             {lessonWorkType === "control" && (
                               <>
                                 <div className="space-y-2">
@@ -334,15 +656,14 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
                                     </SelectTrigger>
                                     <SelectContent>
                                       <SelectItem value="5point">5-бальная</SelectItem>
-                                      <SelectItem value="tasks">По коичеству заан��</SelectItem>
+                                      <SelectItem value="tasks">По количеству заданий</SelectItem>
                                     </SelectContent>
                                   </Select>
                                 </div>
-                                
                                 {lessonGradingSystem === "tasks" && (
                                   <div className="space-y-2">
                                     <label className="text-xs font-medium text-slate-700 block">
-                                      Количество задний
+                                      Количество заданий
                                     </label>
                                     <Input
                                       type="number"
@@ -368,14 +689,13 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
                         </PopoverTrigger>
                         <PopoverContent className="w-80">
                           <div className="space-y-3">
-                            <h4 className="text-sm font-semibold">Настройк оценки за ДЗ</h4>
-                            
+                            <h4 className="text-sm font-semibold">Настройки оценки за ДЗ</h4>
                             <div className="space-y-2">
                               <label className="text-xs font-medium text-slate-700 block">
-                                Было ДЗ на прошлом роке?
+                                Было ДЗ на прошлом уроке?
                               </label>
-                              <Select 
-                                value={hadPreviousHomework ? "yes" : "no"} 
+                              <Select
+                                value={hadPreviousHomework ? "yes" : "no"}
                                 onValueChange={(value) => setHadPreviousHomework(value === "yes")}
                               >
                                 <SelectTrigger className="w-full">
@@ -387,12 +707,11 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
                                 </SelectContent>
                               </Select>
                             </div>
-                            
                             {hadPreviousHomework && (
                               <>
                                 <div className="space-y-2">
                                   <label className="text-xs font-medium text-slate-700 block">
-                                    Систма оценивания
+                                    Система оценивания
                                   </label>
                                   <Select value={homeworkGradingSystem} onValueChange={setHomeworkGradingSystem}>
                                     <SelectTrigger className="w-full">
@@ -405,7 +724,6 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
                                     </SelectContent>
                                   </Select>
                                 </div>
-                                
                                 {homeworkGradingSystem === "tasks" && (
                                   <div className="space-y-2">
                                     <label className="text-xs font-medium text-slate-700 block">
@@ -466,7 +784,7 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <Select 
+                          <Select
                             value={student.status}
                             onValueChange={(value) => handleStatusChange(student.id, value)}
                           >
@@ -474,12 +792,8 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="present">
-                                Присутствовал
-                              </SelectItem>
-                              <SelectItem value="absent">
-                                Отсутствовал
-                              </SelectItem>
+                              <SelectItem value="present">Присутствовал</SelectItem>
+                              <SelectItem value="absent">Отсутствовал</SelectItem>
                               <SelectItem value="late">Опоздал</SelectItem>
                               <SelectItem value="trial">Пробный урок</SelectItem>
                             </SelectContent>
@@ -526,7 +840,7 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
                             />
                           )
                         ) : (
-                          <span className="text-slate-400 text-sm"></span>
+                          <span className="text-slate-400 text-sm">—</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -569,7 +883,7 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
                           onChange={(e) => handleCommentChange(student.id, e.target.value)}
                           placeholder="Комментарий..."
                           className={`resize-none min-h-[40px] py-2 transition-colors bg-transparent ${
-                            student.comment.trim() ? 'border-green-500' : 'border-yellow-400'
+                            student.comment.trim() ? "border-green-500" : "border-yellow-400"
                           }`}
                           rows={1}
                           onInput={(e) => {
@@ -589,7 +903,7 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
       </div>
 
       {/* Actions */}
-      <div className="flex justify-end gap-3">
+      <div className="flex justify-end gap-3 pb-4">
         <Button variant="outline" onClick={onClose} disabled={saving}>
           Отмена
         </Button>

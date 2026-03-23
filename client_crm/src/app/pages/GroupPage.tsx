@@ -20,9 +20,12 @@ export function GroupPage() {
   const openLessonId = navState?.openLessonId ?? null;
 
   const handleBack = () => {
-    if (backToStudent) {
-      // Came from a specific student card — go back there preserving state
+    if (backToStudent && lessonDetailOpen) {
+      // Currently viewing a lesson that was opened from a student card — go back to that student
       navigate(`/students/${navState!.studentId}`, { state: { from: "group", groupId } });
+    } else if (openLessonId) {
+      // Came here via student→lesson flow but lesson is now closed — go to groups list
+      navigate("/");
     } else if (window.history.length > 1) {
       navigate(-1);
     } else {
@@ -36,6 +39,7 @@ export function GroupPage() {
   const [printCredentials, setPrintCredentials] = useState<PortalCredential[] | null>(null);
   // If returning from a student that was opened from a lesson, force lessons tab
   const [activeTab, setActiveTab] = useState(openLessonId ? "lessons" : "lessons");
+  const [lessonDetailOpen, setLessonDetailOpen] = useState(false);
 
   useEffect(() => {
     loadGroup();
@@ -99,52 +103,56 @@ export function GroupPage() {
       )}
 
       {/* Group Info Header */}
-      <div className="bg-white border-b">
-        <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-4 min-h-[72px] sm:min-h-[88px] flex items-center">
-          <div className="flex items-center justify-between w-full gap-4">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="sm" onClick={handleBack}>
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                {backToStudent ? "Назад к ученику" : "Назад к списку"}
-              </Button>
-              <h2 className="text-xl sm:text-2xl font-semibold text-slate-900">{group.name}</h2>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={generatingCreds}
-              onClick={async () => {
-                setGeneratingCreds(true);
-                try {
-                  const creds = await api.generateGroupCredentials(groupId!);
-                  setPrintCredentials(creds);
-                } catch (e) {
-                  console.error(e);
-                } finally {
-                  setGeneratingCreds(false);
-                }
-              }}
-              className="flex items-center gap-2 shrink-0"
-            >
-              {generatingCreds ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
-              <span className="hidden sm:inline">Выдать доступы</span>
-            </Button>
+      <div className={`bg-white border-b ${lessonDetailOpen ? "hidden md:block" : ""}`}>
+        <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-4">
+          {/* Back button */}
+          <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0 text-slate-600 hover:bg-transparent hover:text-slate-900">
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+
+          {/* Title */}
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base sm:text-xl font-semibold text-slate-900 truncate">{group.name}</h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {backToStudent ? "Назад к ученику" : "Назад к списку"}
+            </p>
           </div>
+
+          {/* Key button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 text-slate-400 hover:bg-transparent hover:text-slate-600"
+            disabled={generatingCreds}
+            onClick={async () => {
+              setGeneratingCreds(true);
+              try {
+                const creds = await api.generateGroupCredentials(groupId!);
+                setPrintCredentials(creds);
+              } catch (e) {
+                console.error(e);
+              } finally {
+                setGeneratingCreds(false);
+              }
+            }}
+          >
+            {generatingCreds ? <Loader2 className="w-5 h-5 animate-spin" /> : <KeyRound className="w-5 h-5" />}
+          </Button>
         </div>
       </div>
 
       {/* Main Content */}
       <main className="container mx-auto px-4 sm:px-6 py-4 sm:py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="bg-white border mb-6">
-            <TabsTrigger value="lessons">Уроки</TabsTrigger>
-            <TabsTrigger value="exams">Экзамены</TabsTrigger>
-            <TabsTrigger value="performance">Успеваемость</TabsTrigger>
-            <TabsTrigger value="info">Информация о группе</TabsTrigger>
+          <TabsList className={`mb-6 w-full sm:w-auto h-auto p-1 bg-slate-100 rounded-xl gap-1 ${lessonDetailOpen ? "hidden md:flex" : ""}`}>
+            <TabsTrigger value="lessons" className="rounded-lg px-4 py-2 text-sm font-medium data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm">Уроки</TabsTrigger>
+            <TabsTrigger value="exams" className="rounded-lg px-4 py-2 text-sm font-medium data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm">Экзамены</TabsTrigger>
+            <TabsTrigger value="performance" className="rounded-lg px-4 py-2 text-sm font-medium data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm">Оценки</TabsTrigger>
+            <TabsTrigger value="info" className="rounded-lg px-4 py-2 text-sm font-medium data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm">Инфо</TabsTrigger>
           </TabsList>
 
           <TabsContent value="lessons">
-            <LessonsTab groupId={groupId!} groupName={group.name} initialLessonId={openLessonId} />
+            <LessonsTab groupId={groupId!} groupName={group.name} initialLessonId={openLessonId} onDetailOpen={setLessonDetailOpen} />
           </TabsContent>
 
           <TabsContent value="exams">

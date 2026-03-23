@@ -2,7 +2,6 @@ import { Card, CardContent } from "./ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { useState, useEffect, useMemo } from "react";
-import { Checkbox } from "./ui/checkbox";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
@@ -54,17 +53,12 @@ export function PerformanceTab({ groupId }: PerformanceTabProps) {
   const loadData = async () => {
     try {
       setLoading(true);
-
-      // Load group students with joined_at information
       const groupStudentsData = await api.getGroupStudents(groupId);
-      // Filter only active (non-archived) students
       setGroupStudents(groupStudentsData.filter(gs => !gs.is_archived));
 
-      // Load all lessons
       const lessonsData = await api.getLessons(groupId);
       setLessons(lessonsData);
 
-      // Load attendance for all lessons
       const attendanceMap = new Map<string, LessonAttendance[]>();
       await Promise.all(
         lessonsData.map(async (lesson) => {
@@ -78,7 +72,6 @@ export function PerformanceTab({ groupId }: PerformanceTabProps) {
       );
       setAttendanceData(attendanceMap);
 
-      // Set default month to current month
       const now = new Date();
       const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
       setSelectedMonth(currentMonthKey);
@@ -90,7 +83,6 @@ export function PerformanceTab({ groupId }: PerformanceTabProps) {
     }
   };
 
-  // Get unique months from lessons
   const monthOptions = useMemo(() => {
     const months = new Set<string>();
     lessons.forEach((lesson) => {
@@ -98,9 +90,8 @@ export function PerformanceTab({ groupId }: PerformanceTabProps) {
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
       months.add(monthKey);
     });
-
     return Array.from(months)
-      .sort() // Sort from oldest to newest
+      .sort()
       .map((monthKey) => {
         const [year, month] = monthKey.split("-");
         const date = new Date(parseInt(year), parseInt(month) - 1);
@@ -109,10 +100,8 @@ export function PerformanceTab({ groupId }: PerformanceTabProps) {
       });
   }, [lessons]);
 
-  // Filter lessons by selected month
   const filteredLessons = useMemo(() => {
     if (!selectedMonth) return [];
-
     return lessons
       .filter((lesson) => {
         const date = new Date(lesson.date);
@@ -120,29 +109,17 @@ export function PerformanceTab({ groupId }: PerformanceTabProps) {
         return monthKey === selectedMonth;
       })
       .sort((a, b) => {
-        const dateA = new Date(a.date);
-        const dateB = new Date(b.date);
-
-        // First, sort by date
-        const dateDiff = dateA.getTime() - dateB.getTime();
-        if (dateDiff !== 0) {
-          return dateDiff;
-        }
-
-        // If same date, sort by time
-        const timeA = a.time || "00:00";
-        const timeB = b.time || "00:00";
-        return timeA.localeCompare(timeB);
+        const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime();
+        if (dateDiff !== 0) return dateDiff;
+        return (a.time || "00:00").localeCompare(b.time || "00:00");
       });
   }, [lessons, selectedMonth]);
 
-  // Build student performance data
   const performanceData: StudentPerformanceData[] = useMemo(() => {
     return groupStudents.map((gs) => {
       const student = gs.student!;
       const joinedDate = new Date(gs.joined_at);
-      joinedDate.setHours(0, 0, 0, 0); // Reset time to start of day
-
+      joinedDate.setHours(0, 0, 0, 0);
       return {
         studentId: student.id,
         studentName: `${student.first_name} ${student.last_name}`,
@@ -186,131 +163,104 @@ export function PerformanceTab({ groupId }: PerformanceTabProps) {
 
   if (filteredLessons.length === 0) {
     return (
-      <div className="text-center py-8">
-        <p className="text-slate-600">Нет проведенных уроков в выбранном месяце</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-semibold">Успеваемость группы</h2>
-
-        {/* Month Filter */}
-        {monthOptions.length > 0 && (
-          <div className="w-64">
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <h2 className="text-xl sm:text-2xl font-semibold">Успеваемость группы</h2>
+          {monthOptions.length > 0 && (
             <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-              <SelectTrigger>
+              <SelectTrigger className="w-full sm:w-48">
                 <SelectValue placeholder="Выберите месяц" />
               </SelectTrigger>
               <SelectContent>
                 {monthOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          )}
+        </div>
+        <div className="text-center py-8">
+          <p className="text-slate-500">Нет проведённых уроков в выбранном месяце</p>
+        </div>
+      </div>
+    );
+  }
+
+  const filterPill = (active: boolean, label: string, toggle: () => void) => (
+    <button
+      onClick={toggle}
+      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+        active
+          ? "bg-blue-50 border-blue-200 text-blue-700"
+          : "bg-white border-slate-200 text-slate-400 line-through"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <h2 className="text-xl sm:text-2xl font-semibold">Успеваемость группы</h2>
+        {monthOptions.length > 0 && (
+          <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+            <SelectTrigger className="w-full sm:w-48">
+              <SelectValue placeholder="Выберите месяц" />
+            </SelectTrigger>
+            <SelectContent>
+              {monthOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
       </div>
 
-      {/* Legend */}
-      <Card>
-        <CardContent className="py-3">
-          <div className="flex items-center justify-between">
-            <div className="grid grid-cols-2 gap-4 text-sm flex-1">
-              <div>
-                <h4 className="font-semibold mb-2 text-slate-700">Посещение:</h4>
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded" style={{ backgroundColor: "#d0db9d" }} />
-                    <span className="text-slate-600">Присутствовал</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded" style={{ backgroundColor: "#fad548" }} />
-                    <span className="text-slate-600">Опоздал</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded" style={{ backgroundColor: "#ed6c72" }} />
-                    <span className="text-slate-600">Отсутствовал</span>
-                  </div>
-                </div>
-              </div>
-              <div>
-                <h4 className="font-semibold mb-2 text-slate-700">Оценки:</h4>
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded" style={{ backgroundColor: "#d0db9d" }} />
-                    <span className="text-slate-600">5</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded" style={{ backgroundColor: "#fad548" }} />
-                    <span className="text-slate-600">4</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded" style={{ backgroundColor: "#f3c23c" }} />
-                    <span className="text-slate-600">3</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded" style={{ backgroundColor: "#ed6c72" }} />
-                    <span className="text-slate-600">2</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+      {/* Filters — pill toggles */}
+      <div className="flex flex-wrap gap-2">
+        {filterPill(showAttendance, "П — Посещение", () => setShowAttendance(!showAttendance))}
+        {filterPill(showHomework, "ДЗ — Домашние задания", () => setShowHomework(!showHomework))}
+        {filterPill(showLessonWork, "Р — Работа на уроке", () => setShowLessonWork(!showLessonWork))}
+      </div>
 
-            {/* Filters */}
-            <div className="ml-6 pl-6 border-l">
-              <h4 className="font-semibold mb-2 text-slate-700">Фильтры:</h4>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center space-x-2">
-                  <Checkbox id="attendance" checked={showAttendance} onCheckedChange={setShowAttendance} />
-                  <label htmlFor="attendance" className="text-sm text-slate-600 cursor-pointer">
-                    Посещение
-                  </label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox id="homework" checked={showHomework} onCheckedChange={setShowHomework} />
-                  <label htmlFor="homework" className="text-sm text-slate-600 cursor-pointer">
-                    Домашние задания
-                  </label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox id="lessonWork" checked={showLessonWork} onCheckedChange={setShowLessonWork} />
-                  <label htmlFor="lessonWork" className="text-sm text-slate-600 cursor-pointer">
-                    Работа на уроке
-                  </label>
-                </div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Desktop-only legend */}
+      <div className="hidden sm:flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-500">
+        <div className="flex items-center gap-4">
+          <span className="font-medium text-slate-600">Посещение:</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded inline-block" style={{ backgroundColor: "#d0db9d" }} /> Присутствовал</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded inline-block" style={{ backgroundColor: "#fad548" }} /> Опоздал</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded inline-block" style={{ backgroundColor: "#ed6c72" }} /> Отсутствовал</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="font-medium text-slate-600">Оценки:</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded inline-block" style={{ backgroundColor: "#d0db9d" }} /> 5</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded inline-block" style={{ backgroundColor: "#fad548" }} /> 4</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded inline-block" style={{ backgroundColor: "#f3c23c" }} /> 3</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded inline-block" style={{ backgroundColor: "#ed6c72" }} /> 2</span>
+        </div>
+      </div>
 
       {/* Performance Table */}
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto -webkit-overflow-scrolling-touch">
             <table className="w-full border-collapse">
               <thead>
                 <tr className="border-b bg-slate-50">
-                  <th className="sticky left-0 z-10 bg-slate-50 border-r text-left px-2 py-1.5 text-sm font-semibold text-slate-700 min-w-[150px]">
+                  <th className="sticky left-0 z-10 bg-slate-50 border-r text-left px-3 py-2 text-sm font-semibold text-slate-700 min-w-[120px] max-w-[150px]">
                     Ученик
                   </th>
                   {filteredLessons.map((lesson) => (
-                    <th
-                      key={lesson.id}
-                      className="border-r text-center px-0 py-1.5 text-sm font-semibold text-slate-700"
-                    >
+                    <th key={lesson.id} className="border-r text-center px-0 py-2 text-xs font-semibold text-slate-700">
                       <Popover>
                         <PopoverTrigger asChild>
-                          <div className="text-xs text-slate-600 cursor-pointer hover:text-slate-900 transition-colors px-1">
+                          <div className="cursor-pointer hover:text-blue-600 transition-colors px-1 whitespace-nowrap">
                             {formatDate(lesson.date)}
                           </div>
                         </PopoverTrigger>
-                        <PopoverContent className="w-80">
+                        <PopoverContent className="w-72">
                           <div className="space-y-2">
                             <div>
                               <h4 className="text-sm font-semibold text-slate-900 mb-1">Тема урока:</h4>
@@ -330,7 +280,7 @@ export function PerformanceTab({ groupId }: PerformanceTabProps) {
               <tbody>
                 {performanceData.map((student) => (
                   <tr key={student.studentId} className="border-b hover:bg-slate-50/50">
-                    <td className="sticky left-0 z-10 bg-white border-r px-2 py-1.5 text-sm font-medium text-slate-900">
+                    <td className="sticky left-0 z-10 bg-white border-r px-3 py-2 text-xs font-medium text-slate-900 min-w-[120px] max-w-[150px] leading-tight">
                       {student.studentName}
                     </td>
                     {student.lessons.map((lessonData) => (
@@ -338,48 +288,28 @@ export function PerformanceTab({ groupId }: PerformanceTabProps) {
                         <div className="flex h-full">
                           {/* Посещение */}
                           {showAttendance && (
-                            <div className="flex-1 flex flex-col">
-                              <span className="text-[9px] text-slate-500 text-center py-0.5 bg-slate-50">П</span>
+                            <div className="flex-1 flex flex-col min-w-[24px]">
+                              <span className="text-[8px] text-slate-400 text-center py-0.5 bg-slate-50 leading-none">П</span>
                               <div
-                                className="h-10 flex items-center justify-center text-xs font-semibold"
+                                className="h-9 flex items-center justify-center text-[11px] font-semibold"
                                 style={{
-                                  backgroundColor: lessonData.isBeforeJoining
-                                    ? "#f1f5f9"
-                                    : getAttendanceColor(lessonData.attendance, lessonData.isLessonConducted),
-                                  color: lessonData.isBeforeJoining
-                                    ? "#cbd5e1"
-                                    : lessonData.isLessonConducted ? "white" : "#94a3b8"
+                                  backgroundColor: lessonData.isBeforeJoining ? "#f1f5f9" : getAttendanceColor(lessonData.attendance, lessonData.isLessonConducted),
+                                  color: lessonData.isBeforeJoining ? "#cbd5e1" : lessonData.isLessonConducted ? "white" : "#94a3b8",
                                 }}
                               >
-                                {lessonData.isBeforeJoining
-                                  ? "·"
-                                  : !lessonData.isLessonConducted
-                                  ? "-"
-                                  : lessonData.attendance === "absent"
-                                  ? "Н"
-                                  : lessonData.attendance === "late"
-                                  ? "О"
-                                  : lessonData.attendance === "trial"
-                                  ? "П"
-                                  : lessonData.attendance === "present"
-                                  ? "✓"
-                                  : "-"}
+                                {lessonData.isBeforeJoining ? "·" : !lessonData.isLessonConducted ? "-" : lessonData.attendance === "absent" ? "Н" : lessonData.attendance === "late" ? "О" : lessonData.attendance === "trial" ? "П" : lessonData.attendance === "present" ? "✓" : "-"}
                               </div>
                             </div>
                           )}
                           {/* ДЗ */}
                           {showHomework && (
-                            <div className="flex-1 flex flex-col border-l">
-                              <span className="text-[9px] text-slate-500 text-center py-0.5 bg-slate-50">ДЗ</span>
+                            <div className="flex-1 flex flex-col border-l min-w-[24px]">
+                              <span className="text-[8px] text-slate-400 text-center py-0.5 bg-slate-50 leading-none">ДЗ</span>
                               <div
-                                className="h-10 flex items-center justify-center text-xs font-semibold"
+                                className="h-9 flex items-center justify-center text-[11px] font-semibold"
                                 style={{
-                                  backgroundColor: lessonData.isBeforeJoining
-                                    ? "#f1f5f9"
-                                    : getGradeColor(lessonData.homeworkGrade, lessonData.isLessonConducted),
-                                  color: lessonData.isBeforeJoining
-                                    ? "#cbd5e1"
-                                    : lessonData.isLessonConducted && lessonData.homeworkGrade ? "white" : "#94a3b8"
+                                  backgroundColor: lessonData.isBeforeJoining ? "#f1f5f9" : getGradeColor(lessonData.homeworkGrade, lessonData.isLessonConducted),
+                                  color: lessonData.isBeforeJoining ? "#cbd5e1" : lessonData.isLessonConducted && lessonData.homeworkGrade ? "white" : "#94a3b8",
                                 }}
                               >
                                 {lessonData.isBeforeJoining ? "·" : lessonData.homeworkGrade || "-"}
@@ -388,17 +318,13 @@ export function PerformanceTab({ groupId }: PerformanceTabProps) {
                           )}
                           {/* Работа на уроке */}
                           {showLessonWork && (
-                            <div className="flex-1 flex flex-col border-l">
-                              <span className="text-[9px] text-slate-500 text-center py-0.5 bg-slate-50">Р</span>
+                            <div className="flex-1 flex flex-col border-l min-w-[24px]">
+                              <span className="text-[8px] text-slate-400 text-center py-0.5 bg-slate-50 leading-none">Р</span>
                               <div
-                                className="h-10 flex items-center justify-center text-xs font-semibold"
+                                className="h-9 flex items-center justify-center text-[11px] font-semibold"
                                 style={{
-                                  backgroundColor: lessonData.isBeforeJoining
-                                    ? "#f1f5f9"
-                                    : getGradeColor(lessonData.lessonGrade, lessonData.isLessonConducted),
-                                  color: lessonData.isBeforeJoining
-                                    ? "#cbd5e1"
-                                    : lessonData.isLessonConducted && lessonData.lessonGrade ? "white" : "#94a3b8"
+                                  backgroundColor: lessonData.isBeforeJoining ? "#f1f5f9" : getGradeColor(lessonData.lessonGrade, lessonData.isLessonConducted),
+                                  color: lessonData.isBeforeJoining ? "#cbd5e1" : lessonData.isLessonConducted && lessonData.lessonGrade ? "white" : "#94a3b8",
                                 }}
                               >
                                 {lessonData.isBeforeJoining ? "·" : lessonData.lessonGrade || "-"}

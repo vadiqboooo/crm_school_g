@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { useNavigate } from "react-router";
-import { Users, GraduationCap, Book, Clock, Plus, LayoutGrid, Table as TableIcon, Loader2, Trash2, Edit, X, Filter, ChevronDown, Archive, ArchiveRestore } from "lucide-react";
+import { Users, GraduationCap, Plus, LayoutGrid, LayoutList, Loader2, Trash2, Edit, X, Filter, Archive, ArchiveRestore, ChevronUp } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -36,17 +36,26 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
+import { Checkbox } from "../components/ui/checkbox";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "../components/ui/popover";
-import { Checkbox } from "../components/ui/checkbox";
+import { ChevronDown } from "lucide-react";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerFooter,
+} from "../components/ui/drawer";
 import { MoreVertical } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { Group, GroupCreate, Subject, User, SchoolLocation } from "../types/api";
 import { useAuth } from "../contexts/AuthContext";
+import { useHeaderActions } from "../contexts/HeaderActionsContext";
 
 interface GroupWithDetails extends Group {
   studentsCount?: number;
@@ -82,6 +91,15 @@ export function HomePage() {
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [selectedExamTypes, setSelectedExamTypes] = useState<string[]>([]);
   const [showArchived, setShowArchived] = useState(false);
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const { setHeaderActions } = useHeaderActions();
+
+  useEffect(() => {
+    const handleScroll = () => setShowScrollTop(window.scrollY > 300);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   const [newGroup, setNewGroup] = useState<GroupCreate>({
     name: "",
@@ -112,6 +130,23 @@ export function HomePage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Inject Archive button into the mobile top bar
+  useEffect(() => {
+    if (!(isAdmin || isManager)) return;
+    setHeaderActions(
+      <Button
+        variant="ghost"
+        size="sm"
+        className={`rounded-full gap-1.5 text-sm ${showArchived ? "text-violet-600" : "text-slate-600"}`}
+        onClick={() => setShowArchived(!showArchived)}
+      >
+        <Archive className="w-4 h-4" />
+        Архив
+      </Button>
+    );
+    return () => setHeaderActions(null);
+  }, [showArchived, isAdmin, isManager]);
 
   // Save viewMode preference to localStorage
   useEffect(() => {
@@ -341,318 +376,327 @@ export function HomePage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="shrink-0 bg-white border-b z-20">
-        <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-4 min-h-[72px] sm:min-h-[88px]">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="text-xl sm:text-2xl font-semibold text-slate-900">Группы</h1>
-              <div className="flex items-center gap-2 mt-1">
-                <p className="text-sm sm:text-base text-slate-600">Управление учебными группами</p>
-                {hasActiveFilters && (
-                  <Badge variant="secondary" className="gap-1">
-                    <Filter className="w-3 h-3" />
-                    Фильтры: {selectedSubjects.length + selectedTeachers.length + selectedLocations.length + selectedExamTypes.length}
-                  </Badge>
-                )}
-              </div>
-            </div>
+      <div className="sticky top-14 lg:top-0 bg-white border-b z-20">
+        <div className="container mx-auto px-4 sm:px-6 pt-3 pb-3 space-y-3">
+          {/* Title (desktop only) */}
+          <h1 className="hidden sm:block text-xl sm:text-2xl font-semibold text-slate-900">Группы</h1>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Exam Type Filter - только для админов */}
-              {isAdmin && (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={selectedExamTypes.length > 0 ? 'border-blue-600 text-blue-600' : ''}
-                    >
-                      <Filter className="w-4 h-4 mr-2" />
-                      Тип подготовки
-                      {selectedExamTypes.length > 0 && (
-                        <Badge variant="secondary" className="ml-2 h-5 px-1.5">
-                          {selectedExamTypes.length}
-                        </Badge>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-64" align="start">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-medium text-sm">Фильтр по типу подготовки</h4>
-                        {selectedExamTypes.length > 0 && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2 text-xs"
-                            onClick={() => setSelectedExamTypes([])}
-                          >
-                            Сбросить
-                          </Button>
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        {['ОГЭ', 'ЕГЭ'].map((examType) => (
-                          <div key={examType} className="flex items-center space-x-2">
-                            <Checkbox
-                              id={`exam-type-filter-${examType}`}
-                              checked={selectedExamTypes.includes(examType)}
-                              onCheckedChange={(checked) => {
-                                setSelectedExamTypes(
-                                  checked
-                                    ? [...selectedExamTypes, examType]
-                                    : selectedExamTypes.filter((t) => t !== examType)
-                                );
-                              }}
-                            />
-                            <label
-                              htmlFor={`exam-type-filter-${examType}`}
-                              className="text-sm font-normal cursor-pointer flex-1"
-                            >
-                              {examType}
-                            </label>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </PopoverContent>
-                </Popover>
+          {/* Actions row */}
+          <div className="flex items-center gap-2">
+            {/* Filters button */}
+            <Button
+              variant="outline"
+              size="sm"
+              className={`rounded-full gap-1.5 ${hasActiveFilters ? "border-violet-600 text-violet-600" : ""}`}
+              onClick={() => setFilterDrawerOpen(true)}
+            >
+              <Filter className="w-3.5 h-3.5" />
+              Фильтры
+              {hasActiveFilters && (
+                <span className="bg-violet-600 text-white rounded-full text-[10px] w-4 h-4 flex items-center justify-center leading-none">
+                  {selectedSubjects.length + selectedTeachers.length + selectedExamTypes.length}
+                </span>
               )}
+            </Button>
 
-              {/* Archive toggle */}
-              {(isAdmin || isManager) && (
+            <div className="flex-1" />
+
+            {/* View toggle (desktop only) */}
+            {canUseTableView && (
+              <div className="hidden lg:flex items-center gap-1 bg-slate-100 rounded-lg p-1 shrink-0">
                 <Button
-                  variant={showArchived ? "default" : "outline"}
+                  variant="ghost"
                   size="sm"
-                  onClick={() => setShowArchived(!showArchived)}
+                  className={`h-8 w-8 p-0 ${viewMode === "grid" ? "bg-white shadow-sm" : "hover:bg-slate-200"}`}
+                  onClick={() => setViewMode("grid")}
                 >
-                  <Archive className="w-4 h-4 mr-2" />
-                  {showArchived ? "Показать активные" : "Показать архив"}
+                  <LayoutGrid className="w-4 h-4" />
                 </Button>
-              )}
-
-              {/* View mode toggle - only for admin and manager */}
-              {canUseTableView && (
-                <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={`h-8 px-3 ${
-                      viewMode === "grid"
-                        ? "bg-white shadow-sm"
-                        : "hover:bg-slate-200"
-                    }`}
-                    onClick={() => setViewMode("grid")}
-                  >
-                    <LayoutGrid className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={`h-8 px-3 ${
-                      viewMode === "table"
-                        ? "bg-white shadow-sm"
-                        : "hover:bg-slate-200"
-                    }`}
-                    onClick={() => setViewMode("table")}
-                  >
-                    <TableIcon className="w-4 h-4" />
-                  </Button>
-                </div>
-              )}
-
-              {(isAdmin || isManager) && (
                 <Button
-                  className="bg-blue-600 hover:bg-blue-700 gap-2"
-                  onClick={() => {
-                    // For managers, auto-set their location
-                    if (isManager) {
-                      const managerLocation = locations.find(loc => loc.manager_id === user?.id);
-                      if (managerLocation) {
-                        setNewGroup(prev => ({ ...prev, school_location_id: managerLocation.id }));
-                      }
-                    }
-                    setIsCreateDialogOpen(true);
-                  }}
+                  variant="ghost"
+                  size="sm"
+                  className={`h-8 w-8 p-0 ${viewMode === "table" ? "bg-white shadow-sm" : "hover:bg-slate-200"}`}
+                  onClick={() => setViewMode("table")}
                 >
-                  <Plus className="w-4 h-4" />
-                  Создать группу
+                  <LayoutList className="w-4 h-4" />
                 </Button>
-              )}
-            </div>
+              </div>
+            )}
+
+            {/* Archive button (desktop only — mobile uses top bar) */}
+            {(isAdmin || isManager) && (
+              <Button
+                variant="outline"
+                size="sm"
+                className={`hidden sm:flex rounded-full gap-1.5 ${showArchived ? "border-violet-600 text-violet-600" : ""}`}
+                onClick={() => setShowArchived(!showArchived)}
+              >
+                <Archive className="w-3.5 h-3.5" />
+                Архив
+              </Button>
+            )}
+
+            {/* Create group button */}
+            {(isAdmin || isManager) && (
+              <Button
+                className="bg-violet-600 hover:bg-violet-700 gap-2"
+                onClick={() => {
+                  if (isManager) {
+                    const managerLocation = locations.find(loc => loc.manager_id === user?.id);
+                    if (managerLocation) setNewGroup(prev => ({ ...prev, school_location_id: managerLocation.id }));
+                  }
+                  setIsCreateDialogOpen(true);
+                }}
+              >
+                <Plus className="w-4 h-4" />
+                Создать группу
+              </Button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Main Content */}
-      <main className="flex-1 min-h-0 flex flex-col px-6 py-4">
-        {/* Clear filters button */}
-        {hasActiveFilters && (
-          <div className="mb-4">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={clearAllFilters}
-            >
-              <X className="w-4 h-4" />
-              Сбросить все фильтры
-            </Button>
-          </div>
-        )}
+      {/* Filter Drawer */}
+      <Drawer open={filterDrawerOpen} onOpenChange={setFilterDrawerOpen} direction="bottom">
+        <DrawerContent>
+          <DrawerHeader>
+            <DrawerTitle>Фильтры</DrawerTitle>
+          </DrawerHeader>
+          <div className="px-4 space-y-5 overflow-y-auto">
+            {/* Exam type */}
+            {isAdmin && (
+              <div>
+                <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Тип подготовки</h4>
+                <div className="flex flex-wrap gap-2">
+                  {["ОГЭ", "ЕГЭ"].map((type) => (
+                    <button
+                      key={type}
+                      onClick={() =>
+                        setSelectedExamTypes(
+                          selectedExamTypes.includes(type)
+                            ? selectedExamTypes.filter((t) => t !== type)
+                            : [...selectedExamTypes, type]
+                        )
+                      }
+                      className={`px-4 py-1.5 rounded-full text-sm border transition-colors ${
+                        selectedExamTypes.includes(type)
+                          ? "bg-violet-50 border-violet-300 text-violet-700"
+                          : "border-slate-200 text-slate-600"
+                      }`}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
-      {/* Groups Display */}
-      {viewMode === "grid" || !canUseTableView ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredGroups.length === 0 ? (
-            <div className="col-span-full text-center py-12 text-slate-500">
-              <Filter className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p>Нет групп, соответствующих выбранным фильтрам</p>
+            {/* Subject */}
+            <div>
+              <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Предмет</h4>
+              <Select
+                value={selectedSubjects[0] || "all"}
+                onValueChange={(v) => setSelectedSubjects(v === "all" ? [] : [v])}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все предметы</SelectItem>
+                  {subjects.map((subject) => (
+                    <SelectItem key={subject.id} value={subject.id}>
+                      <span className="flex items-center gap-2">
+                        {subject.name}
+                        {subject.exam_type && (
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${subject.exam_type === "ЕГЭ" ? "bg-purple-100 text-purple-700" : "bg-green-100 text-green-700"}`}>
+                            {subject.exam_type}
+                          </span>
+                        )}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          ) : (
-            filteredGroups.map((group) => {
+
+            {/* Teacher */}
+            {(isAdmin || isManager) && teachers.length > 0 && (
+              <div>
+                <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Преподаватель</h4>
+                <Select
+                  value={selectedTeachers[0] || "all"}
+                  onValueChange={(v) => setSelectedTeachers(v === "all" ? [] : [v])}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Все преподаватели</SelectItem>
+                    {teachers.map((teacher) => (
+                      <SelectItem key={teacher.id} value={teacher.id}>
+                        {teacher.first_name} {teacher.last_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          <DrawerFooter>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => { clearAllFilters(); setFilterDrawerOpen(false); }}
+              >
+                Сбросить
+              </Button>
+              <Button
+                className="flex-1 bg-violet-600 hover:bg-violet-700"
+                onClick={() => setFilterDrawerOpen(false)}
+              >
+                Применить
+              </Button>
+            </div>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
+
+      {/* Main Content */}
+      <main className="px-4 sm:px-6 py-4">
+      {/* Groups Display */}
+
+      {/* Cards: mobile always / desktop when grid or teacher */}
+      <div className={canUseTableView && viewMode === "table" ? "lg:hidden" : ""}>
+        {filteredGroups.length === 0 ? (
+          <div className="text-center py-12 text-slate-500">
+            <Filter className="w-12 h-12 mx-auto mb-3 opacity-50" />
+            <p>Нет групп, соответствующих выбранным фильтрам</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {filteredGroups.map((group) => {
               const uncompletedCount = uncompletedLessonsByGroup.get(group.id) || 0;
               const hasWarning = uncompletedCount > 0;
+              const examType = group.subject?.exam_type;
+              const borderColor = examType === "ЕГЭ"
+                ? "bg-blue-500"
+                : examType === "ОГЭ"
+                ? "bg-orange-400"
+                : "bg-slate-300";
+              const examBadgeClass = examType === "ЕГЭ"
+                ? "bg-blue-100 text-blue-700 hover:bg-blue-100"
+                : "bg-orange-100 text-orange-700 hover:bg-orange-100";
 
               return (
-            <Card
-              key={group.id}
-              className={`hover:shadow-lg transition-shadow cursor-pointer group overflow-hidden ${
-                hasWarning ? 'border-2 border-red-500 bg-red-50' : ''
-              }`}
-              onClick={() => navigate(`/group/${group.id}`)}
-            >
-              {/* Top section */}
-              <div className="p-4 pb-3">
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center gap-2 flex-1">
-                    <h3 className="text-lg font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">
-                      {group.name}
-                    </h3>
-                    {group.is_archived && (
-                      <Badge variant="secondary" className="text-xs">
-                        Архив
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {hasWarning && isTeacher && (
-                      <Badge
-                        variant="destructive"
-                        className="bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center mr-2"
-                      >
-                        {uncompletedCount}
-                      </Badge>
-                    )}
-                    <Users className="w-4 h-4 text-slate-500" />
-                    <span className="text-base font-medium text-slate-700">
-                      {group.studentsCount || 0}
-                    </span>
-                    {(isAdmin || isManager) && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          asChild
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity ml-1"
-                          >
-                            <MoreVertical className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            className="gap-2"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/group/${group.id}`);
-                            }}
-                          >
-                            <Edit className="w-4 h-4" />
-                            Редактировать
-                          </DropdownMenuItem>
-                          {!group.is_archived ? (
-                            <DropdownMenuItem
-                              className="gap-2 text-orange-600"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleArchiveGroup(group.id);
-                              }}
-                            >
-                              <Archive className="w-4 h-4" />
-                              В архив
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem
-                              className="gap-2 text-green-600"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRestoreGroup(group.id);
-                              }}
-                            >
-                              <ArchiveRestore className="w-4 h-4" />
-                              Восстановить
-                            </DropdownMenuItem>
+                <div
+                  key={group.id}
+                  className={`bg-white rounded-xl border overflow-hidden cursor-pointer hover:shadow-md transition-shadow group ${
+                    hasWarning ? "border-red-300" : "border-slate-100"
+                  }`}
+                  onClick={() => navigate(`/group/${group.id}`)}
+                >
+                  <div className="flex">
+                    {/* Colored left border */}
+                    <div className={`w-1 shrink-0 ${hasWarning ? "bg-red-400" : borderColor}`} />
+
+                    <div className="flex-1 p-4 min-w-0">
+                      {/* Top row */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h3 className="font-semibold text-slate-900 leading-snug">
+                              {group.name}
+                            </h3>
+                            {group.is_archived && (
+                              <Badge variant="secondary" className="text-xs shrink-0">Архив</Badge>
+                            )}
+                          </div>
+                          {group.location && (
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              Филиал: {group.location.name}
+                            </p>
                           )}
-                          <DropdownMenuItem
-                            className="gap-2 text-red-600"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteGroup(group.id);
-                            }}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            Удалить
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
-                  </div>
-                </div>
-                {group.location && (
-                  <p className="text-sm text-slate-600">
-                    Филиал: {group.location.name}
-                  </p>
-                )}
-              </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {hasWarning && isTeacher && (
+                            <Badge variant="destructive" className="text-xs px-1.5 h-5">
+                              {uncompletedCount}
+                            </Badge>
+                          )}
+                          <div className="flex items-center gap-1 text-slate-500">
+                            <Users className="w-3.5 h-3.5" />
+                            <span className="text-sm font-medium">{group.studentsCount || 0}</span>
+                          </div>
+                          {(isAdmin || isManager) && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  <MoreVertical className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem className="gap-2" onClick={(e) => { e.stopPropagation(); navigate(`/group/${group.id}`); }}>
+                                  <Edit className="w-4 h-4" />Редактировать
+                                </DropdownMenuItem>
+                                {!group.is_archived ? (
+                                  <DropdownMenuItem className="gap-2 text-orange-600" onClick={(e) => { e.stopPropagation(); handleArchiveGroup(group.id); }}>
+                                    <Archive className="w-4 h-4" />В архив
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem className="gap-2 text-green-600" onClick={(e) => { e.stopPropagation(); handleRestoreGroup(group.id); }}>
+                                    <ArchiveRestore className="w-4 h-4" />Восстановить
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem className="gap-2 text-red-600" onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group.id); }}>
+                                  <Trash2 className="w-4 h-4" />Удалить
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
+                      </div>
 
-              {/* Blue divider */}
-              <div className="h-1 bg-blue-400" />
+                      {/* Divider */}
+                      <div className="border-t border-slate-100 my-3" />
 
-              {/* Bottom section */}
-              <div className="p-4 pt-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2 text-sm text-slate-700">
-                    <Book className="w-3.5 h-3.5 text-slate-500" />
-                    <span>{group.subject.name}</span>
-                    {group.subject.exam_type && (
-                      <Badge className={group.subject.exam_type === 'ЕГЭ' ? 'bg-purple-100 text-purple-800 text-xs' : 'bg-green-100 text-green-800 text-xs'}>
-                        {group.subject.exam_type}
-                      </Badge>
-                    )}
-                  </div>
-                  {group.schedules && group.schedules.length > 0 && (
-                    <div className="flex flex-col items-end gap-0.5 text-sm text-slate-700">
-                      {group.schedules.map((schedule, idx) => (
-                        <span key={idx}>
-                          {getDayAbbreviation(schedule.day_of_week)} {formatTime(schedule.start_time)}
-                        </span>
-                      ))}
+                      {/* Bottom row */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <GraduationCap className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span className="text-sm text-slate-700 truncate">{group.subject?.name}</span>
+                          {examType && (
+                            <Badge className={`${examBadgeClass} text-xs shrink-0`}>{examType}</Badge>
+                          )}
+                        </div>
+                        {group.schedules && group.schedules.length > 0 && (
+                          <div className="flex flex-col items-end gap-0.5 shrink-0">
+                            {group.schedules.map((s, idx) => (
+                              <span key={idx} className="text-xs text-slate-500">
+                                {getDayAbbreviation(s.day_of_week)} {formatTime(s.start_time)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            </Card>
-          );
-            })
-          )}
-        </div>
-      ) : (
-        <div className="flex flex-col flex-1 min-h-0 bg-card border border-border rounded-xl">
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Table: desktop only, admin/manager in table mode */}
+      {canUseTableView && viewMode === "table" && (
+        <div className="hidden lg:block bg-card border border-border rounded-xl">
           {/* Fixed table header */}
           <div className="shrink-0">
             <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
@@ -833,8 +877,8 @@ export function HomePage() {
                 </thead>
               </table>
             </div>
-          {/* Scrollable table body */}
-          <div className="flex-1 min-h-0 overflow-y-auto">
+          {/* Table body */}
+          <div>
             <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
               <colgroup>
                 <col style={{ width: '18%' }} />
@@ -1211,6 +1255,17 @@ export function HomePage() {
         </DialogContent>
       </Dialog>
       </main>
+
+      {/* Scroll-to-top button */}
+      {showScrollTop && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="fixed bottom-6 right-6 z-50 w-10 h-10 rounded-full bg-white border border-slate-200 shadow-md flex items-center justify-center hover:bg-slate-50 transition-colors"
+          aria-label="Наверх"
+        >
+          <ChevronUp className="w-5 h-5 text-slate-600" />
+        </button>
+      )}
     </div>
   );
 }
