@@ -93,6 +93,7 @@ class Student(Base):
     portal_password_plain: Mapped[str | None] = mapped_column(String(100), nullable=True)
     email: Mapped[str | None] = mapped_column(String(200), nullable=True)
     chat_display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    public_key: Mapped[str | None] = mapped_column(Text, nullable=True)  # X25519 public key (base64) for E2E encryption
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     groups = relationship("GroupStudent", back_populates="student")

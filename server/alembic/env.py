@@ -29,6 +29,7 @@ from app.models.settings import Settings
 from app.models.schedule import Schedule
 from app.models.lead import Lead, LeadComment
 from app.models.exam_portal import ExamPortalSession, ExamTimeSlot, ExamRegistration
+from app.models.chat import ChatRoom, ChatRoomMember, ChatMessage
 
 target_metadata = Base.metadata
 

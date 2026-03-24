@@ -140,6 +140,71 @@ class StudentApiClient {
       body: JSON.stringify(data),
     });
   }
+
+  // ── Chat ──────────────────────────────────────────────────────────────────
+
+  async updatePublicKey(publicKey: string) {
+    return this.request<{ ok: boolean }>("/chat/public-key", {
+      method: "PATCH",
+      body: JSON.stringify({ public_key: publicKey }),
+    });
+  }
+
+  async getChatRooms() {
+    return this.request<ChatRoom[]>("/chat/rooms");
+  }
+
+  async getChatMessages(roomId: string, before?: string, limit = 50) {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (before) params.set("before", before);
+    return this.request<ChatMessage[]>(`/chat/rooms/${roomId}/messages?${params}`);
+  }
+
+  async markRoomRead(roomId: string) {
+    return this.request<{ ok: boolean }>(`/chat/rooms/${roomId}/read`, { method: "POST" });
+  }
+
+  async getMemberPublicKey(memberId: string, memberType = "student") {
+    return this.request<{ public_key: string }>(
+      `/chat/members/${memberId}/public-key?member_type=${memberType}`
+    );
+  }
+
+  async sendMessage(roomId: string, contentEncrypted: string, messageType = "text", replyToId?: string) {
+    return this.request<ChatMessage>(`/chat/rooms/${roomId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({
+        content_encrypted: contentEncrypted,
+        message_type: messageType,
+        ...(replyToId ? { reply_to_id: replyToId } : {}),
+      }),
+    });
+  }
+
+  async searchUsers(query: string) {
+    const params = new URLSearchParams({ q: query });
+    return this.request<ChatSearchResult[]>(`/chat/search?${params}`);
+  }
+
+  async getOrCreateDirectRoom(otherId: string, otherType = "student") {
+    return this.request<ChatRoom>("/chat/rooms/direct", {
+      method: "POST",
+      body: JSON.stringify({ other_id: otherId, other_type: otherType }),
+    });
+  }
+
+  async updateRoomKey(roomId: string, memberId: string, memberType: string, roomKeyEncrypted: string) {
+    return this.request<{ ok: boolean }>(`/chat/rooms/${roomId}/room-key`, {
+      method: "PATCH",
+      body: JSON.stringify({ member_id: memberId, member_type: memberType, room_key_encrypted: roomKeyEncrypted }),
+    });
+  }
+
+  getWsUrl(): string {
+    const base = (import.meta.env.VITE_API_URL ?? "http://localhost:8000")
+      .replace(/^http/, "ws");
+    return `${base}/chat/ws?token=${this.accessToken ?? ""}`;
+  }
 }
 
 export const api = new StudentApiClient();
@@ -223,6 +288,53 @@ export interface PortalSubject {
   id: string;
   name: string;
   exam_type: string | null;
+}
+
+// ── Chat types ────────────────────────────────────────────────────────────
+
+export interface ChatMember {
+  member_id: string;
+  member_type: string;
+  name: string;
+  public_key: string | null;
+  room_key_encrypted: string | null; // only returned for current user
+  is_online: boolean;
+  last_seen_at: string | null; // ISO datetime
+  last_read_at: string | null; // ISO datetime
+}
+
+export interface ChatRoom {
+  id: string;
+  room_type: "group" | "direct";
+  group_id: string | null;
+  name: string | null;
+  created_at: string;
+  members: ChatMember[];
+  last_message: { content_encrypted: string; created_at: string; sender_type: string } | null;
+  unread_count: number;
+}
+
+export interface ChatSearchResult {
+  id: string;
+  member_type: string;
+  name: string;
+  portal_login: string | null;
+  phone: string | null;
+  public_key: string | null;
+}
+
+export interface ChatMessage {
+  id: string;
+  room_id: string;
+  sender_id: string;
+  sender_type: string;
+  sender_name: string;
+  content_encrypted: string;
+  message_type: string;
+  file_url: string | null;
+  reply_to_id: string | null;
+  is_deleted: boolean;
+  created_at: string;
 }
 
 export interface ExamResult {

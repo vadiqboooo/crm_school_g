@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
+import { initCryptoKeys } from "../lib/crypto";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -16,7 +17,14 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      await api.login(login.trim(), password);
+      const data = await api.login(login.trim(), password);
+      // Derive crypto keys from password immediately after login —
+      // so the chat opens without any extra password prompt.
+      const kp = await initCryptoKeys(password, data.student_id);
+      sessionStorage.setItem("s_chat_priv", kp.privateKey);
+      sessionStorage.setItem("s_chat_pub", kp.publicKey);
+      // Update public key on server (fire-and-forget, don't block navigation)
+      api.updatePublicKey(kp.publicKey).catch(() => {});
       navigate("/");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Ошибка входа");
