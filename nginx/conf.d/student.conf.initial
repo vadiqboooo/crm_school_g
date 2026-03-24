@@ -1,0 +1,22 @@
+# Initial configuration for obtaining SSL certificate for web.rancheasy.ru
+# Use this before running certbot for the first time:
+#   1. Replace student.conf with this file content
+#   2. Restart nginx
+#   3. Run: docker compose run --rm certbot certonly --webroot -w /var/www/certbot -d web.rancheasy.ru
+#   4. Restore student.conf and restart nginx
+
+server {
+    listen 80;
+    server_name web.rancheasy.ru;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        proxy_pass http://frontend_student:80/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
