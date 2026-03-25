@@ -5,6 +5,7 @@ export type WsIncomingMessage =
   | { type: "new_message"; message: ChatMessage }
   | { type: "typing"; room_id: string; sender_id: string; sender_name: string }
   | { type: "read_receipt"; room_id: string; reader_id: string; read_at: string | null }
+  | { type: "message_deleted"; message_id: string }
   | { type: "pong" };
 
 interface Options {

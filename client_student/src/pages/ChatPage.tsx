@@ -871,7 +871,6 @@ export default function ChatPage() {
                         onClick={() => {
                           if (isMe && !msg.is_deleted) setCtxMsgId(isCtx ? null : msg.id);
                           else setCtxMsgId(null);
-                          setShowRoomMenu(false);
                         }}
                         className={`px-3.5 py-2 rounded-2xl text-sm leading-relaxed cursor-pointer select-none ${
                           isMe
