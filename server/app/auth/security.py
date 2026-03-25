@@ -1,10 +1,32 @@
+import base64
 import hashlib
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from jose import jwt
 
 from app.config import settings
+
+
+def _fernet() -> Fernet:
+    """Возвращает Fernet instance на основе SECRET_KEY приложения."""
+    key_bytes = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(key_bytes))
+
+
+def encrypt_field(plain: str) -> str:
+    """Шифрует строку для хранения в БД."""
+    return _fernet().encrypt(plain.encode()).decode()
+
+
+def decrypt_field(value: str) -> str:
+    """Расшифровывает строку из БД. Поддерживает старые нешифрованные значения."""
+    try:
+        return _fernet().decrypt(value.encode()).decode()
+    except Exception:
+        return value  # обратная совместимость: старые plain-text значения
 
 
 def _prepare_password(password: str) -> bytes:
@@ -53,3 +75,18 @@ def decode_token(token: str) -> dict | None:
         return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
     except jwt.JWTError:
         return None
+
+
+def derive_chat_public_key(password: str, student_id: str) -> str:
+    """Derive X25519 public key from password + student_id.
+    Uses same algorithm as frontend: PBKDF2-SHA256(200k iter) → nacl.box.keyPair.
+    """
+    private_key_bytes = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        student_id.encode("utf-8"),
+        200_000,
+        dklen=32,
+    )
+    pub_bytes = X25519PrivateKey.from_private_bytes(private_key_bytes).public_key().public_bytes_raw()
+    return base64.b64encode(pub_bytes).decode("utf-8")

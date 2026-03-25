@@ -538,12 +538,15 @@ async def update_settings(
         s.portal_login = body.portal_login
 
     if body.new_password is not None and body.new_password.strip():
-        from app.auth.security import hash_password, verify_password
+        from app.auth.security import derive_chat_public_key, hash_password, verify_password
         if not body.old_password:
             raise HTTPException(status_code=400, detail="Введите старый пароль")
         if not s.portal_password_hash or not verify_password(body.old_password, s.portal_password_hash):
             raise HTTPException(status_code=400, detail="Старый пароль неверный")
+        from app.auth.security import derive_chat_public_key, encrypt_field
         s.portal_password_hash = hash_password(body.new_password)
+        s.portal_password_plain = encrypt_field(body.new_password)
+        s.public_key = derive_chat_public_key(body.new_password, str(s.id))
 
     if body.phone is not None:
         s.phone = body.phone or None

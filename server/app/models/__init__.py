@@ -11,3 +11,4 @@ from app.models.settings import Settings
 from app.models.schedule import Schedule
 from app.models.school_location import SchoolLocation
 from app.models.chat import ChatRoom, ChatRoomMember, ChatMessage
+from app.models.app_user import AppUser

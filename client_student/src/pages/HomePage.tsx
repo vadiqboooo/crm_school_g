@@ -1,19 +1,34 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import BottomNav from "../components/BottomNav";
-import { api, TodayLesson, Performance, StudentProfile } from "../lib/api";
+import { api, TodayLesson, StudentProfile, MyRegistration } from "../lib/api";
 
-interface StoredStudent { id: string; first_name: string; last_name: string; }
-
+const MONTH_SHORT = ["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"];
 const DAY_JS_TO_RU: Record<number, string> = {
   0: "Воскресенье", 1: "Понедельник", 2: "Вторник", 3: "Среда",
   4: "Четверг", 5: "Пятница", 6: "Суббота",
 };
-const DAY_SHORT: Record<number, string> = {
-  0: "Вс", 1: "Пн", 2: "Вт", 3: "Ср", 4: "Чт", 5: "Пт", 6: "Сб",
-};
-const MONTH_SHORT = ["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"];
-const BAR_COLORS = ["#7c3aed","#f59e0b","#22c55e","#3b82f6","#ec4899","#14b8a6","#f97316"];
+const DAY_SHORT: Record<number, string> = { 0:"Вс",1:"Пн",2:"Вт",3:"Ср",4:"Чт",5:"Пт",6:"Сб" };
+
+interface WeekLesson {
+  key: string;
+  groupName: string;
+  subjectName: string | null;
+  teacherName?: string | null;
+  locationName?: string | null;
+  startTime: string;
+  endTime: string;
+  isNow: boolean;
+  isToday: boolean;
+  date: Date;
+  dayLabel: string;
+}
+
+function calcEndTime(start: string, duration: number): string {
+  const [h, m] = start.split(":").map(Number);
+  const total = h * 60 + m + duration;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
 
 function getWeekDays(): Date[] {
   const today = new Date();
@@ -27,88 +42,49 @@ function getWeekDays(): Date[] {
   });
 }
 
-function fmtTime(t: string): string {
-  return t.slice(0, 5);
-}
-
-function calcEndTime(start: string, duration: number): string {
-  const [h, m] = start.split(":").map(Number);
-  const total = h * 60 + m + duration;
-  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-}
-
-interface WeekLesson {
-  key: string;
-  subject_name: string | null;
-  group_name: string;
-  start_time: string;
-  end_time: string;
-  teacher_name?: string | null;
-  location_name?: string | null;
-  is_now: boolean;
-  is_today: boolean;
-  date: Date;
-  color: string;
-}
-
-export default function HomePage() {
-  const navigate = useNavigate();
-  const student: StoredStudent = JSON.parse(localStorage.getItem("s_student") ?? "{}");
-  const [todayLessons, setTodayLessons] = useState<TodayLesson[]>([]);
-  const [perf, setPerf] = useState<Performance | null>(null);
-  const [profile, setProfile] = useState<StudentProfile | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
-
-  useEffect(() => {
-    api.getTodaySchedule().then(setTodayLessons).catch(() => {});
-    api.getPerformance().then(setPerf).catch(() => {});
-    api.getMe().then(setProfile).catch(() => {});
-  }, []);
-
-  const weekDays = getWeekDays();
+function buildWeekLessons(todayLessons: TodayLesson[], profile: StudentProfile | null): WeekLesson[] {
   const todayDate = new Date();
   todayDate.setHours(0, 0, 0, 0);
-
-  const weekLessons: WeekLesson[] = [];
-  const groupColorMap: Record<string, number> = {};
-  let colorIdx = 0;
+  const weekDays = getWeekDays();
+  const lessons: WeekLesson[] = [];
 
   weekDays.forEach(date => {
     const isToday = date.toDateString() === todayDate.toDateString();
     const dayName = DAY_JS_TO_RU[date.getDay()];
+    const dayLabel = isToday
+      ? `Сегодня, ${DAY_SHORT[date.getDay()]} ${date.getDate()} ${MONTH_SHORT[date.getMonth()]}`
+      : `${DAY_SHORT[date.getDay()]} ${date.getDate()} ${MONTH_SHORT[date.getMonth()]}`;
 
     if (isToday) {
       todayLessons.forEach(l => {
-        if (!(l.group_id in groupColorMap)) groupColorMap[l.group_id] = colorIdx++ % BAR_COLORS.length;
-        weekLessons.push({
+        lessons.push({
           key: `today-${l.group_id}-${l.start_time}`,
-          subject_name: l.subject_name,
-          group_name: l.group_name,
-          start_time: l.start_time,
-          end_time: l.end_time,
-          teacher_name: l.teacher_name,
-          location_name: l.location_name,
-          is_now: l.is_now,
-          is_today: true,
+          groupName: l.group_name,
+          subjectName: l.subject_name,
+          teacherName: l.teacher_name,
+          locationName: l.location_name,
+          startTime: l.start_time,
+          endTime: l.end_time,
+          isNow: l.is_now,
+          isToday: true,
           date,
-          color: BAR_COLORS[groupColorMap[l.group_id]],
+          dayLabel,
         });
       });
     } else if (profile) {
       profile.groups.forEach(g => {
         g.schedules.forEach(sch => {
           if (sch.day === dayName) {
-            if (!(g.id in groupColorMap)) groupColorMap[g.id] = colorIdx++ % BAR_COLORS.length;
-            weekLessons.push({
+            lessons.push({
               key: `${date.toDateString()}-${g.id}-${sch.start_time}`,
-              subject_name: g.subject,
-              group_name: g.name,
-              start_time: sch.start_time,
-              end_time: calcEndTime(sch.start_time, sch.duration),
-              is_now: false,
-              is_today: false,
+              groupName: g.name,
+              subjectName: g.subject,
+              startTime: sch.start_time,
+              endTime: calcEndTime(sch.start_time, sch.duration),
+              isNow: false,
+              isToday: false,
               date,
-              color: BAR_COLORS[groupColorMap[g.id]],
+              dayLabel,
             });
           }
         });
@@ -116,369 +92,310 @@ export default function HomePage() {
     }
   });
 
-  weekLessons.sort((a, b) => {
-    const dateDiff = a.date.getTime() - b.date.getTime();
-    return dateDiff !== 0 ? dateDiff : a.start_time.localeCompare(b.start_time);
+  return lessons.sort((a, b) => {
+    const dd = a.date.getTime() - b.date.getTime();
+    return dd !== 0 ? dd : a.startTime.localeCompare(b.startTime);
+  });
+}
+
+function fmtDate(iso: string) {
+  const d = new Date(iso);
+  return `${d.getDate()} ${MONTH_SHORT[d.getMonth()]}`;
+}
+
+function fmtTime(t: string) { return t.slice(0, 5); }
+
+const EXAM_COLORS = [
+  { bg: "bg-violet-100", text: "text-violet-700", badge: "bg-violet-200 text-violet-800", icon: "bg-violet-500" },
+  { bg: "bg-amber-50", text: "text-amber-700", badge: "bg-amber-200 text-amber-800", icon: "bg-amber-400" },
+  { bg: "bg-sky-50", text: "text-sky-700", badge: "bg-sky-200 text-sky-800", icon: "bg-sky-500" },
+  { bg: "bg-emerald-50", text: "text-emerald-700", badge: "bg-emerald-200 text-emerald-800", icon: "bg-emerald-500" },
+];
+
+// ── Student Home ──────────────────────────────────────────────────────────────
+
+function StudentHome() {
+  const navigate = useNavigate();
+  const stored = JSON.parse(localStorage.getItem("s_student") ?? "{}");
+  const [profile, setProfile] = useState<StudentProfile | null>(null);
+  const [todayLessons, setTodayLessons] = useState<TodayLesson[]>([]);
+  const [registrations, setRegistrations] = useState<MyRegistration[]>([]);
+
+  useEffect(() => {
+    api.getMe().then(setProfile).catch(() => {});
+    api.getTodaySchedule().then(setTodayLessons).catch(() => {});
+    api.getMyRegistrations().then(regs => {
+      const upcoming = regs
+        .filter(r => r.days_until >= 0)
+        .sort((a, b) => a.days_until - b.days_until);
+      setRegistrations(upcoming);
+    }).catch(() => {});
+  }, []);
+
+  const firstName = profile?.first_name ?? stored?.first_name ?? "";
+  const firstGroup = profile?.groups?.[0];
+  const nearest = registrations[0] ?? null;
+  const weekLessons = buildWeekLessons(todayLessons, profile);
+
+  // Group lessons by day for display
+  const lessonsByDay: { dayLabel: string; lessons: WeekLesson[] }[] = [];
+  weekLessons.forEach(l => {
+    const last = lessonsByDay[lessonsByDay.length - 1];
+    if (last && last.dayLabel === l.dayLabel) {
+      last.lessons.push(l);
+    } else {
+      lessonsByDay.push({ dayLabel: l.dayLabel, lessons: [l] });
+    }
   });
 
-  const weekStart = weekDays[0];
-  const weekEnd = weekDays[6];
-  const weekLabel = weekStart.getMonth() === weekEnd.getMonth()
-    ? `${weekStart.getDate()} — ${weekEnd.getDate()} ${MONTH_SHORT[weekEnd.getMonth()]}`
-    : `${weekStart.getDate()} ${MONTH_SHORT[weekStart.getMonth()]} — ${weekEnd.getDate()} ${MONTH_SHORT[weekEnd.getMonth()]}`;
-
   return (
-    <div className="bg-cream min-h-screen pb-24">
+    <div className="bg-[#f5f5fa] min-h-screen pb-28 max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="px-5 pt-12 pb-4 flex items-start justify-between">
+      <div className="px-5 pt-14 pb-4 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Привет, {student.first_name}! <span className="text-amber-400">✦</span>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            Привет, {firstName}
+            <span>👋</span>
           </h1>
-          <p className="text-gray-500 text-sm">Школа Гарри</p>
+          <p className="text-gray-500 text-sm mt-0.5">
+            {firstGroup ? `Группа «${firstGroup.name}»` : "Школа Гарри"}
+          </p>
         </div>
         <button
-          onClick={() => setShowSettings(true)}
-          className="w-10 h-10 rounded-full bg-white border border-gray-100 flex items-center justify-center shadow-sm"
+          onClick={() => navigate("/profile")}
+          className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center"
         >
-          <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" strokeWidth={2}>
+          <svg viewBox="0 0 24 24" className="w-5 h-5 text-brand-700" fill="none" stroke="currentColor" strokeWidth={2}>
             <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
           </svg>
         </button>
       </div>
 
       <div className="px-5 space-y-5">
-        {/* Stats card */}
-        {perf && (
-          <div className="bg-white rounded-2xl p-4 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold text-gray-900">Успеваемость</h2>
-              <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-medium">
-                ↗ {perf.attendance_percent.toFixed(0)}% посещ.
-              </span>
+        {/* Nearest exam card */}
+        {nearest && (
+          <div className="rounded-2xl bg-gradient-to-br from-brand-700 to-purple-500 p-5 text-white">
+            <div className="flex items-center gap-1.5 mb-3">
+              <span className="text-orange-300 text-sm">🔥</span>
+              <span className="text-xs font-semibold text-white/80 uppercase tracking-wider">Ближайший экзамен</span>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <StatCard value={`${perf.attendance_percent.toFixed(0)}%`} label="Посещаемость" color="bg-brand-100 text-brand-700" />
-              <StatCard value={String(perf.homework_done)} label="Д/З выполнено" color="bg-amber-100 text-amber-600" />
-              <StatCard value={String(perf.subjects_count)} label="Предметов" color="bg-violet-100 text-violet-600" />
+            <div className="text-xl font-bold mb-1">{nearest.exam_title}</div>
+            <div className="text-sm text-white/80 mb-4">
+              {fmtDate(nearest.date)} · через {nearest.days_until} {nearest.days_until === 1 ? "день" : nearest.days_until < 5 ? "дня" : "дней"}
+            </div>
+            <button
+              onClick={() => navigate("/exams")}
+              className="bg-white/20 border border-white/30 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-white/30 transition"
+            >
+              Подробнее →
+            </button>
+          </div>
+        )}
+
+        {/* My exams */}
+        {registrations.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-bold text-gray-900">Мои экзамены</h2>
+              <button onClick={() => navigate("/exams")} className="text-sm text-brand-700 font-medium">Все →</button>
+            </div>
+            <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1">
+              {registrations.slice(0, 4).map((reg, i) => {
+                const c = EXAM_COLORS[i % EXAM_COLORS.length];
+                return (
+                  <div key={reg.id} className={`${c.bg} rounded-2xl p-4 min-w-[140px] flex-shrink-0`}>
+                    <div className="flex items-start justify-between mb-2">
+                      <div className={`w-9 h-9 rounded-xl ${c.icon} flex items-center justify-center`}>
+                        <svg viewBox="0 0 24 24" className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <rect x="5" y="2" width="14" height="20" rx="2" /><line x1="9" y1="7" x2="15" y2="7" /><line x1="9" y1="11" x2="15" y2="11" />
+                        </svg>
+                      </div>
+                      <span className={`text-xs font-bold ${c.badge} px-2 py-0.5 rounded-full`}>
+                        {reg.days_until} дн
+                      </span>
+                    </div>
+                    <div className={`text-xs font-semibold ${c.text} mb-0.5`}>
+                      {reg.exam_type ?? "Экзамен"}
+                    </div>
+                    <div className="text-sm font-bold text-gray-900 leading-tight">{reg.subject_name ?? reg.exam_title}</div>
+                    <div className="text-xs text-gray-500 mt-1">{fmtDate(reg.date)}</div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
 
-        {/* Weekly schedule */}
+        {/* Schedule */}
+        <div>
+          <h2 className="font-bold text-gray-900 mb-3">Расписание</h2>
+
+          {weekLessons.length === 0 ? (
+            <div className="bg-white rounded-2xl p-6 text-center">
+              <p className="text-gray-400 text-sm">Занятий на этой неделе нет</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {lessonsByDay.map(({ dayLabel, lessons }) => (
+                <div key={dayLabel}>
+                  <div className="text-xs font-semibold text-gray-400 mb-2 px-1">{dayLabel}</div>
+                  <div className="space-y-2">
+                    {lessons.map(l => (
+                      <div key={l.key} className="bg-white rounded-2xl px-4 py-3 flex items-center gap-4">
+                        <div className="text-right flex-shrink-0 w-14">
+                          <div className="text-sm font-bold text-gray-900">{fmtTime(l.startTime)}</div>
+                          <div className="text-xs text-gray-400">{fmtTime(l.endTime)}</div>
+                        </div>
+                        <div className="w-px h-10 bg-brand-200 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold text-gray-900 truncate">{l.groupName}</div>
+                          <div className="text-xs text-gray-400 truncate">
+                            {[l.teacherName, l.locationName].filter(Boolean).join(" · ")}
+                          </div>
+                        </div>
+                        {l.isNow && (
+                          <span className="text-[11px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full flex-shrink-0">
+                            Скоро
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <BottomNav />
+    </div>
+  );
+}
+
+// ── Guest Home (app_user without student) ─────────────────────────────────────
+
+function GuestHome() {
+  const navigate = useNavigate();
+
+  const courses = [
+    { tag: "ЕГЭ", tagColor: "bg-violet-100 text-violet-700", name: "Информатика", price: "от 4 800 ₽/мес" },
+    { tag: "ОГЭ", tagColor: "bg-amber-100 text-amber-700", name: "Математика", price: "от 3 900 ₽/мес" },
+    { tag: "ЕГЭ", tagColor: "bg-violet-100 text-violet-700", name: "Русский язык", price: "от 3 500 ₽/мес" },
+    { tag: "ОГЭ", tagColor: "bg-amber-100 text-amber-700", name: "Физика", price: "от 4 200 ₽/мес" },
+  ];
+
+  return (
+    <div className="bg-[#f5f5fa] min-h-screen pb-28 max-w-[430px] mx-auto">
+      {/* Header */}
+      <div className="px-5 pt-14 pb-4 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            Школа Гарри
+            <span className="text-amber-400">✦</span>
+          </h1>
+          <p className="text-gray-500 text-sm">Подготовка к экзаменам</p>
+        </div>
+        <button
+          onClick={() => navigate("/profile")}
+          className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center"
+        >
+          <svg viewBox="0 0 24 24" className="w-5 h-5 text-brand-700" fill="none" stroke="currentColor" strokeWidth={2}>
+            <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="px-5 space-y-6">
+        {/* Promo banner */}
+        <div className="rounded-2xl bg-gradient-to-br from-brand-700 to-purple-400 p-5 text-white">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-[11px] font-bold bg-white/20 border border-white/30 px-2.5 py-1 rounded-full tracking-wider">
+              ⭐ БЕСПЛАТНО
+            </span>
+          </div>
+          <div className="text-xl font-bold leading-snug mb-2">
+            Пробный урок<br />по любому предмету
+          </div>
+          <p className="text-sm text-white/80 mb-4">
+            Познакомьтесь с преподавателем и оцените формат обучения
+          </p>
+          <button
+            onClick={() => navigate("/chat")}
+            className="bg-white text-brand-700 text-sm font-bold px-5 py-2.5 rounded-xl hover:bg-white/90 transition"
+          >
+            Записаться →
+          </button>
+        </div>
+
+        {/* Courses */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-gray-900">Расписание на неделю</h2>
-            <span className="text-sm text-brand-700 font-medium">{weekLabel}</span>
+            <h2 className="font-bold text-gray-900">Курсы подготовки</h2>
+            <button className="text-sm text-brand-700 font-medium">Все →</button>
           </div>
-
-          <div className="space-y-2">
-            {weekLessons.length === 0 ? (
-              <div className="bg-white rounded-2xl p-4 text-center text-gray-400 text-sm shadow-sm">
-                Уроков на этой неделе нет
+          <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1">
+            {courses.map((c, i) => (
+              <div key={i} className="bg-white rounded-2xl p-4 min-w-[150px] flex-shrink-0 shadow-sm">
+                <span className={`text-[11px] font-bold ${c.tagColor} px-2 py-0.5 rounded-full`}>{c.tag}</span>
+                <div className="text-base font-bold text-gray-900 mt-2 mb-1">{c.name}</div>
+                <div className="text-xs text-gray-400 mb-3">{c.price}</div>
+                <button className="w-full bg-brand-700 text-white text-xs font-bold py-2 rounded-xl">
+                  Подробнее
+                </button>
               </div>
-            ) : weekLessons.map(lesson => (
-              <WeekLessonCard key={lesson.key} lesson={lesson} />
             ))}
           </div>
         </div>
 
-        {/* Subject progress */}
-        {perf && perf.subject_progress.length > 0 && (
-          <div>
-            <h2 className="font-semibold text-gray-900 mb-3">Прогресс по предметам</h2>
-            <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
-              {perf.subject_progress.map((sp, i) => (
-                <SubjectProgress key={i} name={sp.name} percent={sp.percent} />
-              ))}
+        {/* Career guidance */}
+        <div>
+          <h2 className="font-bold text-gray-900 mb-3">Профориентация</h2>
+          <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-start gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-400 flex items-center justify-center flex-shrink-0">
+              <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2}>
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><circle cx="12" cy="16" r="0.5" fill="currentColor" />
+              </svg>
+            </div>
+            <div>
+              <div className="font-semibold text-gray-900 text-sm">Найди свою профессию</div>
+              <div className="text-xs text-gray-500 mt-0.5">Тестирование и консультация с экспертом. Помогаем определиться с направлением.</div>
             </div>
           </div>
-        )}
+          <button
+            onClick={() => navigate("/chat")}
+            className="w-full flex items-center justify-center gap-2 border-2 border-brand-200 text-brand-700 rounded-2xl py-3 text-sm font-semibold hover:bg-brand-50 transition"
+          >
+            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}>
+              <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+            Записаться на консультацию
+          </button>
+        </div>
+
+        {/* CTA */}
+        <button
+          onClick={() => navigate("/chat")}
+          className="w-full flex items-center justify-center gap-2 bg-brand-700 text-white rounded-2xl py-4 text-sm font-bold shadow-lg shadow-brand-200 hover:bg-brand-800 transition"
+        >
+          <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}>
+            <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+          </svg>
+          Записаться на пробный урок
+        </button>
       </div>
 
       <BottomNav />
-
-      {/* Settings modal */}
-      {showSettings && profile && (
-        <ProfileModal
-          profile={profile}
-          onClose={() => setShowSettings(false)}
-          onUpdated={p => setProfile(p)}
-          onLogout={() => { api.clearTokens(); navigate("/login"); }}
-        />
-      )}
     </div>
   );
 }
 
-// ── ProfileModal ──────────────────────────────────────────────────────────────
+// ── Root ──────────────────────────────────────────────────────────────────────
 
-function ProfileModal({
-  profile,
-  onClose,
-  onUpdated,
-  onLogout,
-}: {
-  profile: StudentProfile;
-  onClose: () => void;
-  onUpdated: (p: StudentProfile) => void;
-  onLogout: () => void;
-}) {
-  const [login, setLogin] = useState(profile.portal_login ?? "");
-  const [oldPassword, setOldPassword] = useState("");
-  const [oldPasswordVerified, setOldPasswordVerified] = useState(false);
-  const [oldPasswordError, setOldPasswordError] = useState<string | null>(null);
-  const [verifying, setVerifying] = useState(false);
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [phone, setPhone] = useState(profile.phone ?? "");
-  const [email, setEmail] = useState(profile.email ?? "");
-  const [chatName, setChatName] = useState(profile.chat_display_name ?? "");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-  const overlayRef = useRef<HTMLDivElement>(null);
+export default function HomePage() {
+  const role = localStorage.getItem("s_role") ?? "student";
+  const stored = JSON.parse(localStorage.getItem("s_student") ?? "{}");
+  const hasStudentAccess = role === "student" || (role === "app_user" && stored?.student_id);
 
-  const handleVerifyOldPassword = async () => {
-    if (!oldPassword) return;
-    setVerifying(true);
-    setOldPasswordError(null);
-    try {
-      const { valid } = await api.verifyPassword(oldPassword);
-      if (valid) {
-        setOldPasswordVerified(true);
-      } else {
-        setOldPasswordError("Неверный пароль");
-      }
-    } catch {
-      setOldPasswordError("Ошибка проверки");
-    } finally {
-      setVerifying(false);
-    }
-  };
-
-  const handleSave = async () => {
-    setError(null);
-
-    if (oldPasswordVerified) {
-      if (!newPassword) { setError("Введите новый пароль"); return; }
-      if (newPassword !== confirmPassword) { setError("Пароли не совпадают"); return; }
-    }
-
-    setSaving(true);
-    try {
-      await api.updateSettings({
-        portal_login: login || undefined,
-        old_password: oldPasswordVerified ? oldPassword : undefined,
-        new_password: oldPasswordVerified ? newPassword : undefined,
-        phone,
-        email,
-        chat_display_name: chatName,
-      });
-      const updated = await api.getMe();
-      onUpdated(updated);
-      setSuccess(true);
-      setOldPassword("");
-      setOldPasswordVerified(false);
-      setNewPassword("");
-      setConfirmPassword("");
-      setTimeout(() => setSuccess(false), 2000);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div
-      ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
-      onClick={e => { if (e.target === overlayRef.current) onClose(); }}
-    >
-      <div className="w-full max-w-[430px] bg-white rounded-t-3xl p-6 pb-10 animate-slide-up">
-        {/* Handle */}
-        <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
-
-        {/* Name (read-only) */}
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-12 h-12 rounded-full bg-brand-100 flex items-center justify-center">
-            <span className="text-brand-700 font-bold text-lg">
-              {profile.first_name[0]}{profile.last_name[0]}
-            </span>
-          </div>
-          <div>
-            <div className="font-semibold text-gray-900">{profile.first_name} {profile.last_name}</div>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Аккаунт</div>
-
-          <SettingsField label="Логин" value={login} onChange={setLogin} placeholder="Введите логин" />
-
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mt-4 mb-1">Смена пароля</div>
-
-          {!oldPasswordVerified ? (
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Старый пароль</label>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={oldPassword}
-                  onChange={e => { setOldPassword(e.target.value); setOldPasswordError(null); }}
-                  placeholder="Введите текущий пароль"
-                  className={`flex-1 border rounded-xl px-3 py-2.5 text-sm outline-none transition-colors ${
-                    oldPasswordError ? "border-red-300 bg-gray-50" : "border-gray-200 bg-gray-50 focus:border-brand-400"
-                  }`}
-                  onKeyDown={e => { if (e.key === "Enter") handleVerifyOldPassword(); }}
-                />
-                <button
-                  type="button"
-                  onClick={handleVerifyOldPassword}
-                  disabled={!oldPassword || verifying}
-                  className="px-4 py-2.5 bg-brand-700 text-white rounded-xl text-sm font-medium disabled:opacity-40 shrink-0"
-                >
-                  {verifying ? "..." : "Далее"}
-                </button>
-              </div>
-              {oldPasswordError && <p className="text-red-500 text-xs mt-1">{oldPasswordError}</p>}
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center gap-2 text-sm text-emerald-600 font-medium">
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-                  <path d="M20 6L9 17l-5-5" />
-                </svg>
-                Старый пароль подтверждён
-                <button type="button" onClick={() => { setOldPasswordVerified(false); setOldPassword(""); setNewPassword(""); setConfirmPassword(""); }} className="ml-auto text-xs text-gray-400 underline">Отмена</button>
-              </div>
-              <SettingsField label="Новый пароль" value={newPassword} onChange={setNewPassword} placeholder="Новый пароль" type="password" />
-              <SettingsField label="Подтверждение" value={confirmPassword} onChange={setConfirmPassword} placeholder="Повторите новый пароль" type="password" error={confirmPassword.length > 0 && newPassword !== confirmPassword ? "Пароли не совпадают" : undefined} />
-            </>
-          )}
-
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mt-4 mb-1">Контакты</div>
-
-          <SettingsField label="Телефон" value={phone} onChange={setPhone} placeholder="+7..." type="tel" />
-          <SettingsField label="Email" value={email} onChange={setEmail} placeholder="example@mail.ru" type="email" />
-
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mt-4 mb-1">Чат</div>
-
-          <SettingsField label="Имя в чате" value={chatName} onChange={setChatName} placeholder="Как вас называть в чате" disabled />
-        </div>
-
-        {error && <p className="text-red-500 text-sm mt-3">{error}</p>}
-        {success && <p className="text-emerald-600 text-sm mt-3">Сохранено!</p>}
-
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="mt-5 w-full bg-brand-700 text-white rounded-2xl py-3.5 font-semibold text-sm disabled:opacity-60"
-        >
-          {saving ? "Сохранение..." : "Сохранить"}
-        </button>
-
-        <button
-          onClick={onLogout}
-          className="mt-3 w-full text-red-500 text-sm font-semibold py-2"
-        >
-          Выйти из аккаунта
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function SettingsField({
-  label, value, onChange, placeholder, type = "text", disabled = false, error,
-}: {
-  label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; disabled?: boolean; error?: string;
-}) {
-  return (
-    <div>
-      <label className="block text-xs text-gray-500 mb-1">{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        disabled={disabled}
-        className={`w-full border rounded-xl px-3 py-2.5 text-sm outline-none transition-colors ${
-          disabled
-            ? "bg-gray-100 border-gray-100 text-gray-400 cursor-not-allowed"
-            : error
-            ? "bg-gray-50 border-red-300 text-gray-900 focus:border-red-400"
-            : "bg-gray-50 border-gray-200 text-gray-900 focus:border-brand-400"
-        }`}
-      />
-      {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
-    </div>
-  );
-}
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-function StatCard({ value, label, color }: { value: string; label: string; color: string }) {
-  return (
-    <div className={`${color} rounded-xl p-3 text-center`}>
-      <div className="text-xl font-bold">{value}</div>
-      <div className="text-[11px] mt-0.5 opacity-80">{label}</div>
-    </div>
-  );
-}
-
-function WeekLessonCard({ lesson }: { lesson: WeekLesson }) {
-  return (
-    <div className={`bg-white rounded-2xl p-4 shadow-sm flex gap-3 ${
-      lesson.is_today ? "border-2 border-brand-700/30" : ""
-    }`}>
-      {/* Left: day + date + time */}
-      <div className="text-center min-w-[32px] shrink-0">
-        <div className="text-[11px] text-gray-400 font-medium">{DAY_SHORT[lesson.date.getDay()]}</div>
-        <div className="text-lg font-bold text-gray-900 leading-tight">{lesson.date.getDate()}</div>
-        <div className="text-xs text-gray-400 mt-0.5">{fmtTime(lesson.start_time)}</div>
-      </div>
-
-      {/* Colored bar */}
-      <div className="w-1 rounded self-stretch shrink-0" style={{ backgroundColor: lesson.color }} />
-
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-2">
-          <span className="font-semibold text-gray-900 text-sm leading-snug">
-            {lesson.subject_name ?? lesson.group_name}
-          </span>
-          <div className="flex gap-1 shrink-0">
-            {lesson.is_now && (
-              <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Сейчас</span>
-            )}
-            {lesson.is_today && !lesson.is_now && (
-              <span className="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-medium">Сегодня</span>
-            )}
-          </div>
-        </div>
-        {(lesson.teacher_name || lesson.location_name) && (
-          <div className="text-xs text-gray-400 mt-0.5">
-            {[lesson.teacher_name, lesson.location_name].filter(Boolean).join(" · ")}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function SubjectProgress({ name, percent }: { name: string; percent: number }) {
-  const color = percent >= 80 ? "#22c55e" : percent >= 60 ? "#f59e0b" : "#7c3aed";
-  return (
-    <div>
-      <div className="flex items-center justify-between text-sm mb-1">
-        <span className="text-gray-700 font-medium">{name}</span>
-        <span className="font-semibold" style={{ color }}>{percent}%</span>
-      </div>
-      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-        <div className="h-full rounded-full transition-all" style={{ width: `${percent}%`, backgroundColor: color }} />
-      </div>
-    </div>
-  );
+  return hasStudentAccess ? <StudentHome /> : <GuestHome />;
 }

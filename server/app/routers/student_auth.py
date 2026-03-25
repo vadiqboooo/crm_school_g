@@ -148,9 +148,19 @@ async def get_current_student_dep(
     db: AsyncSession = Depends(get_db),
 ) -> Student:
     payload = decode_token(credentials.credentials)
-    if not payload or payload.get("role") != "student":
+    if not payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный токен")
-    student_id = payload.get("sub")
+
+    role = payload.get("role")
+    if role == "student":
+        student_id = payload.get("sub")
+    elif role == "app_user":
+        student_id = payload.get("student_id")
+        if not student_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Аккаунт не привязан к студенту")
+    else:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный токен")
+
     result = await db.execute(select(Student).where(Student.id == uuid.UUID(student_id)))
     student = result.scalar_one_or_none()
     if not student or student.status != "active":

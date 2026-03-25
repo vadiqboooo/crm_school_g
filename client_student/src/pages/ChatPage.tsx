@@ -75,15 +75,15 @@ function getStoredStudent() {
 
 // ── Decrypt helper ─────────────────────────────────────────────────────────
 
-function decryptMsg(msg: ChatMessage, room: ChatRoom, keyPair: KeyPair, myId: string): string | null {
+function decryptMsg(msg: ChatMessage, room: ChatRoom, keyPair: KeyPair, myId: string, myMemberType: string): string | null {
   if (msg.is_deleted) return "Сообщение удалено";
   if (room.room_type === "direct") {
-    const other = room.members.find((m) => !(m.member_id === myId && m.member_type === "student"));
+    const other = room.members.find((m) => !(m.member_id === myId && m.member_type === myMemberType));
     if (!other?.public_key) return null;
     return decryptDirect(msg.content_encrypted, other.public_key, keyPair.privateKey);
   }
   if (room.room_type === "group") {
-    const myMember = room.members.find((m) => m.member_id === myId && m.member_type === "student");
+    const myMember = room.members.find((m) => m.member_id === myId && m.member_type === myMemberType);
     if (!myMember?.room_key_encrypted) return null;
     const creator = room.members.find((m) => m.member_type === "employee");
     if (!creator?.public_key) return null;
@@ -99,6 +99,7 @@ function decryptMsg(msg: ChatMessage, room: ChatRoom, keyPair: KeyPair, myId: st
 export default function ChatPage() {
   const student = getStoredStudent();
   const myId = student.id;
+  const myMemberType = (localStorage.getItem("s_role") ?? "student") === "app_user" ? "app_user" : "student";
 
   const [keyPair, setKeyPair] = useState<KeyPair | null>(() => {
     const priv = sessionStorage.getItem("s_chat_priv");
@@ -129,6 +130,11 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [typing, setTyping] = useState<TypingState>({});
+  const [ctxMsgId, setCtxMsgId] = useState<string | null>(null);
+  const [deletingRoom, setDeletingRoom] = useState(false);
+  const [swipedRoomId, setSwipedRoomId] = useState<string | null>(null);
+  const [confirmDeleteRoomId, setConfirmDeleteRoomId] = useState<string | null>(null);
+  const swipeTouchRef = useRef<{ roomId: string; startX: number } | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<ChatSearchResult[]>([]);
@@ -203,7 +209,7 @@ export default function ChatPage() {
       // Init peerReadAt from loaded room member data
       const readMap: Record<string, string | null> = {};
       data.forEach((room) => {
-        const other = room.members.find((m) => !(m.member_id === myId && m.member_type === "student"));
+        const other = room.members.find((m) => !(m.member_id === myId && m.member_type === myMemberType));
         if (other) readMap[room.id] = other.last_read_at ?? null;
       });
       setPeerReadAt(readMap);
@@ -231,7 +237,13 @@ export default function ChatPage() {
     setHasMore(true);
     try {
       const data = await api.getChatMessages(room.id);
-      setMessages(data.map((m) => ({ ...m, text: decryptMsg(m, room, kp, myId) })));
+      const loaded = data.map((m) => ({ ...m, text: decryptMsg(m, room, kp, myId, myMemberType) }));
+      const loadedIds = new Set(loaded.map((m) => m.id));
+      // Merge: preserve any messages that arrived (via WS or send) while we were loading
+      setMessages((prev) => {
+        const newArrivals = prev.filter((m) => !loadedIds.has(m.id));
+        return [...loaded, ...newArrivals];
+      });
       setHasMore(data.length === 50);
     } finally {
       setLoadingMessages(false);
@@ -243,7 +255,7 @@ export default function ChatPage() {
     const oldest = messages[0].created_at;
     const data = await api.getChatMessages(selectedRoom.id, oldest);
     if (data.length === 0) { setHasMore(false); return; }
-    setMessages((prev) => [...data.map((m) => ({ ...m, text: decryptMsg(m, selectedRoom, keyPair, myId) })), ...prev]);
+    setMessages((prev) => [...data.map((m) => ({ ...m, text: decryptMsg(m, selectedRoom, keyPair, myId, myMemberType) })), ...prev]);
     setHasMore(data.length === 50);
   };
 
@@ -289,6 +301,9 @@ export default function ChatPage() {
       (msg) => {
         if (msg.type === "new_message") {
           const incoming = msg.message;
+          // Use refs for selectedRoom/keyPair — avoids stale closure on newly opened rooms
+          const activeRoom = selectedRoomRef.current;
+          const activeKeyPair = keyPairRef.current;
           setRooms((prev) => prev.map((r) => {
             if (r.id !== incoming.room_id) return r;
             return {
@@ -298,13 +313,13 @@ export default function ChatPage() {
                 created_at: incoming.created_at,
                 sender_type: incoming.sender_type,
               },
-              unread_count: selectedRoom?.id === r.id ? 0 : (r.unread_count ?? 0) + 1,
+              unread_count: activeRoom?.id === r.id ? 0 : (r.unread_count ?? 0) + 1,
             };
           }));
-          if (selectedRoom?.id === incoming.room_id && keyPair) {
+          if (activeRoom?.id === incoming.room_id && activeKeyPair) {
             // Use latest rooms data from ref (may have fresher public keys than closure)
-            const currentRoom = roomsRef.current.find((r) => r.id === incoming.room_id) ?? selectedRoom;
-            const text = decryptMsg(incoming, currentRoom, keyPair, myId);
+            const currentRoom = roomsRef.current.find((r) => r.id === incoming.room_id) ?? activeRoom;
+            const text = decryptMsg(incoming, currentRoom, activeKeyPair, myId, myMemberType);
             setMessages((prev) => {
               if (prev.some((m) => m.id === incoming.id)) return prev;
               return [...prev, { ...incoming, text }];
@@ -315,7 +330,7 @@ export default function ChatPage() {
                 setRooms(fresh);
                 const freshRoom = fresh.find((r) => r.id === incoming.room_id);
                 if (freshRoom) {
-                  const freshText = decryptMsg(incoming, freshRoom, keyPair, myId);
+                  const freshText = decryptMsg(incoming, freshRoom, activeKeyPair, myId, myMemberType);
                   setMessages((prev) =>
                     prev.map((m) => m.id === incoming.id ? { ...m, text: freshText } : m)
                   );
@@ -324,6 +339,15 @@ export default function ChatPage() {
             }
             sendRead(incoming.room_id);
           }
+        }
+        if (msg.type === "message_deleted") {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === msg.message_id
+                ? { ...m, is_deleted: true, text: "Сообщение удалено", content_encrypted: "" }
+                : m
+            )
+          );
         }
         if (msg.type === "read_receipt") {
           setPeerReadAt((prev) => ({ ...prev, [msg.room_id]: msg.read_at }));
@@ -339,7 +363,7 @@ export default function ChatPage() {
           }, 3000);
         }
       },
-      [selectedRoom, keyPair, myId]
+      [myId]
     ),
   });
 
@@ -363,7 +387,7 @@ export default function ChatPage() {
     try {
       let encrypted: string;
       if (selectedRoom.room_type === "direct") {
-        const other = selectedRoom.members.find((m) => !(m.member_id === myId && m.member_type === "student"));
+        const other = selectedRoom.members.find((m) => !(m.member_id === myId && m.member_type === myMemberType));
         if (!other?.public_key) {
           setSendError("Собеседник ещё не открыл чат. Попросите его зайти в раздел Чат.");
           setInputText(text);
@@ -371,7 +395,7 @@ export default function ChatPage() {
         }
         encrypted = encryptDirect(text, other.public_key, keyPair.privateKey);
       } else {
-        const myMember = selectedRoom.members.find((m) => m.member_id === myId && m.member_type === "student");
+        const myMember = selectedRoom.members.find((m) => m.member_id === myId && m.member_type === myMemberType);
         if (!myMember?.room_key_encrypted) {
           setSendError("Ключ комнаты не найден. Обратитесь к преподавателю.");
           setInputText(text);
@@ -405,6 +429,48 @@ export default function ChatPage() {
     }
   };
 
+  const handleDeleteMessage = async (msgId: string) => {
+    setCtxMsgId(null);
+    try {
+      await api.deleteMessage(msgId);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msgId
+            ? { ...m, is_deleted: true, text: "Сообщение удалено", content_encrypted: "" }
+            : m
+        )
+      );
+    } catch { /* ignore */ }
+  };
+
+  const handleDeleteRoom = async (roomId: string) => {
+    setDeletingRoom(true);
+    setConfirmDeleteRoomId(null);
+    setSwipedRoomId(null);
+    try {
+      await api.leaveRoom(roomId);
+      setRooms((prev) => prev.filter((r) => r.id !== roomId));
+      if (selectedRoom?.id === roomId) setSelectedRoom(null);
+    } catch { /* ignore */ } finally {
+      setDeletingRoom(false);
+    }
+  };
+
+  const handleSwipeTouchStart = (e: React.TouchEvent, roomId: string) => {
+    swipeTouchRef.current = { roomId, startX: e.touches[0].clientX };
+  };
+
+  const handleSwipeTouchEnd = (e: React.TouchEvent, roomId: string) => {
+    if (!swipeTouchRef.current || swipeTouchRef.current.roomId !== roomId) return;
+    const deltaX = e.changedTouches[0].clientX - swipeTouchRef.current.startX;
+    swipeTouchRef.current = null;
+    if (deltaX < -50) {
+      setSwipedRoomId(roomId);
+    } else if (deltaX > 20) {
+      setSwipedRoomId(null);
+    }
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputText(e.target.value);
     if (selectedRoom) {
@@ -427,7 +493,7 @@ export default function ChatPage() {
     if (room.name) return room.name;
     if (room.room_type === "direct") {
       const other = room.members.find(
-        (m) => !(m.member_id === myId && m.member_type === "student")
+        (m) => !(m.member_id === myId && m.member_type === myMemberType)
       );
       return other?.name ?? "Личный чат";
     }
@@ -581,6 +647,7 @@ export default function ChatPage() {
             <p className="text-gray-400 text-xs">Преподаватель добавит вас в групповой чат.</p>
           </div>
         ) : (
+          <>
           <ul className="flex-1 bg-white divide-y divide-gray-50">
             {rooms.map((room) => {
               const name = getRoomDisplayName(room);
@@ -588,13 +655,39 @@ export default function ChatPage() {
                 ? formatTime(room.last_message.created_at)
                 : "";
               const otherMember = room.room_type === "direct"
-                ? room.members.find((m) => !(m.member_id === myId && m.member_type === "student"))
+                ? room.members.find((m) => !(m.member_id === myId && m.member_type === myMemberType))
                 : null;
+              const isSwiped = swipedRoomId === room.id;
               return (
-                <li key={room.id}>
-                  <button
-                    onClick={() => setSelectedRoom(room)}
-                    className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition text-left"
+                <li
+                  key={room.id}
+                  className="relative overflow-hidden"
+                  onTouchStart={(e) => handleSwipeTouchStart(e, room.id)}
+                  onTouchEnd={(e) => handleSwipeTouchEnd(e, room.id)}
+                >
+                  {/* Delete button revealed on swipe */}
+                  <div className="absolute right-0 top-0 bottom-0 w-20 bg-red-500 flex items-center justify-center">
+                    <button
+                      onClick={() => setConfirmDeleteRoomId(room.id)}
+                      className="flex flex-col items-center gap-1 text-white"
+                    >
+                      <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" />
+                      </svg>
+                      <span className="text-[10px] font-medium">Удалить</span>
+                    </button>
+                  </div>
+                  {/* Sliding content */}
+                  <div
+                    style={{
+                      transform: `translateX(${isSwiped ? -80 : 0}px)`,
+                      transition: "transform 0.2s ease",
+                    }}
+                    onClick={() => {
+                      if (isSwiped) { setSwipedRoomId(null); return; }
+                      setSelectedRoom(room);
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3.5 bg-white cursor-pointer"
                   >
                     <div className="relative flex-shrink-0">
                       <div className={`w-12 h-12 rounded-full ${avatarColor(name)} flex items-center justify-center`}>
@@ -622,11 +715,37 @@ export default function ChatPage() {
                         )}
                       </div>
                     </div>
-                  </button>
+                  </div>
                 </li>
               );
             })}
           </ul>
+
+          {/* Confirm delete dialog */}
+          {confirmDeleteRoomId && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6">
+              <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+                <h3 className="font-bold text-gray-900 text-base mb-2">Удалить чат?</h3>
+                <p className="text-sm text-gray-500 mb-6">Чат будет удалён из вашего списка. Это действие нельзя отменить.</p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setConfirmDeleteRoomId(null); setSwipedRoomId(null); }}
+                    className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    onClick={() => handleDeleteRoom(confirmDeleteRoomId)}
+                    disabled={deletingRoom}
+                    className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition disabled:opacity-50"
+                  >
+                    {deletingRoom ? "Удаление..." : "Удалить"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          </>
         )}
         <BottomNav chatUnread={totalUnread} />
       </div>
@@ -668,7 +787,7 @@ export default function ChatPage() {
                   </>
                 ) : selectedRoom.room_type === "direct" ? (() => {
                   const other = selectedRoom.members.find(
-                    (m) => !(m.member_id === myId && m.member_type === "student")
+                    (m) => !(m.member_id === myId && m.member_type === myMemberType)
                   );
                   return other ? (
                     <>
@@ -689,7 +808,10 @@ export default function ChatPage() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 pt-[88px] pb-[80px]">
+      <div
+        className="flex-1 overflow-y-auto px-4 pt-[88px] pb-[80px]"
+        onClick={() => setCtxMsgId(null)}
+      >
         {/* Load more */}
         {hasMore && messages.length > 0 && (
           <div className="flex justify-center py-3">
@@ -722,7 +844,8 @@ export default function ChatPage() {
               </div>
 
               {dayMsgs.map((msg) => {
-                const isMe = msg.sender_id === myId && msg.sender_type === "student";
+                const isMe = msg.sender_id === myId && msg.sender_type === myMemberType;
+                const isCtx = ctxMsgId === msg.id;
                 return (
                   <div
                     key={msg.id}
@@ -745,19 +868,35 @@ export default function ChatPage() {
                         </span>
                       )}
                       <div
-                        className={`px-3.5 py-2 rounded-2xl text-sm leading-relaxed ${
+                        onClick={() => {
+                          if (isMe && !msg.is_deleted) setCtxMsgId(isCtx ? null : msg.id);
+                          else setCtxMsgId(null);
+                          setShowRoomMenu(false);
+                        }}
+                        className={`px-3.5 py-2 rounded-2xl text-sm leading-relaxed cursor-pointer select-none ${
                           isMe
                             ? "bg-brand-700 text-white rounded-br-sm"
                             : "bg-white text-gray-900 shadow-sm rounded-bl-sm"
                         }`}
                       >
-                        {msg.text === null
-                          ? <span className="italic opacity-60 text-xs">🔒 Не удалось расшифровать</span>
-                          : msg.text}
+                        {msg.is_deleted
+                          ? <span className="italic opacity-60 text-xs">Сообщение удалено</span>
+                          : msg.text === null
+                            ? <span className="italic opacity-60 text-xs">🔒 Не удалось расшифровать</span>
+                            : msg.text}
                       </div>
+                      {/* Delete button for own messages */}
+                      {isCtx && isMe && !msg.is_deleted && (
+                        <button
+                          onClick={() => handleDeleteMessage(msg.id)}
+                          className="mt-1 text-xs text-red-500 bg-white border border-red-100 rounded-xl px-3 py-1 shadow-sm hover:bg-red-50 transition"
+                        >
+                          Удалить
+                        </button>
+                      )}
                       <span className={`text-[10px] mt-0.5 px-1 flex items-center gap-0.5 ${isMe ? "text-gray-400" : "text-gray-300"}`}>
                         {formatTime(msg.created_at)}
-                        {isMe && (() => {
+                        {isMe && !msg.is_deleted && (() => {
                           const isSending = sendingIds.has(msg.id);
                           const peerRead = peerReadAt[msg.room_id];
                           const isRead = peerRead != null && new Date(msg.created_at) <= new Date(peerRead);

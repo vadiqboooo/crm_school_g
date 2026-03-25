@@ -7,6 +7,7 @@ from app.routers.student_auth import router as student_auth_router
 from app.routers.student_portal import router as student_portal_router
 from app.routers.exam_sessions import router as exam_sessions_router, students_router as portal_creds_router
 from app.routers.chat import router as chat_router
+from app.routers.app_users import router as app_users_router, auth_router as app_auth_router
 
 app = FastAPI(title="CRM School API", version="1.0.0")
 
@@ -47,6 +48,8 @@ app.include_router(student_portal_router)
 app.include_router(exam_sessions_router)
 app.include_router(portal_creds_router)
 app.include_router(chat_router)
+app.include_router(app_users_router)
+app.include_router(app_auth_router)
 
 
 @app.get("/")

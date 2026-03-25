@@ -17,6 +17,7 @@ class RoomType(str, enum.Enum):
 class MemberType(str, enum.Enum):
     student = "student"
     employee = "employee"
+    app_user = "app_user"
 
 
 class MessageType(str, enum.Enum):

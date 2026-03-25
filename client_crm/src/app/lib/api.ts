@@ -45,6 +45,9 @@ import type {
   SubscriptionPlanUpdate,
   ExamRegistrationItem,
   PortalCredential,
+  AppUser,
+  AppUserCreate,
+  AppUserUpdate,
 } from "../types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -976,6 +979,41 @@ class ApiClient {
 
   async generateAllCredentials(): Promise<PortalCredential[]> {
     return this.request<PortalCredential[]>("/students/generate-portal-credentials-bulk", { method: "POST" });
+  }
+
+  // App Users
+  async getAppUsers(): Promise<AppUser[]> {
+    return this.request<AppUser[]>("/app-users/");
+  }
+
+  async createAppUser(data: AppUserCreate): Promise<AppUser> {
+    return this.request<AppUser>("/app-users/", { method: "POST", body: JSON.stringify(data) });
+  }
+
+  async updateAppUser(id: string, data: AppUserUpdate): Promise<AppUser> {
+    return this.request<AppUser>(`/app-users/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+  }
+
+  async deleteAppUser(id: string): Promise<void> {
+    await this.request<void>(`/app-users/${id}`, { method: "DELETE" });
+  }
+
+  async linkStudentToAppUser(userId: string, studentId: string): Promise<AppUser> {
+    return this.request<AppUser>(`/app-users/${userId}/link-student`, {
+      method: "POST",
+      body: JSON.stringify({ student_id: studentId }),
+    });
+  }
+
+  async unlinkStudentFromAppUser(userId: string): Promise<void> {
+    await this.request<void>(`/app-users/${userId}/link-student`, { method: "DELETE" });
+  }
+
+  async resetAppUserPassword(userId: string, newPassword: string): Promise<void> {
+    await this.request<void>(`/app-users/${userId}/reset-password`, {
+      method: "POST",
+      body: JSON.stringify({ new_password: newPassword }),
+    });
   }
 }
 

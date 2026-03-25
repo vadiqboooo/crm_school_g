@@ -17,6 +17,7 @@ class StudentApiClient {
     localStorage.removeItem("s_access_token");
     localStorage.removeItem("s_refresh_token");
     localStorage.removeItem("s_student");
+    localStorage.removeItem("s_role");
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -34,7 +35,9 @@ class StudentApiClient {
     let res = await doFetch(this.accessToken);
 
     if (res.status === 401 && this.refreshToken) {
-      const refreshRes = await fetch(`${API_URL}/student-auth/refresh`, {
+      const role = localStorage.getItem("s_role") ?? "student";
+      const refreshEndpoint = role === "app_user" ? "/app-auth/refresh" : "/student-auth/refresh";
+      const refreshRes = await fetch(`${API_URL}${refreshEndpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: this.refreshToken }),
@@ -59,22 +62,65 @@ class StudentApiClient {
     return res.json();
   }
 
-  // Auth
-  async login(login: string, password: string) {
-    const data = await this.request<{
-      access_token: string; refresh_token: string;
-      student_id: string; first_name: string; last_name: string;
-    }>("/student-auth/login", {
+  // Auth — unified login: tries student first, then app_user
+  async login(login: string, password: string): Promise<{
+    access_token: string; refresh_token: string;
+    student_id: string; first_name: string; last_name: string;
+    role: "student" | "app_user";
+    linked_student_id: string | null;
+  }> {
+    // Try student login first
+    const studentRes = await fetch(`${API_URL}/student-auth/login`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ login, password }),
     });
-    this.setTokens(data.access_token, data.refresh_token);
-    localStorage.setItem("s_student", JSON.stringify({
-      id: data.student_id,
-      first_name: data.first_name,
-      last_name: data.last_name,
-    }));
-    return data;
+
+    if (studentRes.ok) {
+      const data = await studentRes.json();
+      this.setTokens(data.access_token, data.refresh_token);
+      localStorage.setItem("s_role", "student");
+      localStorage.setItem("s_student", JSON.stringify({
+        id: data.student_id,
+        first_name: data.first_name,
+        last_name: data.last_name,
+        role: "student",
+      }));
+      return { ...data, role: "student", linked_student_id: null };
+    }
+
+    // Try app_user login
+    const appRes = await fetch(`${API_URL}/app-auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ login, password }),
+    });
+
+    if (appRes.ok) {
+      const data = await appRes.json();
+      this.setTokens(data.access_token, data.refresh_token);
+      localStorage.setItem("s_role", "app_user");
+      localStorage.setItem("s_student", JSON.stringify({
+        id: data.user_id,
+        first_name: data.display_name,
+        last_name: "",
+        role: "app_user",
+        student_id: data.student_id ?? null,
+      }));
+      return {
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+        student_id: data.student_id ?? data.user_id,
+        first_name: data.display_name,
+        last_name: "",
+        role: "app_user",
+        linked_student_id: data.student_id ?? null,
+      };
+    }
+
+    // Both failed — show the original student error
+    const err = await studentRes.json().catch(() => ({ detail: "Неверный логин или пароль" }));
+    throw new Error(err.detail ?? "Неверный логин или пароль");
   }
 
   // Profile
@@ -198,6 +244,14 @@ class StudentApiClient {
       method: "PATCH",
       body: JSON.stringify({ member_id: memberId, member_type: memberType, room_key_encrypted: roomKeyEncrypted }),
     });
+  }
+
+  async deleteMessage(messageId: string) {
+    return this.request<{ ok: boolean }>(`/chat/messages/${messageId}`, { method: "DELETE" });
+  }
+
+  async leaveRoom(roomId: string) {
+    return this.request<{ ok: boolean }>(`/chat/rooms/${roomId}`, { method: "DELETE" });
   }
 
   getWsUrl(): string {

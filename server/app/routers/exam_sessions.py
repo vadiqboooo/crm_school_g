@@ -27,9 +27,47 @@ from app.models.exam_portal import ExamPortalSession, ExamTimeSlot, ExamRegistra
 from app.models.group import GroupStudent
 from app.models.student import Student
 from app.models.subject import Subject
+from app.models.app_user import AppUser
+from app.auth.security import derive_chat_public_key, hash_password as _hash_pw, encrypt_field, decrypt_field
 from app.routers.student_auth import (
     generate_login, generate_password, make_unique_login, hash_password
 )
+
+
+async def _ensure_app_user(
+    db: AsyncSession, student: Student, login: str, plain_password: str,
+    create_only: bool = False,
+) -> None:
+    """Создаёт или обновляет AppUser привязанный к студенту.
+
+    create_only=True — пропустить если AppUser уже существует (для bulk-операций).
+    """
+    existing = await db.execute(select(AppUser).where(AppUser.student_id == student.id))
+    app_user = existing.scalar_one_or_none()
+
+    display_name = f"{student.first_name} {student.last_name}"
+
+    if app_user:
+        if create_only:
+            return  # уже есть — не трогаем
+        # Обновить логин/пароль если изменились (одиночное создание/сброс)
+        app_user.login = login
+        app_user.password_hash = _hash_pw(plain_password)
+        app_user.password_plain = encrypt_field(plain_password)
+        app_user.display_name = display_name
+        app_user.public_key = derive_chat_public_key(plain_password, str(app_user.id))
+    else:
+        # Создать нового AppUser
+        new_user = AppUser(
+            display_name=display_name,
+            login=login,
+            password_hash=_hash_pw(plain_password),
+            password_plain=encrypt_field(plain_password),
+            student_id=student.id,
+        )
+        db.add(new_user)
+        await db.flush()  # получить id до деривации ключа
+        new_user.public_key = derive_chat_public_key(plain_password, str(new_user.id))
 
 router = APIRouter(prefix="/exam-sessions", tags=["exam-sessions"])
 students_router = APIRouter(prefix="/students", tags=["students-portal-creds"])
@@ -320,12 +358,15 @@ async def generate_portal_credentials(
         student.portal_login = login
 
     if student.portal_password_hash and student.portal_password_plain:
-        plain_password = student.portal_password_plain
+        plain_password = decrypt_field(student.portal_password_plain)
     else:
         plain_password = generate_password()
         student.portal_password_hash = hash_password(plain_password)
-        student.portal_password_plain = plain_password
+        student.portal_password_plain = encrypt_field(plain_password)
+    if not student.public_key:
+        student.public_key = derive_chat_public_key(plain_password, str(student.id))
 
+    await _ensure_app_user(db, student, login, plain_password)
     await db.commit()
 
     return PortalCredentialsResponse(
@@ -354,11 +395,14 @@ async def generate_portal_credentials_bulk(
             login = await make_unique_login(base_login, db)
             student.portal_login = login
         if student.portal_password_hash and student.portal_password_plain:
-            plain_password = student.portal_password_plain
+            plain_password = decrypt_field(student.portal_password_plain)
         else:
             plain_password = generate_password()
             student.portal_password_hash = hash_password(plain_password)
-            student.portal_password_plain = plain_password
+            student.portal_password_plain = encrypt_field(plain_password)
+        if not student.public_key:
+            student.public_key = derive_chat_public_key(plain_password, str(student.id))
+        await _ensure_app_user(db, student, login, plain_password, create_only=True)
         credentials.append({
             "student_id": str(student.id),
             "student_name": f"{student.last_name} {student.first_name}",
@@ -397,11 +441,14 @@ async def generate_group_portal_credentials(
             login = await make_unique_login(base_login, db)
             student.portal_login = login
         if student.portal_password_hash and student.portal_password_plain:
-            plain_password = student.portal_password_plain
+            plain_password = decrypt_field(student.portal_password_plain)
         else:
             plain_password = generate_password()
             student.portal_password_hash = hash_password(plain_password)
-            student.portal_password_plain = plain_password
+            student.portal_password_plain = encrypt_field(plain_password)
+        if not student.public_key:
+            student.public_key = derive_chat_public_key(plain_password, str(student.id))
+        await _ensure_app_user(db, student, login, plain_password, create_only=True)
         credentials.append({
             "student_id": str(student.id),
             "student_name": f"{student.last_name} {student.first_name}",
@@ -410,6 +457,27 @@ async def generate_group_portal_credentials(
         })
     await db.commit()
     return credentials
+
+
+@students_router.post("/backfill-chat-keys")
+async def backfill_chat_public_keys(
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Проставляет публичные ключи чата всем студентам у кого есть portal_password_plain но нет public_key."""
+    result = await db.execute(
+        select(Student).where(
+            Student.portal_password_plain.isnot(None),
+            Student.public_key.is_(None),
+        )
+    )
+    students = result.scalars().all()
+    updated = 0
+    for student in students:
+        student.public_key = derive_chat_public_key(decrypt_field(student.portal_password_plain), str(student.id))
+        updated += 1
+    await db.commit()
+    return {"updated": updated}
 
 
 # ── Helper ─────────────────────────────────────────────────────────────────────

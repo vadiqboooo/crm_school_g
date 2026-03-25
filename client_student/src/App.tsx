@@ -5,6 +5,7 @@ import ExamsPage from "./pages/ExamsPage";
 import ExamRegisterPage from "./pages/ExamRegisterPage";
 import ResultsPage from "./pages/ResultsPage";
 import ChatPage from "./pages/ChatPage";
+import ProfilePage from "./pages/ProfilePage";
 
 function isAuthenticated() {
   return !!localStorage.getItem("s_access_token");
@@ -23,6 +24,7 @@ function AnimatedRoutes() {
       <Route path="/exams/register" element={<ProtectedRoute><ExamRegisterPage /></ProtectedRoute>} />
       <Route path="/results" element={<ProtectedRoute><ResultsPage /></ProtectedRoute>} />
       <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

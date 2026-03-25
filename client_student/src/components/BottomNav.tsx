@@ -18,9 +18,9 @@ async function fetchAndStoreUnread() {
 }
 
 const tabs = [
-  { path: "/", label: "ГЛАВНАЯ", icon: HomeIcon },
-  { path: "/exams", label: "ЭКЗАМЕНЫ", icon: ExamIcon },
-  { path: "/chat", label: "ЧАТ", icon: ChatIcon },
+  { path: "/", label: "Главная", icon: HomeIcon },
+  { path: "/chat", label: "Чат", icon: ChatIcon },
+  { path: "/profile", label: "Профиль", icon: PersonIcon },
 ];
 
 interface BottomNavProps {
@@ -99,13 +99,10 @@ function HomeIcon({ className }: { className?: string }) {
   );
 }
 
-function ExamIcon({ className }: { className?: string }) {
+function PersonIcon({ className }: { className?: string }) {
   return (
     <svg className={`w-5 h-5 ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <rect x="5" y="2" width="14" height="20" rx="2" />
-      <line x1="9" y1="7" x2="15" y2="7" />
-      <line x1="9" y1="11" x2="15" y2="11" />
-      <line x1="9" y1="15" x2="12" y2="15" />
+      <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
     </svg>
   );
 }

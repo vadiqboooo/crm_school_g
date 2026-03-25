@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.models.chat import ChatRoom, ChatRoomMember, ChatMessage, RoomType, MemberType, MessageType
 from app.models.student import Student, StudentStatus
 from app.models.employee import Employee
+from app.models.app_user import AppUser
 
 
 async def get_member_name(db: AsyncSession, member_id: uuid.UUID, member_type: str) -> str:
@@ -17,6 +18,11 @@ async def get_member_name(db: AsyncSession, member_id: uuid.UUID, member_type: s
         s = result.scalar_one_or_none()
         if s:
             return s.chat_display_name or f"{s.first_name} {s.last_name}"
+    elif member_type == "app_user":
+        result = await db.execute(select(AppUser).where(AppUser.id == member_id))
+        u = result.scalar_one_or_none()
+        if u:
+            return u.display_name
     else:
         result = await db.execute(select(Employee).where(Employee.id == member_id))
         e = result.scalar_one_or_none()
@@ -28,6 +34,9 @@ async def get_member_name(db: AsyncSession, member_id: uuid.UUID, member_type: s
 async def get_member_public_key(db: AsyncSession, member_id: uuid.UUID, member_type: str) -> Optional[str]:
     if member_type == "student":
         result = await db.execute(select(Student.public_key).where(Student.id == member_id))
+        return result.scalar_one_or_none()
+    if member_type == "app_user":
+        result = await db.execute(select(AppUser.public_key).where(AppUser.id == member_id))
         return result.scalar_one_or_none()
     # Employees don't have public keys yet (future: CRM chat)
     return None
@@ -290,6 +299,55 @@ async def get_or_create_direct_room(
         select(ChatRoom).where(ChatRoom.id == room.id).options(selectinload(ChatRoom.members))
     )
     return result.scalar_one()
+
+
+async def soft_delete_message(
+    db: AsyncSession,
+    message_id: uuid.UUID,
+    sender_id: uuid.UUID,
+    sender_type: str,
+) -> Optional[ChatMessage]:
+    result = await db.execute(
+        select(ChatMessage).where(
+            and_(
+                ChatMessage.id == message_id,
+                ChatMessage.sender_id == sender_id,
+                ChatMessage.sender_type == sender_type,
+                ChatMessage.is_deleted == False,
+            )
+        )
+    )
+    msg = result.scalar_one_or_none()
+    if not msg:
+        return None
+    msg.is_deleted = True
+    msg.content_encrypted = ""
+    await db.commit()
+    await db.refresh(msg)
+    return msg
+
+
+async def leave_room(
+    db: AsyncSession,
+    room_id: uuid.UUID,
+    member_id: uuid.UUID,
+    member_type: str,
+) -> bool:
+    result = await db.execute(
+        select(ChatRoomMember).where(
+            and_(
+                ChatRoomMember.room_id == room_id,
+                ChatRoomMember.member_id == member_id,
+                ChatRoomMember.member_type == member_type,
+            )
+        )
+    )
+    member = result.scalar_one_or_none()
+    if not member:
+        return False
+    await db.delete(member)
+    await db.commit()
+    return True
 
 
 async def update_room_key_for_member(

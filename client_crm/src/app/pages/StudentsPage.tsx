@@ -82,7 +82,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { StudentPerformanceTab } from "../components/StudentPerformanceTab";
 import { StudentReportsPanel } from "../components/StudentReportsPanel";
-import type { Student, StudentCreate, StudentHistory, ParentRelation, WeeklyReport, GroupInfo, Schedule, Lead, SubscriptionPlan, Lesson } from "../types/api";
+import type { Student, StudentCreate, StudentHistory, ParentRelation, WeeklyReport, GroupInfo, Schedule, Lead, SubscriptionPlan, Lesson, AppUser, AppUserCreate } from "../types/api";
 
 const parentRelations: { value: ParentRelation; label: string }[] = [
   { value: "мама", label: "Мама" },
@@ -1242,7 +1242,22 @@ export function StudentsPage() {
   const isAdmin = user?.role === "admin";
   const isManager = user?.role === "manager";
 
-  const [mainTab, setMainTab] = useState<"leads" | "students" | "archive">("leads");
+  const [mainTab, setMainTab] = useState<"leads" | "students" | "archive" | "app_users">("leads");
+
+  // App Users state
+  const [appUsers, setAppUsers] = useState<AppUser[]>([]);
+  const [appUsersLoading, setAppUsersLoading] = useState(false);
+  const [appUserSearch, setAppUserSearch] = useState("");
+  const [createAppUserOpen, setCreateAppUserOpen] = useState(false);
+  const [newAppUser, setNewAppUser] = useState<AppUserCreate>({ display_name: "", login: "", password: "" });
+  const [creatingAppUser, setCreatingAppUser] = useState(false);
+  const [linkStudentDialogOpen, setLinkStudentDialogOpen] = useState(false);
+  const [linkingAppUserId, setLinkingAppUserId] = useState<string | null>(null);
+  const [linkStudentSearch, setLinkStudentSearch] = useState("");
+  const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
+  const [resetPasswordUserId, setResetPasswordUserId] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [resettingPassword, setResettingPassword] = useState(false);
   const [archivedLeads, setArchivedLeads] = useState<Lead[]>([]);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [archiveSearch, setArchiveSearch] = useState("");
@@ -1369,6 +1384,10 @@ export function StudentsPage() {
 
   useEffect(() => {
     if (mainTab === "archive") loadArchivedLeads();
+    if (mainTab === "app_users") {
+      setAppUsersLoading(true);
+      api.getAppUsers().then(setAppUsers).catch(console.error).finally(() => setAppUsersLoading(false));
+    }
   }, [mainTab]);
 
   const handleRestoreStudent = async (id: string) => {
@@ -1784,12 +1803,12 @@ export function StudentsPage() {
     );
   }
 
-  const tabLabels: Record<string, string> = { leads: "Лиды", students: "Студенты", archive: "Архив" };
+  const tabLabels: Record<string, string> = { leads: "Лиды", students: "Студенты", archive: "Архив", app_users: "Пользователи приложения" };
 
   const tabStrip = (
     <div className="flex items-center justify-between mb-5">
       <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-xl w-fit">
-        {(["leads", "students", "archive"] as const).map((tab) => (
+        {(["leads", "students", "archive", "app_users"] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setMainTab(tab)}
@@ -1806,11 +1825,12 @@ export function StudentsPage() {
           className="bg-blue-600 hover:bg-blue-700 gap-2"
           onClick={() => {
             if (mainTab === "leads") setCreateLeadOpen(true);
+            else if (mainTab === "app_users") setCreateAppUserOpen(true);
             else setCreateDialogOpen(true);
           }}
         >
           <Plus className="w-4 h-4" />
-          Добавить клиента
+          {mainTab === "app_users" ? "Добавить пользователя" : "Добавить клиента"}
         </Button>
       )}
     </div>
@@ -1836,6 +1856,281 @@ export function StudentsPage() {
               onExternalCreateClose={() => setCreateLeadOpen(false)}
             />
           </div>
+        </div>
+      ) : !selectedStudent && mainTab === "app_users" ? (
+        <div className="h-screen flex flex-col bg-background">
+          <div className="shrink-0 px-6 pt-6">
+            {tabStrip}
+            <div className="flex items-center gap-3 mb-4">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Поиск по имени или логину..."
+                  value={appUserSearch}
+                  onChange={(e) => setAppUserSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 overflow-auto px-6 pb-4">
+            {appUsersLoading ? (
+              <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Имя</TableHead>
+                    <TableHead>Логин</TableHead>
+                    <TableHead>Студент</TableHead>
+                    <TableHead>Статус</TableHead>
+                    <TableHead></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {appUsers
+                    .filter((u) =>
+                      !appUserSearch ||
+                      u.display_name.toLowerCase().includes(appUserSearch.toLowerCase()) ||
+                      u.login.toLowerCase().includes(appUserSearch.toLowerCase())
+                    )
+                    .map((u) => (
+                      <TableRow key={u.id}>
+                        <TableCell className="font-medium">{u.display_name}</TableCell>
+                        <TableCell className="text-muted-foreground font-mono text-sm">{u.login}</TableCell>
+                        <TableCell>
+                          {u.student_name ? (
+                            <span className="text-sm text-blue-600">{u.student_name}</span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Не привязан</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={u.is_active ? "default" : "secondary"}>
+                            {u.is_active ? "Активен" : "Неактивен"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon"><MoreVertical className="w-4 h-4" /></Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => {
+                                setLinkingAppUserId(u.id);
+                                setLinkStudentDialogOpen(true);
+                              }}>
+                                <UserCheck className="w-4 h-4 mr-2" />
+                                {u.student_id ? "Изменить студента" : "Привязать студента"}
+                              </DropdownMenuItem>
+                              {u.student_id && (
+                                <DropdownMenuItem onClick={async () => {
+                                  await api.unlinkStudentFromAppUser(u.id);
+                                  setAppUsers((prev) => prev.map((x) => x.id === u.id ? { ...x, student_id: null, student_name: null } : x));
+                                  toast.success("Студент отвязан");
+                                }}>
+                                  <UserPlus className="w-4 h-4 mr-2" />
+                                  Отвязать студента
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem onClick={async () => {
+                                await api.updateAppUser(u.id, { is_active: !u.is_active });
+                                setAppUsers((prev) => prev.map((x) => x.id === u.id ? { ...x, is_active: !u.is_active } : x));
+                                toast.success(u.is_active ? "Аккаунт деактивирован" : "Аккаунт активирован");
+                              }}>
+                                {u.is_active ? <XCircle className="w-4 h-4 mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
+                                {u.is_active ? "Деактивировать" : "Активировать"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => {
+                                setResetPasswordUserId(u.id);
+                                setNewPassword("");
+                                setResetPasswordDialogOpen(true);
+                              }}>
+                                <KeyRound className="w-4 h-4 mr-2" />
+                                Сбросить пароль
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-red-600"
+                                onClick={async () => {
+                                  if (!confirm(`Удалить пользователя ${u.display_name}?`)) return;
+                                  await api.deleteAppUser(u.id);
+                                  setAppUsers((prev) => prev.filter((x) => x.id !== u.id));
+                                  toast.success("Пользователь удалён");
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Удалить
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  {appUsers.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground py-12">
+                        Пользователей ещё нет
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+
+          {/* Create App User Dialog */}
+          <Dialog open={createAppUserOpen} onOpenChange={setCreateAppUserOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Новый пользователь приложения</DialogTitle>
+                <DialogDescription>Создайте аккаунт для доступа к мессенджеру</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div>
+                  <Label>Отображаемое имя *</Label>
+                  <Input
+                    value={newAppUser.display_name}
+                    onChange={(e) => setNewAppUser((p) => ({ ...p, display_name: e.target.value }))}
+                    placeholder="Имя Фамилия"
+                  />
+                </div>
+                <div>
+                  <Label>Логин *</Label>
+                  <Input
+                    value={newAppUser.login}
+                    onChange={(e) => setNewAppUser((p) => ({ ...p, login: e.target.value }))}
+                    placeholder="login123"
+                  />
+                </div>
+                <div>
+                  <Label>Пароль *</Label>
+                  <Input
+                    value={newAppUser.password}
+                    onChange={(e) => setNewAppUser((p) => ({ ...p, password: e.target.value }))}
+                    placeholder="Минимум 6 символов"
+                  />
+                </div>
+                <div>
+                  <Label>Заметки</Label>
+                  <Input
+                    value={newAppUser.notes ?? ""}
+                    onChange={(e) => setNewAppUser((p) => ({ ...p, notes: e.target.value || null }))}
+                    placeholder="Необязательно"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setCreateAppUserOpen(false)}>Отмена</Button>
+                <Button
+                  disabled={creatingAppUser || !newAppUser.display_name || !newAppUser.login || !newAppUser.password}
+                  onClick={async () => {
+                    setCreatingAppUser(true);
+                    try {
+                      const created = await api.createAppUser(newAppUser);
+                      setAppUsers((prev) => [created, ...prev]);
+                      setCreateAppUserOpen(false);
+                      setNewAppUser({ display_name: "", login: "", password: "" });
+                      toast.success("Пользователь создан");
+                    } catch (e: unknown) {
+                      toast.error(e instanceof Error ? e.message : "Ошибка");
+                    } finally {
+                      setCreatingAppUser(false);
+                    }
+                  }}
+                >
+                  {creatingAppUser ? <Loader2 className="w-4 h-4 animate-spin" /> : "Создать"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Link Student Dialog */}
+          <Dialog open={linkStudentDialogOpen} onOpenChange={setLinkStudentDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Привязать студента</DialogTitle>
+                <DialogDescription>Выберите студента для привязки к этому аккаунту</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3 py-2">
+                <Input
+                  placeholder="Поиск по имени..."
+                  value={linkStudentSearch}
+                  onChange={(e) => setLinkStudentSearch(e.target.value)}
+                />
+                <div className="max-h-60 overflow-y-auto space-y-1">
+                  {students
+                    .filter((s) => s.status === "active" && (
+                      !linkStudentSearch ||
+                      `${s.first_name} ${s.last_name}`.toLowerCase().includes(linkStudentSearch.toLowerCase())
+                    ))
+                    .map((s) => (
+                      <button
+                        key={s.id}
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-muted text-sm"
+                        onClick={async () => {
+                          if (!linkingAppUserId) return;
+                          try {
+                            const updated = await api.linkStudentToAppUser(linkingAppUserId, s.id);
+                            setAppUsers((prev) => prev.map((u) => u.id === linkingAppUserId ? updated : u));
+                            setLinkStudentDialogOpen(false);
+                            setLinkStudentSearch("");
+                            toast.success(`Студент ${s.first_name} ${s.last_name} привязан`);
+                          } catch (e: unknown) {
+                            toast.error(e instanceof Error ? e.message : "Ошибка");
+                          }
+                        }}
+                      >
+                        {s.first_name} {s.last_name}
+                        {s.portal_login && <span className="text-muted-foreground ml-2">({s.portal_login})</span>}
+                      </button>
+                    ))}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setLinkStudentDialogOpen(false)}>Отмена</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          {/* Reset Password Dialog */}
+          <Dialog open={resetPasswordDialogOpen} onOpenChange={setResetPasswordDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Сбросить пароль</DialogTitle>
+                <DialogDescription>Введите новый пароль для пользователя</DialogDescription>
+              </DialogHeader>
+              <div className="py-2">
+                <Label>Новый пароль *</Label>
+                <Input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Минимум 6 символов"
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setResetPasswordDialogOpen(false)}>Отмена</Button>
+                <Button
+                  disabled={resettingPassword || newPassword.length < 6}
+                  onClick={async () => {
+                    if (!resetPasswordUserId) return;
+                    setResettingPassword(true);
+                    try {
+                      await api.resetAppUserPassword(resetPasswordUserId, newPassword);
+                      setResetPasswordDialogOpen(false);
+                      setNewPassword("");
+                      toast.success("Пароль обновлён");
+                    } catch (e: unknown) {
+                      toast.error(e instanceof Error ? e.message : "Ошибка");
+                    } finally {
+                      setResettingPassword(false);
+                    }
+                  }}
+                >
+                  {resettingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : "Сохранить"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       ) : !selectedStudent && mainTab === "archive" ? (
         <div className="h-screen flex flex-col bg-background">

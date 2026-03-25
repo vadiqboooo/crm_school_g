@@ -973,3 +973,29 @@ export interface PortalCredential {
   portal_login: string;
   plain_password: string;
 }
+
+// App Users
+export interface AppUser {
+  id: string;
+  display_name: string;
+  login: string;
+  password_plain: string | null;
+  is_active: boolean;
+  notes: string | null;
+  student_id: string | null;
+  student_name: string | null;
+  created_at: string;
+}
+
+export interface AppUserCreate {
+  display_name: string;
+  login: string;
+  password: string;
+  notes?: string | null;
+}
+
+export interface AppUserUpdate {
+  display_name?: string;
+  notes?: string | null;
+  is_active?: boolean;
+}

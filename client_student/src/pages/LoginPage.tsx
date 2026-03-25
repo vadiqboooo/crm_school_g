@@ -18,12 +18,13 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const data = await api.login(login.trim(), password);
-      // Derive crypto keys from password immediately after login —
-      // so the chat opens without any extra password prompt.
-      const kp = await initCryptoKeys(password, data.student_id);
+      // For app_user: derive keys from their own user_id; for student: from student_id
+      const cryptoId = data.role === "app_user"
+        ? (localStorage.getItem("s_student") ? JSON.parse(localStorage.getItem("s_student")!).id : data.student_id)
+        : data.student_id;
+      const kp = await initCryptoKeys(password, cryptoId);
       sessionStorage.setItem("s_chat_priv", kp.privateKey);
       sessionStorage.setItem("s_chat_pub", kp.publicKey);
-      // Update public key on server (fire-and-forget, don't block navigation)
       api.updatePublicKey(kp.publicKey).catch(() => {});
       navigate("/");
     } catch (err: unknown) {
