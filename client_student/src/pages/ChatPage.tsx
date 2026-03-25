@@ -489,12 +489,18 @@ export default function ChatPage() {
 
   // ── Room display name ────────────────────────────────────────────────────
 
+  function isMe(m: { member_id: string; member_type: string }): boolean {
+    if (m.member_id === myId && m.member_type === myMemberType) return true;
+    // app_user with linked student: room might have been created under student identity
+    const stored = getStoredStudent() as { id: string; student_id?: string | null };
+    if (stored.student_id && m.member_id === stored.student_id && m.member_type === "student") return true;
+    return false;
+  }
+
   function getRoomDisplayName(room: ChatRoom): string {
     if (room.name) return room.name;
     if (room.room_type === "direct") {
-      const other = room.members.find(
-        (m) => !(m.member_id === myId && m.member_type === myMemberType)
-      );
+      const other = room.members.find((m) => !isMe(m));
       return other?.name ?? "Личный чат";
     }
     return "Групповой чат";
@@ -655,7 +661,7 @@ export default function ChatPage() {
                 ? formatTime(room.last_message.created_at)
                 : "";
               const otherMember = room.room_type === "direct"
-                ? room.members.find((m) => !(m.member_id === myId && m.member_type === myMemberType))
+                ? room.members.find((m) => !isMe(m))
                 : null;
               const isSwiped = swipedRoomId === room.id;
               return (
@@ -786,9 +792,7 @@ export default function ChatPage() {
                     Подключение...
                   </>
                 ) : selectedRoom.room_type === "direct" ? (() => {
-                  const other = selectedRoom.members.find(
-                    (m) => !(m.member_id === myId && m.member_type === myMemberType)
-                  );
+                  const other = selectedRoom.members.find((m) => !isMe(m));
                   return other ? (
                     <>
                       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${other.is_online ? "bg-green-400" : "bg-gray-300"}`} />

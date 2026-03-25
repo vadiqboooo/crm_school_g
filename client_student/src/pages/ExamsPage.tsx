@@ -28,7 +28,15 @@ export default function ExamsPage() {
 
   return (
     <div className="bg-cream min-h-screen pb-24">
-      <div className="px-5 pt-12 pb-2">
+      <div className="px-5 pt-12 pb-2 flex items-center gap-3">
+        <button
+          onClick={() => navigate(-1)}
+          className="w-9 h-9 flex items-center justify-center rounded-full bg-white border border-gray-100 shadow-sm flex-shrink-0"
+        >
+          <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </button>
         <h1 className="text-2xl font-bold text-gray-900">Экзамены</h1>
       </div>
 
@@ -68,7 +76,7 @@ export default function ExamsPage() {
               )}
               <div className="flex items-center gap-1.5 text-white/70 text-xs mt-1">
                 <PeopleIcon />
-                {featured.time_slots.reduce((s, sl) => s + sl.total_seats, 0)} мест
+                {featured.time_slots.reduce((s, sl) => s + sl.available_seats, 0)} свободных мест
               </div>
               <button
                 onClick={() => navigate("/exams/register")}

@@ -15,16 +15,17 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from uuid import UUID
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, get_manager_location_id
 from app.database import get_db
-from app.models.employee import Employee
+from app.models.employee import Employee, EmployeeRole
 from app.models.exam import Exam
 from app.models.exam_portal import ExamPortalSession, ExamTimeSlot, ExamRegistration
-from app.models.group import GroupStudent
+from app.models.group import GroupStudent, Group
 from app.models.student import Student
 from app.models.subject import Subject
 from app.models.app_user import AppUser
@@ -119,8 +120,9 @@ class PortalCredentialsResponse(BaseModel):
 async def list_all_registrations(
     db: AsyncSession = Depends(get_db),
     current_user: Employee = Depends(get_current_user),
+    manager_location_id: Optional[UUID] = Depends(get_manager_location_id),
 ):
-    result = await db.execute(
+    query = (
         select(ExamRegistration)
         .options(
             selectinload(ExamRegistration.student),
@@ -134,6 +136,33 @@ async def list_all_registrations(
         )
         .order_by(ExamRegistration.registered_at.desc())
     )
+
+    if manager_location_id is not None:
+        # Manager: only students in their location
+        in_location = exists(
+            select(GroupStudent.id)
+            .join(Group, GroupStudent.group_id == Group.id)
+            .where(
+                GroupStudent.student_id == ExamRegistration.student_id,
+                Group.school_location_id == manager_location_id,
+                GroupStudent.is_archived == False,
+            )
+        )
+        query = query.where(in_location)
+    elif current_user.role == EmployeeRole.teacher:
+        # Teacher: only students in their groups
+        in_group = exists(
+            select(GroupStudent.id)
+            .join(Group, GroupStudent.group_id == Group.id)
+            .where(
+                GroupStudent.student_id == ExamRegistration.student_id,
+                Group.teacher_id == current_user.id,
+                GroupStudent.is_archived == False,
+            )
+        )
+        query = query.where(in_group)
+
+    result = await db.execute(query)
     registrations = result.scalars().all()
 
     return [
@@ -385,11 +414,11 @@ async def generate_portal_credentials_bulk(
     credentials = []
     for student in students:
         if student.portal_login:
-            login = student.portal_login
-        else:
-            base_login = generate_login(student.last_name, student.first_name)
-            login = await make_unique_login(base_login, db)
-            student.portal_login = login
+            # Already has credentials — skip
+            continue
+        base_login = generate_login(student.last_name, student.first_name)
+        login = await make_unique_login(base_login, db)
+        student.portal_login = login
         plain_password = "garryschool"
         student.portal_password_hash = hash_password(plain_password)
         student.portal_password_plain = encrypt_field(plain_password)
@@ -428,11 +457,11 @@ async def generate_group_portal_credentials(
     credentials = []
     for student in students:
         if student.portal_login:
-            login = student.portal_login
-        else:
-            base_login = generate_login(student.last_name, student.first_name)
-            login = await make_unique_login(base_login, db)
-            student.portal_login = login
+            # Already has credentials — skip
+            continue
+        base_login = generate_login(student.last_name, student.first_name)
+        login = await make_unique_login(base_login, db)
+        student.portal_login = login
         plain_password = "garryschool"
         student.portal_password_hash = hash_password(plain_password)
         student.portal_password_plain = encrypt_field(plain_password)

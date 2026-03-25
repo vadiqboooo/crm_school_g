@@ -1254,6 +1254,10 @@ export function StudentsPage() {
   const [linkStudentDialogOpen, setLinkStudentDialogOpen] = useState(false);
   const [linkingAppUserId, setLinkingAppUserId] = useState<string | null>(null);
   const [linkStudentSearch, setLinkStudentSearch] = useState("");
+  const [resetPwdDialogOpen, setResetPwdDialogOpen] = useState(false);
+  const [resetPwdUserId, setResetPwdUserId] = useState<string | null>(null);
+  const [resetPwdValue, setResetPwdValue] = useState("");
+  const [resettingPwd, setResettingPwd] = useState(false);
 
   const [archivedLeads, setArchivedLeads] = useState<Lead[]>([]);
   const [archiveLoading, setArchiveLoading] = useState(false);
@@ -1938,14 +1942,10 @@ export function StudentsPage() {
                                 {u.is_active ? <XCircle className="w-4 h-4 mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
                                 {u.is_active ? "Деактивировать" : "Активировать"}
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={async () => {
-                                if (!confirm(`Сбросить пароль для ${u.display_name} на "garryschool"?`)) return;
-                                try {
-                                  await api.resetAppUserPassword(u.id, "garryschool");
-                                  toast.success("Пароль сброшен на garryschool");
-                                } catch (e: unknown) {
-                                  toast.error(e instanceof Error ? e.message : "Ошибка");
-                                }
+                              <DropdownMenuItem onClick={() => {
+                                setResetPwdUserId(u.id);
+                                setResetPwdValue("");
+                                setResetPwdDialogOpen(true);
                               }}>
                                 <KeyRound className="w-4 h-4 mr-2" />
                                 Сбросить пароль
@@ -2089,6 +2089,49 @@ export function StudentsPage() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setLinkStudentDialogOpen(false)}>Отмена</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Reset Password Dialog */}
+          <Dialog open={resetPwdDialogOpen} onOpenChange={(o) => { setResetPwdDialogOpen(o); if (!o) setResetPwdValue(""); }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Сбросить пароль</DialogTitle>
+                <DialogDescription>Введите новый пароль для пользователя</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3 py-2">
+                <Label>Новый пароль</Label>
+                <Input
+                  type="text"
+                  placeholder="Введите новый пароль"
+                  value={resetPwdValue}
+                  onChange={(e) => setResetPwdValue(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && resetPwdValue.trim() && !resettingPwd && document.getElementById("confirm-reset-pwd-btn")?.click()}
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setResetPwdDialogOpen(false)}>Отмена</Button>
+                <Button
+                  id="confirm-reset-pwd-btn"
+                  disabled={!resetPwdValue.trim() || resettingPwd}
+                  onClick={async () => {
+                    if (!resetPwdUserId) return;
+                    setResettingPwd(true);
+                    try {
+                      await api.resetAppUserPassword(resetPwdUserId, resetPwdValue.trim());
+                      toast.success("Пароль обновлён");
+                      setResetPwdDialogOpen(false);
+                      setResetPwdValue("");
+                    } catch (e: unknown) {
+                      toast.error(e instanceof Error ? e.message : "Ошибка");
+                    } finally {
+                      setResettingPwd(false);
+                    }
+                  }}
+                >
+                  {resettingPwd ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Сохранение...</> : "Сохранить"}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
