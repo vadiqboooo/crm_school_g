@@ -1254,10 +1254,7 @@ export function StudentsPage() {
   const [linkStudentDialogOpen, setLinkStudentDialogOpen] = useState(false);
   const [linkingAppUserId, setLinkingAppUserId] = useState<string | null>(null);
   const [linkStudentSearch, setLinkStudentSearch] = useState("");
-  const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
-  const [resetPasswordUserId, setResetPasswordUserId] = useState<string | null>(null);
-  const [newPassword, setNewPassword] = useState("");
-  const [resettingPassword, setResettingPassword] = useState(false);
+
   const [archivedLeads, setArchivedLeads] = useState<Lead[]>([]);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [archiveSearch, setArchiveSearch] = useState("");
@@ -1941,10 +1938,14 @@ export function StudentsPage() {
                                 {u.is_active ? <XCircle className="w-4 h-4 mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
                                 {u.is_active ? "Деактивировать" : "Активировать"}
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => {
-                                setResetPasswordUserId(u.id);
-                                setNewPassword("");
-                                setResetPasswordDialogOpen(true);
+                              <DropdownMenuItem onClick={async () => {
+                                if (!confirm(`Сбросить пароль для ${u.display_name} на "garryschool"?`)) return;
+                                try {
+                                  await api.resetAppUserPassword(u.id, "garryschool");
+                                  toast.success("Пароль сброшен на garryschool");
+                                } catch (e: unknown) {
+                                  toast.error(e instanceof Error ? e.message : "Ошибка");
+                                }
                               }}>
                                 <KeyRound className="w-4 h-4 mr-2" />
                                 Сбросить пароль
@@ -2088,46 +2089,6 @@ export function StudentsPage() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setLinkStudentDialogOpen(false)}>Отмена</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-          {/* Reset Password Dialog */}
-          <Dialog open={resetPasswordDialogOpen} onOpenChange={setResetPasswordDialogOpen}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Сбросить пароль</DialogTitle>
-                <DialogDescription>Введите новый пароль для пользователя</DialogDescription>
-              </DialogHeader>
-              <div className="py-2">
-                <Label>Новый пароль *</Label>
-                <Input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Минимум 6 символов"
-                />
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setResetPasswordDialogOpen(false)}>Отмена</Button>
-                <Button
-                  disabled={resettingPassword || newPassword.length < 6}
-                  onClick={async () => {
-                    if (!resetPasswordUserId) return;
-                    setResettingPassword(true);
-                    try {
-                      await api.resetAppUserPassword(resetPasswordUserId, newPassword);
-                      setResetPasswordDialogOpen(false);
-                      setNewPassword("");
-                      toast.success("Пароль обновлён");
-                    } catch (e: unknown) {
-                      toast.error(e instanceof Error ? e.message : "Ошибка");
-                    } finally {
-                      setResettingPassword(false);
-                    }
-                  }}
-                >
-                  {resettingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : "Сохранить"}
-                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

@@ -238,3 +238,5 @@ VITE_API_URL=http://localhost:8000
 - `certbot` — Let's Encrypt обновление
 
 PostgreSQL работает на **хосте** (не в Docker). Backend подключается через `host.docker.internal`.
+
+

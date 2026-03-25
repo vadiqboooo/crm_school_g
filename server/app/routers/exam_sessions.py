@@ -357,14 +357,10 @@ async def generate_portal_credentials(
         login = await make_unique_login(base_login, db)
         student.portal_login = login
 
-    if student.portal_password_hash and student.portal_password_plain:
-        plain_password = decrypt_field(student.portal_password_plain)
-    else:
-        plain_password = generate_password()
-        student.portal_password_hash = hash_password(plain_password)
-        student.portal_password_plain = encrypt_field(plain_password)
-    if not student.public_key:
-        student.public_key = derive_chat_public_key(plain_password, str(student.id))
+    plain_password = "garryschool"
+    student.portal_password_hash = hash_password(plain_password)
+    student.portal_password_plain = encrypt_field(plain_password)
+    student.public_key = derive_chat_public_key(plain_password, str(student.id))
 
     await _ensure_app_user(db, student, login, plain_password)
     await db.commit()
@@ -394,12 +390,9 @@ async def generate_portal_credentials_bulk(
             base_login = generate_login(student.last_name, student.first_name)
             login = await make_unique_login(base_login, db)
             student.portal_login = login
-        if student.portal_password_hash and student.portal_password_plain:
-            plain_password = decrypt_field(student.portal_password_plain)
-        else:
-            plain_password = generate_password()
-            student.portal_password_hash = hash_password(plain_password)
-            student.portal_password_plain = encrypt_field(plain_password)
+        plain_password = "garryschool"
+        student.portal_password_hash = hash_password(plain_password)
+        student.portal_password_plain = encrypt_field(plain_password)
         if not student.public_key:
             student.public_key = derive_chat_public_key(plain_password, str(student.id))
         await _ensure_app_user(db, student, login, plain_password, create_only=True)
@@ -440,12 +433,9 @@ async def generate_group_portal_credentials(
             base_login = generate_login(student.last_name, student.first_name)
             login = await make_unique_login(base_login, db)
             student.portal_login = login
-        if student.portal_password_hash and student.portal_password_plain:
-            plain_password = decrypt_field(student.portal_password_plain)
-        else:
-            plain_password = generate_password()
-            student.portal_password_hash = hash_password(plain_password)
-            student.portal_password_plain = encrypt_field(plain_password)
+        plain_password = "garryschool"
+        student.portal_password_hash = hash_password(plain_password)
+        student.portal_password_plain = encrypt_field(plain_password)
         if not student.public_key:
             student.public_key = derive_chat_public_key(plain_password, str(student.id))
         await _ensure_app_user(db, student, login, plain_password, create_only=True)
