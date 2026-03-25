@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import BottomNav from "../components/BottomNav";
-import { api, TodayLesson, StudentProfile, MyRegistration } from "../lib/api";
+import { api, TodayLesson, StudentProfile, MyRegistration, ExamSession } from "../lib/api";
 
 const MONTH_SHORT = ["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"];
 const DAY_JS_TO_RU: Record<number, string> = {
@@ -120,6 +120,7 @@ function StudentHome() {
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [todayLessons, setTodayLessons] = useState<TodayLesson[]>([]);
   const [registrations, setRegistrations] = useState<MyRegistration[]>([]);
+  const [availableSessions, setAvailableSessions] = useState<ExamSession[]>([]);
 
   useEffect(() => {
     api.getMe().then(setProfile).catch(() => {});
@@ -130,6 +131,7 @@ function StudentHome() {
         .sort((a, b) => a.days_until - b.days_until);
       setRegistrations(upcoming);
     }).catch(() => {});
+    api.getExamSessions().then(setAvailableSessions).catch(() => {});
   }, []);
 
   const firstName = profile?.first_name ?? stored?.first_name ?? "";
@@ -172,8 +174,8 @@ function StudentHome() {
       </div>
 
       <div className="px-5 space-y-5">
-        {/* Nearest exam card */}
-        {nearest && (
+        {/* Nearest exam card or CTA to register */}
+        {nearest ? (
           <div className="rounded-2xl bg-gradient-to-br from-brand-700 to-purple-500 p-5 text-white">
             <div className="flex items-center gap-1.5 mb-3">
               <span className="text-orange-300 text-sm">🔥</span>
@@ -188,6 +190,23 @@ function StudentHome() {
               className="bg-white/20 border border-white/30 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-white/30 transition"
             >
               Подробнее →
+            </button>
+          </div>
+        ) : availableSessions.length > 0 && (
+          <div className="rounded-2xl bg-gradient-to-br from-brand-700 to-purple-500 p-5 text-white">
+            <div className="flex items-center gap-1.5 mb-3">
+              <span className="text-orange-300 text-sm">📝</span>
+              <span className="text-xs font-semibold text-white/80 uppercase tracking-wider">Запись открыта</span>
+            </div>
+            <div className="text-xl font-bold mb-1">{availableSessions[0].exam_title}</div>
+            <div className="text-sm text-white/80 mb-4">
+              Доступно {availableSessions[0].time_slots.reduce((s, sl) => s + sl.available_seats, 0)} мест
+            </div>
+            <button
+              onClick={() => navigate("/exams/register")}
+              className="bg-white/20 border border-white/30 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-white/30 transition"
+            >
+              Записаться →
             </button>
           </div>
         )}
