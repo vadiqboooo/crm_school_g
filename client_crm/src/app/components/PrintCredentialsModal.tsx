@@ -23,7 +23,7 @@ export function PrintCredentialsModal({ title, credentials, onClose }: Props) {
           <span class="label">Пароль</span>
           <span class="value">${c.plain_password}</span>
         </div>
-        <div class="site">garryschool.ru · ${date}</div>
+        <div class="site">web.garryschool.ru · ${date}</div>
       </div>
     `).join("");
 
@@ -122,7 +122,7 @@ export function PrintCredentialsModal({ title, credentials, onClose }: Props) {
                     <span className="text-[10px] text-slate-400 w-10 shrink-0">Пароль</span>
                     <span className="font-mono text-sm font-bold text-slate-800">{c.plain_password}</span>
                   </div>
-                  <div className="text-[10px] text-slate-300 mt-1">garryschool.ru · {date}</div>
+                  <div className="text-[10px] text-slate-300 mt-1">web.garryschool.ru · {date}</div>
                 </div>
               ))}
             </div>
