@@ -1,13 +1,13 @@
-# Initial configuration for obtaining SSL certificate for web.rancheasy.ru
+# Initial configuration for obtaining SSL certificate for web.garryschool.ru
 # Use this before running certbot for the first time:
 #   1. Replace student.conf with this file content
 #   2. Restart nginx
-#   3. Run: docker compose run --rm certbot certonly --webroot -w /var/www/certbot -d web.rancheasy.ru
+#   3. Run: docker compose run --rm certbot certonly --webroot -w /var/www/certbot -d web.garryschool.ru
 #   4. Restore student.conf and restart nginx
 
 server {
     listen 80;
-    server_name web.rancheasy.ru;
+    server_name web.garryschool.ru;
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
