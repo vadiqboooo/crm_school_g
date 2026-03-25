@@ -19,6 +19,7 @@ async function fetchAndStoreUnread() {
 
 const tabs = [
   { path: "/", label: "Главная", icon: HomeIcon },
+  { path: "/exams", label: "Экзамены", icon: ExamIcon },
   { path: "/chat", label: "Чат", icon: ChatIcon },
   { path: "/profile", label: "Профиль", icon: PersonIcon },
 ];
@@ -111,6 +112,17 @@ function ChatIcon({ className }: { className?: string }) {
   return (
     <svg className={`w-5 h-5 ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
+function ExamIcon({ className }: { className?: string }) {
+  return (
+    <svg className={`w-5 h-5 ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <rect x="4" y="2" width="16" height="20" rx="2" />
+      <line x1="8" y1="7" x2="16" y2="7" />
+      <line x1="8" y1="11" x2="16" y2="11" />
+      <line x1="8" y1="15" x2="12" y2="15" />
     </svg>
   );
 }
