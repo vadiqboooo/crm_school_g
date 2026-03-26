@@ -2,14 +2,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import BottomNav from "../components/BottomNav";
 import { api, ChatRoom, ChatMessage, ChatSearchResult } from "../lib/api";
 import { useChatWebSocket } from "../hooks/useChatWebSocket";
-import {
-  initCryptoKeys,
-  encryptDirect,
-  decryptDirect,
-  encryptGroup,
-  decryptGroup,
-  KeyPair,
-} from "../lib/crypto";
 
 interface DecryptedMessage extends ChatMessage {
   text: string | null;
@@ -73,25 +65,11 @@ function getStoredStudent() {
   } catch { return { id: "", first_name: "", last_name: "" }; }
 }
 
-// ── Decrypt helper ─────────────────────────────────────────────────────────
+// ── Message text helper ─────────────────────────────────────────────────────
 
-function decryptMsg(msg: ChatMessage, room: ChatRoom, keyPair: KeyPair, myId: string, myMemberType: string): string | null {
+function decryptMsg(msg: ChatMessage): string {
   if (msg.is_deleted) return "Сообщение удалено";
-  if (room.room_type === "direct") {
-    const other = room.members.find((m) => !(m.member_id === myId && m.member_type === myMemberType));
-    if (!other?.public_key) return null;
-    return decryptDirect(msg.content_encrypted, other.public_key, keyPair.privateKey);
-  }
-  if (room.room_type === "group") {
-    const myMember = room.members.find((m) => m.member_id === myId && m.member_type === myMemberType);
-    if (!myMember?.room_key_encrypted) return null;
-    const creator = room.members.find((m) => m.member_type === "employee");
-    if (!creator?.public_key) return null;
-    const roomKey = decryptDirect(myMember.room_key_encrypted, creator.public_key, keyPair.privateKey);
-    if (!roomKey) return null;
-    return decryptGroup(msg.content_encrypted, roomKey);
-  }
-  return null;
+  return msg.content_encrypted;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -101,15 +79,6 @@ export default function ChatPage() {
   const myId = student.id;
   const myMemberType = (localStorage.getItem("s_role") ?? "student") === "app_user" ? "app_user" : "student";
 
-  const [keyPair, setKeyPair] = useState<KeyPair | null>(() => {
-    const priv = sessionStorage.getItem("s_chat_priv");
-    const pub = sessionStorage.getItem("s_chat_pub");
-    if (priv && pub) return { privateKey: priv, publicKey: pub };
-    return null;
-  });
-  const [password, setPassword] = useState("");
-  const [unlocking, setUnlocking] = useState(false);
-  const [keyError, setKeyError] = useState(false);
 
   // WS is enabled only after the first REST call succeeds — this guarantees
   // the access token is fresh (auto-refreshed on 401) before WS tries to connect.
@@ -141,27 +110,10 @@ export default function ChatPage() {
   const [searching, setSearching] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [showMembers, setShowMembers] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ── Unlock (fallback if sessionStorage cleared) ─────────────────────────
-
-  const handleUnlock = async () => {
-    if (!password.trim()) return;
-    setUnlocking(true);
-    setKeyError(false);
-    try {
-      const kp = await initCryptoKeys(password.trim(), myId);
-      await api.updatePublicKey(kp.publicKey);
-      sessionStorage.setItem("s_chat_priv", kp.privateKey);
-      sessionStorage.setItem("s_chat_pub", kp.publicKey);
-      setKeyPair(kp);
-    } catch {
-      setKeyError(true);
-    } finally {
-      setUnlocking(false);
-    }
-  };
 
   // ── Search ──────────────────────────────────────────────────────────────
 
@@ -206,6 +158,11 @@ export default function ChatPage() {
     try {
       const data = await api.getChatRooms();
       setRooms(data);
+      // Also update selectedRoom if it's in the new data (to pick up new room_key_encrypted)
+      setSelectedRoom(prev => {
+        if (!prev) return null;
+        return data.find(r => r.id === prev.id) ?? prev;
+      });
       // Init peerReadAt from loaded room member data
       const readMap: Record<string, string | null> = {};
       data.forEach((room) => {
@@ -220,26 +177,22 @@ export default function ChatPage() {
     } finally {
       setLoadingRooms(false);
     }
-  }, []);
+  }, [myId, myMemberType]);
 
   useEffect(() => {
-    if (keyPair) {
-      setWsEnabled(false);
-      loadRooms();
-    }
-  }, [keyPair, loadRooms]);
+    loadRooms();
+  }, [loadRooms]);
 
   // ── Load messages ────────────────────────────────────────────────────────
 
-  const loadMessages = useCallback(async (room: ChatRoom, kp: KeyPair) => {
+  const loadMessages = useCallback(async (room: ChatRoom) => {
     setLoadingMessages(true);
     setMessages([]);
     setHasMore(true);
     try {
       const data = await api.getChatMessages(room.id);
-      const loaded = data.map((m) => ({ ...m, text: decryptMsg(m, room, kp, myId, myMemberType) }));
+      const loaded = data.map((m) => ({ ...m, text: decryptMsg(m) }));
       const loadedIds = new Set(loaded.map((m) => m.id));
-      // Merge: preserve any messages that arrived (via WS or send) while we were loading
       setMessages((prev) => {
         const newArrivals = prev.filter((m) => !loadedIds.has(m.id));
         return [...loaded, ...newArrivals];
@@ -248,22 +201,22 @@ export default function ChatPage() {
     } finally {
       setLoadingMessages(false);
     }
-  }, [myId]);
+  }, []);
 
   const loadMoreMessages = async () => {
-    if (!selectedRoom || !keyPair || !hasMore || messages.length === 0) return;
+    if (!selectedRoom || !hasMore || messages.length === 0) return;
     const oldest = messages[0].created_at;
     const data = await api.getChatMessages(selectedRoom.id, oldest);
     if (data.length === 0) { setHasMore(false); return; }
-    setMessages((prev) => [...data.map((m) => ({ ...m, text: decryptMsg(m, selectedRoom, keyPair, myId, myMemberType) })), ...prev]);
+    setMessages((prev) => [...data.map((m) => ({ ...m, text: decryptMsg(m) })), ...prev]);
     setHasMore(data.length === 50);
   };
 
   useEffect(() => {
-    if (selectedRoom && keyPair) {
-      loadMessages(selectedRoom, keyPair);
+    if (selectedRoom) {
+      loadMessages(selectedRoom);
     }
-  }, [selectedRoom, keyPair, loadMessages]);
+  }, [selectedRoom, loadMessages]);
 
   // Persist unread count to localStorage so BottomNav can show it on any page
   useEffect(() => {
@@ -282,16 +235,11 @@ export default function ChatPage() {
   // When WS reconnects after a drop, reload messages to catch anything missed offline
   const selectedRoomRef = useRef(selectedRoom);
   useEffect(() => { selectedRoomRef.current = selectedRoom; }, [selectedRoom]);
-  const keyPairRef = useRef(keyPair);
-  useEffect(() => { keyPairRef.current = keyPair; }, [keyPair]);
-  // Always-current rooms ref — used to get fresh public keys in WS handler
-  const roomsRef = useRef(rooms);
-  useEffect(() => { roomsRef.current = rooms; }, [rooms]);
+  const sendReadRef = useRef<(roomId: string) => void>(() => {});
 
   const handleReconnect = useCallback(() => {
     const room = selectedRoomRef.current;
-    const kp = keyPairRef.current;
-    if (room && kp) loadMessages(room, kp);
+    if (room) loadMessages(room);
   }, [loadMessages]);
 
   const { sendTyping, sendRead, wsConnected } = useChatWebSocket({
@@ -301,9 +249,7 @@ export default function ChatPage() {
       (msg) => {
         if (msg.type === "new_message") {
           const incoming = msg.message;
-          // Use refs for selectedRoom/keyPair — avoids stale closure on newly opened rooms
           const activeRoom = selectedRoomRef.current;
-          const activeKeyPair = keyPairRef.current;
           setRooms((prev) => prev.map((r) => {
             if (r.id !== incoming.room_id) return r;
             return {
@@ -316,28 +262,12 @@ export default function ChatPage() {
               unread_count: activeRoom?.id === r.id ? 0 : (r.unread_count ?? 0) + 1,
             };
           }));
-          if (activeRoom?.id === incoming.room_id && activeKeyPair) {
-            // Use latest rooms data from ref (may have fresher public keys than closure)
-            const currentRoom = roomsRef.current.find((r) => r.id === incoming.room_id) ?? activeRoom;
-            const text = decryptMsg(incoming, currentRoom, activeKeyPair, myId, myMemberType);
+          if (activeRoom?.id === incoming.room_id) {
             setMessages((prev) => {
               if (prev.some((m) => m.id === incoming.id)) return prev;
-              return [...prev, { ...incoming, text }];
+              return [...prev, { ...incoming, text: decryptMsg(incoming) }];
             });
-            if (text === null && !incoming.is_deleted) {
-              // Decryption failed — likely stale public key; reload rooms and retry
-              api.getChatRooms().then((fresh) => {
-                setRooms(fresh);
-                const freshRoom = fresh.find((r) => r.id === incoming.room_id);
-                if (freshRoom) {
-                  const freshText = decryptMsg(incoming, freshRoom, activeKeyPair, myId, myMemberType);
-                  setMessages((prev) =>
-                    prev.map((m) => m.id === incoming.id ? { ...m, text: freshText } : m)
-                  );
-                }
-              }).catch(() => {});
-            }
-            sendRead(incoming.room_id);
+            sendReadRef.current(incoming.room_id);
           }
         }
         if (msg.type === "message_deleted") {
@@ -367,6 +297,8 @@ export default function ChatPage() {
     ),
   });
 
+  sendReadRef.current = sendRead;
+
   // Mark room as read when opening it — via WS so sender gets read_receipt broadcast
   useEffect(() => {
     if (selectedRoom && wsConnected) {
@@ -377,7 +309,7 @@ export default function ChatPage() {
   // ── Send message (via REST — надёжно, WS только для получения) ──────────
 
   const handleSend = async () => {
-    if (!inputText.trim() || !selectedRoom || !keyPair || sending) return;
+    if (!inputText.trim() || !selectedRoom || sending) return;
     const text = inputText.trim();
     const tempId = `sending-${Date.now()}`;
     setSendError(null);
@@ -385,37 +317,7 @@ export default function ChatPage() {
     setSending(true);
     setSendingIds((s) => new Set(s).add(tempId));
     try {
-      let encrypted: string;
-      if (selectedRoom.room_type === "direct") {
-        const other = selectedRoom.members.find((m) => !(m.member_id === myId && m.member_type === myMemberType));
-        if (!other?.public_key) {
-          setSendError("Собеседник ещё не открыл чат. Попросите его зайти в раздел Чат.");
-          setInputText(text);
-          return;
-        }
-        encrypted = encryptDirect(text, other.public_key, keyPair.privateKey);
-      } else {
-        const myMember = selectedRoom.members.find((m) => m.member_id === myId && m.member_type === myMemberType);
-        if (!myMember?.room_key_encrypted) {
-          setSendError("Ключ комнаты не найден. Обратитесь к преподавателю.");
-          setInputText(text);
-          return;
-        }
-        const creator = selectedRoom.members.find((m) => m.member_type === "employee");
-        if (!creator?.public_key) {
-          setSendError("Публичный ключ преподавателя не найден.");
-          setInputText(text);
-          return;
-        }
-        const roomKey = decryptDirect(myMember.room_key_encrypted, creator.public_key, keyPair.privateKey);
-        if (!roomKey) {
-          setSendError("Не удалось расшифровать ключ комнаты.");
-          setInputText(text);
-          return;
-        }
-        encrypted = encryptGroup(text, roomKey);
-      }
-      const sent = await api.sendMessage(selectedRoom.id, encrypted);
+      const sent = await api.sendMessage(selectedRoom.id, text);
       setMessages((prev) => {
         if (prev.some((m) => m.id === sent.id)) return prev;
         return [...prev, { ...sent, text }];
@@ -528,54 +430,17 @@ export default function ChatPage() {
 
   const totalUnread = rooms.reduce((sum, r) => sum + (r.unread_count ?? 0), 0);
 
-  // ── Fallback: sessionStorage cleared (browser closed between sessions) ───
-
-  if (!keyPair) {
-    return (
-      <div className="bg-cream min-h-screen flex flex-col items-center justify-center px-6 gap-6 text-center pb-24">
-        <div className="w-16 h-16 rounded-full bg-brand-100 flex items-center justify-center">
-          <svg viewBox="0 0 24 24" className="w-8 h-8 text-brand-700" fill="none" stroke="currentColor" strokeWidth={1.5}>
-            <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
-          </svg>
-        </div>
-        <div>
-          <h2 className="text-lg font-bold text-gray-900 mb-1">Введите пароль</h2>
-          <p className="text-gray-500 text-sm max-w-xs">Введите пароль от аккаунта для доступа к чату</p>
-        </div>
-        <div className="w-full max-w-xs flex flex-col gap-3">
-          <input
-            type="password"
-            placeholder="Пароль"
-            value={password}
-            onChange={(e) => { setPassword(e.target.value); setKeyError(false); }}
-            onKeyDown={(e) => e.key === "Enter" && handleUnlock()}
-            className={`w-full px-4 py-3 rounded-2xl border text-sm outline-none focus:ring-2 focus:ring-brand-300 transition ${keyError ? "border-red-300 bg-red-50" : "border-gray-200 bg-white"}`}
-          />
-          {keyError && <p className="text-red-500 text-xs">Неверный пароль</p>}
-          <button
-            onClick={handleUnlock}
-            disabled={unlocking || !password.trim()}
-            className="w-full bg-brand-700 text-white py-3 rounded-2xl text-sm font-semibold disabled:opacity-50 transition"
-          >
-            {unlocking ? "Загрузка..." : "Открыть чат"}
-          </button>
-        </div>
-        <BottomNav chatUnread={totalUnread} />
-      </div>
-    );
-  }
-
   // ── Room list ────────────────────────────────────────────────────────────
 
   if (!selectedRoom) {
     return (
-      <div className="bg-cream min-h-screen pb-24 flex flex-col max-w-[430px] mx-auto">
+      <div className="bg-cream dark:bg-gray-900 min-h-screen pb-24 flex flex-col max-w-[430px] mx-auto">
         {/* Header */}
-        <div className="bg-white px-4 pt-12 pb-3 border-b border-gray-100">
-          <h1 className="text-xl font-bold text-gray-900 mb-3">Чаты</h1>
+        <div className="bg-white dark:bg-gray-900 px-4 pt-12 pb-3 border-b border-gray-100 dark:border-gray-800">
+          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-3">Чаты</h1>
           {/* Search bar */}
           <div className="relative">
-            <svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" strokeWidth={2}>
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
             <input
@@ -583,7 +448,7 @@ export default function ChatPage() {
               placeholder="Поиск по логину или телефону..."
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-gray-50 border border-gray-100 text-sm outline-none focus:ring-2 focus:ring-brand-200 focus:bg-white transition"
+              className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 border border-gray-100 dark:border-gray-700 text-sm outline-none focus:ring-2 focus:ring-brand-200 focus:bg-white dark:focus:bg-gray-700 transition"
             />
             {searchQuery && (
               <button
@@ -600,34 +465,34 @@ export default function ChatPage() {
 
         {/* Search results */}
         {searchQuery.trim().length >= 2 && (
-          <div className="bg-white border-b border-gray-100">
+          <div className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800">
             {searching ? (
-              <div className="flex items-center gap-2 px-4 py-3 text-xs text-gray-400">
+              <div className="flex items-center gap-2 px-4 py-3 text-xs text-gray-400 dark:text-gray-500">
                 <div className="w-3.5 h-3.5 border-2 border-brand-400 border-t-transparent rounded-full animate-spin" />
                 Поиск...
               </div>
             ) : searchResults.length === 0 ? (
-              <div className="px-4 py-3 text-xs text-gray-400">Никого не найдено</div>
+              <div className="px-4 py-3 text-xs text-gray-400 dark:text-gray-500">Никого не найдено</div>
             ) : (
               <ul>
                 {searchResults.map((r) => (
                   <li key={r.id}>
                     <button
                       onClick={() => handleOpenDirectChat(r)}
-                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition text-left"
+                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition text-left"
                     >
                       <div className={`w-9 h-9 rounded-full ${avatarColor(r.name)} flex items-center justify-center flex-shrink-0`}>
                         <span className="text-white font-bold text-xs">{getInitials(r.name)}</span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-gray-900 text-sm truncate">{r.name}</div>
-                        <div className="text-xs text-gray-400 truncate">
+                        <div className="font-medium text-gray-900 dark:text-gray-100 text-sm truncate">{r.name}</div>
+                        <div className="text-xs text-gray-400 dark:text-gray-500 truncate">
                           {r.portal_login && <span>@{r.portal_login}</span>}
                           {r.portal_login && r.phone && <span className="mx-1">·</span>}
                           {r.phone && <span>{r.phone}</span>}
                         </div>
                       </div>
-                      <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-300 dark:text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                       </svg>
                     </button>
@@ -644,17 +509,17 @@ export default function ChatPage() {
           </div>
         ) : rooms.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
-            <div className="w-16 h-16 rounded-full bg-brand-100 flex items-center justify-center">
+            <div className="w-16 h-16 rounded-full bg-brand-100 dark:bg-brand-900/40 flex items-center justify-center">
               <svg viewBox="0 0 24 24" className="w-7 h-7 text-brand-500" fill="none" stroke="currentColor" strokeWidth={1.5}>
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
               </svg>
             </div>
-            <p className="text-gray-500 text-sm">Чатов пока нет.</p>
-            <p className="text-gray-400 text-xs">Преподаватель добавит вас в групповой чат.</p>
+            <p className="text-gray-500 dark:text-gray-400 text-sm">Чатов пока нет.</p>
+            <p className="text-gray-400 dark:text-gray-500 text-xs">Преподаватель добавит вас в групповой чат.</p>
           </div>
         ) : (
           <>
-          <ul className="flex-1 bg-white divide-y divide-gray-50">
+          <ul className="flex-1 bg-white dark:bg-gray-900 divide-y divide-gray-50 dark:divide-gray-800">
             {rooms.map((room) => {
               const name = getRoomDisplayName(room);
               const lastTime = room.last_message
@@ -693,23 +558,23 @@ export default function ChatPage() {
                       if (isSwiped) { setSwipedRoomId(null); return; }
                       setSelectedRoom(room);
                     }}
-                    className="w-full flex items-center gap-3 px-4 py-3.5 bg-white cursor-pointer"
+                    className="w-full flex items-center gap-3 px-4 py-3.5 bg-white dark:bg-gray-900 cursor-pointer"
                   >
                     <div className="relative flex-shrink-0">
                       <div className={`w-12 h-12 rounded-full ${avatarColor(name)} flex items-center justify-center`}>
                         <span className="text-white font-bold text-sm">{getInitials(name)}</span>
                       </div>
                       {otherMember && (
-                        <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${otherMember.is_online ? "bg-green-400" : "bg-gray-300"}`} />
+                        <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white dark:border-gray-900 ${otherMember.is_online ? "bg-green-400" : "bg-gray-300"}`} />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-gray-900 text-sm truncate">{name}</span>
-                        <span className="text-xs text-gray-400 flex-shrink-0">{lastTime}</span>
+                        <span className="font-semibold text-gray-900 dark:text-gray-100 text-sm truncate">{name}</span>
+                        <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">{lastTime}</span>
                       </div>
                       <div className="flex items-center justify-between gap-2 mt-0.5">
-                        <span className="text-xs text-gray-400 truncate">
+                        <span className="text-xs text-gray-400 dark:text-gray-500 truncate">
                           {otherMember
                             ? formatLastSeen(otherMember)
                             : room.last_message ? "•••" : "Нет сообщений"}
@@ -730,13 +595,13 @@ export default function ChatPage() {
           {/* Confirm delete dialog */}
           {confirmDeleteRoomId && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6">
-              <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
-                <h3 className="font-bold text-gray-900 text-base mb-2">Удалить чат?</h3>
-                <p className="text-sm text-gray-500 mb-6">Чат будет удалён из вашего списка. Это действие нельзя отменить.</p>
+              <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-xl">
+                <h3 className="font-bold text-gray-900 dark:text-gray-100 text-base mb-2">Удалить чат?</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Чат будет удалён из вашего списка. Это действие нельзя отменить.</p>
                 <div className="flex gap-3">
                   <button
                     onClick={() => { setConfirmDeleteRoomId(null); setSwipedRoomId(null); }}
-                    className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                    className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
                   >
                     Отмена
                   </button>
@@ -765,27 +630,31 @@ export default function ChatPage() {
   const typingInfo = typing[selectedRoom.id];
 
   return (
-    <div className="bg-cream min-h-screen flex flex-col max-w-[430px] mx-auto">
+    <div className="bg-cream dark:bg-gray-900 min-h-screen flex flex-col max-w-[430px] mx-auto">
       {/* Top bar */}
-      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white border-b border-gray-100 z-30">
+      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 z-30">
         <div className="flex items-center gap-3 px-4 pt-10 pb-3">
           <button
             onClick={() => { setSelectedRoom(null); loadRooms(); }}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition"
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition"
           >
-            <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" strokeWidth={2}>
               <path d="M15 18l-6-6 6-6" />
             </svg>
           </button>
+          <button
+            onClick={() => setShowMembers(true)}
+            className="flex items-center gap-3 flex-1 min-w-0 text-left"
+          >
           <div className={`w-9 h-9 rounded-full ${avatarColor(roomName)} flex items-center justify-center flex-shrink-0`}>
             <span className="text-white font-bold text-xs">{getInitials(roomName)}</span>
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-semibold text-gray-900 text-sm truncate">{roomName}</div>
+            <div className="font-semibold text-gray-900 dark:text-gray-100 text-sm truncate">{roomName}</div>
             {typingInfo ? (
               <div className="text-xs text-brand-600 animate-pulse">{typingInfo.name} печатает...</div>
             ) : (
-              <div className="flex items-center gap-1.5 text-xs text-gray-400">
+              <div className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
                 {!wsConnected ? (
                   <>
                     <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-gray-300 animate-pulse" />
@@ -808,8 +677,44 @@ export default function ChatPage() {
               </div>
             )}
           </div>
+          </button>
         </div>
       </div>
+
+      {/* Members bottom sheet */}
+      {showMembers && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={() => setShowMembers(false)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div
+            className="relative bg-white dark:bg-gray-800 rounded-t-2xl max-h-[70vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b border-gray-100 dark:border-gray-700">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Участники · {selectedRoom.members.length}</h3>
+              <button onClick={() => setShowMembers(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+                <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" strokeWidth={2}><path d="M18 6L6 18M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="overflow-y-auto">
+              {selectedRoom.members.map((m) => (
+                <div key={`${m.member_type}-${m.member_id}`} className="flex items-center gap-3 px-4 py-3">
+                  <div className={`w-9 h-9 rounded-full ${avatarColor(m.name ?? "")} flex items-center justify-center flex-shrink-0`}>
+                    <span className="text-white font-bold text-xs">{getInitials(m.name ?? "?")}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                      {m.name ?? "Неизвестно"}
+                      {isMe(m) && <span className="text-xs text-gray-400 dark:text-gray-500 ml-1">(вы)</span>}
+                    </div>
+                    <div className="text-xs text-gray-400 dark:text-gray-500">{m.member_type === "employee" ? "Преподаватель" : "Ученик"}</div>
+                  </div>
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${m.is_online ? "bg-green-400" : "bg-gray-300 dark:bg-gray-600"}`} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div
@@ -834,17 +739,17 @@ export default function ChatPage() {
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-2 text-center">
-            <p className="text-gray-400 text-sm">Нет сообщений</p>
-            <p className="text-gray-300 text-xs">Напишите первым!</p>
+            <p className="text-gray-400 dark:text-gray-500 text-sm">Нет сообщений</p>
+            <p className="text-gray-300 dark:text-gray-600 text-xs">Напишите первым!</p>
           </div>
         ) : (
           groups.map(({ date, messages: dayMsgs }) => (
             <div key={date}>
               {/* Date separator */}
               <div className="flex items-center gap-2 my-4">
-                <div className="flex-1 h-px bg-gray-100" />
-                <span className="text-xs text-gray-400 font-medium px-2">{date}</span>
-                <div className="flex-1 h-px bg-gray-100" />
+                <div className="flex-1 h-px bg-gray-100 dark:bg-gray-700" />
+                <span className="text-xs text-gray-400 dark:text-gray-500 font-medium px-2">{date}</span>
+                <div className="flex-1 h-px bg-gray-100 dark:bg-gray-700" />
               </div>
 
               {dayMsgs.map((msg) => {
@@ -867,7 +772,7 @@ export default function ChatPage() {
                     {/* Bubble */}
                     <div className={`max-w-[72%] flex flex-col ${isMe ? "items-end" : "items-start"}`}>
                       {!isMe && (
-                        <span className="text-[10px] text-gray-400 font-medium px-1 mb-0.5">
+                        <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium px-1 mb-0.5">
                           {msg.sender_name}
                         </span>
                       )}
@@ -879,7 +784,7 @@ export default function ChatPage() {
                         className={`px-3.5 py-2 rounded-2xl text-sm leading-relaxed cursor-pointer select-none ${
                           isMe
                             ? "bg-brand-700 text-white rounded-br-sm"
-                            : "bg-white text-gray-900 shadow-sm rounded-bl-sm"
+                            : "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm rounded-bl-sm"
                         }`}
                       >
                         {msg.is_deleted
@@ -892,12 +797,12 @@ export default function ChatPage() {
                       {isCtx && isMe && !msg.is_deleted && (
                         <button
                           onClick={() => handleDeleteMessage(msg.id)}
-                          className="mt-1 text-xs text-red-500 bg-white border border-red-100 rounded-xl px-3 py-1 shadow-sm hover:bg-red-50 transition"
+                          className="mt-1 text-xs text-red-500 bg-white dark:bg-gray-800 border border-red-100 dark:border-red-900/40 rounded-xl px-3 py-1 shadow-sm hover:bg-red-50 dark:hover:bg-red-900/20 transition"
                         >
                           Удалить
                         </button>
                       )}
-                      <span className={`text-[10px] mt-0.5 px-1 flex items-center gap-0.5 ${isMe ? "text-gray-400" : "text-gray-300"}`}>
+                      <span className={`text-[10px] mt-0.5 px-1 flex items-center gap-0.5 ${isMe ? "text-gray-400" : "text-gray-300 dark:text-gray-600"}`}>
                         {formatTime(msg.created_at)}
                         {isMe && !msg.is_deleted && (() => {
                           const isSending = sendingIds.has(msg.id);
@@ -921,9 +826,9 @@ export default function ChatPage() {
       </div>
 
       {/* Input bar */}
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white border-t border-gray-100 px-3 py-3 z-30">
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 px-3 py-3 z-30">
         {sendError && (
-          <div className="flex items-start gap-2 mb-2 px-1 py-2 bg-red-50 rounded-xl text-xs text-red-600">
+          <div className="flex items-start gap-2 mb-2 px-1 py-2 bg-red-50 dark:bg-red-900/30 rounded-xl text-xs text-red-600 dark:text-red-400">
             <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 flex-shrink-0 mt-px" fill="none" stroke="currentColor" strokeWidth={2}>
               <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
@@ -938,7 +843,7 @@ export default function ChatPage() {
             value={inputText}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            className="flex-1 resize-none px-4 py-2.5 rounded-2xl border border-gray-200 bg-gray-50 text-sm outline-none focus:ring-2 focus:ring-brand-200 focus:bg-white transition max-h-28"
+            className="flex-1 resize-none px-4 py-2.5 rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 text-sm outline-none focus:ring-2 focus:ring-brand-200 focus:bg-white dark:focus:bg-gray-700 transition max-h-28"
             style={{ lineHeight: "1.4" }}
           />
           <button

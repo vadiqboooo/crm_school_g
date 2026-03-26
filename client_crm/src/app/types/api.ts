@@ -999,3 +999,56 @@ export interface AppUserUpdate {
   notes?: string | null;
   is_active?: boolean;
 }
+
+// ── Chat types ─────────────────────────────────────────────────────────────
+
+export type ChatMemberType = "student" | "employee" | "app_user";
+
+export interface ChatMember {
+  member_id: string;
+  member_type: ChatMemberType;
+  name: string;
+  public_key: string | null;
+  room_key_encrypted: string | null;
+  is_online: boolean;
+  last_seen_at: string | null;
+  last_read_at: string | null;
+}
+
+export interface ChatLastMessage {
+  content_encrypted: string;
+  created_at: string;
+  sender_type: ChatMemberType;
+}
+
+export interface ChatRoom {
+  id: string;
+  room_type: "group" | "direct";
+  group_id: string | null;
+  name: string | null;
+  created_at: string;
+  members: ChatMember[];
+  last_message: ChatLastMessage | null;
+  unread_count: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  room_id: string;
+  sender_id: string;
+  sender_type: ChatMemberType;
+  sender_name: string;
+  content_encrypted: string;
+  message_type: "text" | "image" | "sticker" | "system";
+  file_url: string | null;
+  reply_to_id: string | null;
+  is_deleted: boolean;
+  created_at: string;
+}
+
+export interface ChatGroupStudent {
+  id: string;
+  member_type: "student" | "employee";
+  name: string;
+  public_key: string | null;
+}

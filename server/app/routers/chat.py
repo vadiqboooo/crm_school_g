@@ -19,15 +19,17 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.auth.security import decode_token
 from app.crud import chat as crud
 from app.database import get_db
-from app.models.student import Student
+from app.models.student import Student, StudentStatus
 from app.models.app_user import AppUser
-from app.routers.student_auth import get_current_student_dep
+from app.models.employee import Employee
+from app.models.group import Group, GroupStudent
 from app.schemas.chat import (
     ChatRoomSchema,
     ChatMessageSchema,
@@ -39,6 +41,11 @@ from app.websocket_manager import manager
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 _bearer = HTTPBearer()
+
+
+def _mt(member_type) -> str:
+    """Return member_type as plain string regardless of enum vs str."""
+    return member_type.value if hasattr(member_type, "value") else str(member_type)
 
 
 @dataclass
@@ -77,6 +84,17 @@ async def get_chat_identity(
             member_type="app_user",
             display_name=u.display_name,
         )
+    # Employee tokens have no "role" field — identified by "type": "access" only
+    if role is None and payload.get("type") == "access":
+        emp_id = uuid.UUID(payload["sub"])
+        emp = await db.get(Employee, emp_id)
+        if not emp or not emp.is_active:
+            raise HTTPException(status_code=401, detail="Employee not found")
+        return ChatIdentity(
+            member_id=emp.id,
+            member_type="employee",
+            display_name=f"{emp.first_name} {emp.last_name}",
+        )
     raise HTTPException(status_code=401, detail="Invalid role for chat")
 
 
@@ -100,11 +118,22 @@ async def _serialize_message(msg, db: AsyncSession) -> dict:
 
 
 async def _serialize_room(room, db: AsyncSession, member_id: uuid.UUID, member_type: str) -> dict:
+    # Deduplicate: if an app_user member covers the same person as a student member,
+    # skip the student entry (prevents showing the same student twice).
+    app_user_student_ids: set[uuid.UUID] = set()
+    for m in room.members:
+        if _mt(m.member_type) == "app_user":
+            u = await db.get(AppUser, m.member_id)
+            if u and u.student_id:
+                app_user_student_ids.add(u.student_id)
+
     members_out = []
     for m in room.members:
+        if _mt(m.member_type) == "student" and m.member_id in app_user_student_ids:
+            continue  # skip: this student is already represented by an app_user member
         name = await crud.get_member_name(db, m.member_id, m.member_type)
         pk = await crud.get_member_public_key(db, m.member_id, m.member_type)
-        user_key = f"{m.member_type.value}:{m.member_id}"
+        user_key = f"{_mt(m.member_type)}:{m.member_id}"
         is_online = manager.is_user_online(user_key)
         last_seen = manager.get_last_seen(user_key)
         members_out.append({
@@ -150,6 +179,71 @@ async def get_rooms(
     me: ChatIdentity = Depends(get_chat_identity),
     db: AsyncSession = Depends(get_db),
 ):
+    # Auto-add student/app_user to any group chat rooms for their groups (self-healing sync)
+    if me.member_type in ("student", "app_user"):
+        from app.models.chat import ChatRoom as ChatRoomModel, ChatRoomMember as ChatRoomMemberModel
+
+        # For app_user: find the linked student_id to look up their groups
+        student_id_for_groups: uuid.UUID | None = None
+        if me.member_type == "student":
+            student_id_for_groups = me.member_id
+        else:
+            u = await db.get(AppUser, me.member_id)
+            if u and u.student_id:
+                student_id_for_groups = u.student_id
+
+        if student_id_for_groups:
+            # Find all non-archived, non-trial groups for this student
+            gs_res = await db.execute(
+                select(GroupStudent.group_id)
+                .where(
+                    and_(
+                        GroupStudent.student_id == student_id_for_groups,
+                        GroupStudent.is_archived == False,
+                        GroupStudent.is_trial == False,
+                    )
+                )
+            )
+            group_ids = list(gs_res.scalars().all())
+            if group_ids:
+                # Find group chat rooms for those groups
+                room_res = await db.execute(
+                    select(ChatRoomModel)
+                    .where(
+                        and_(
+                            ChatRoomModel.group_id.in_(group_ids),
+                            ChatRoomModel.room_type == "group",
+                        )
+                    )
+                    .options(selectinload(ChatRoomModel.members))
+                )
+                group_rooms = list(room_res.scalars().all())
+                added_rooms: list = []
+                for room in group_rooms:
+                    already_member = any(
+                        m.member_id == me.member_id and m.member_type == me.member_type
+                        for m in room.members
+                    )
+                    if not already_member:
+                        db.add(ChatRoomMemberModel(
+                            id=uuid.uuid4(),
+                            room_id=room.id,
+                            member_id=me.member_id,
+                            member_type=me.member_type,
+                            room_key_encrypted=None,
+                        ))
+                        added_rooms.append(room)
+                if added_rooms:
+                    await db.commit()
+                    # Notify employees so CRM distributes the room key to this user
+                    for room in added_rooms:
+                        for m in room.members:
+                            if m.member_type == "employee":
+                                await manager.send_to_user(f"employee:{m.member_id}", {
+                                    "type": "key_distribution_needed",
+                                    "room_id": str(room.id),
+                                })
+
     rooms = await crud.get_rooms_for_member(db, me.member_id, me.member_type)
     result = []
     for room in rooms:
@@ -198,20 +292,44 @@ async def update_public_key(
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
     role = payload.get("role")
+    member_id_str = payload["sub"]
     if role == "student":
-        result = await db.execute(select(Student).where(Student.id == uuid.UUID(payload["sub"])))
+        result = await db.execute(select(Student).where(Student.id == uuid.UUID(member_id_str)))
         student = result.scalar_one_or_none()
         if not student:
             raise HTTPException(status_code=401, detail="Not found")
         student.public_key = body.public_key
+        await db.commit()
+        # Notify employees who can distribute the room key to this student
+        rooms_info = await crud.get_group_rooms_needing_key(db, uuid.UUID(member_id_str), "student")
+        for room_id, emp_ids in rooms_info:
+            for emp_id in emp_ids:
+                await manager.send_to_user(f"employee:{emp_id}", {
+                    "type": "key_distribution_needed",
+                    "room_id": str(room_id),
+                })
     elif role == "app_user":
-        u = await db.get(AppUser, uuid.UUID(payload["sub"]))
+        u = await db.get(AppUser, uuid.UUID(member_id_str))
         if not u:
             raise HTTPException(status_code=401, detail="Not found")
         u.public_key = body.public_key
+        await db.commit()
+        # Also notify for app_user rooms
+        rooms_info = await crud.get_group_rooms_needing_key(db, uuid.UUID(member_id_str), "app_user")
+        for room_id, emp_ids in rooms_info:
+            for emp_id in emp_ids:
+                await manager.send_to_user(f"employee:{emp_id}", {
+                    "type": "key_distribution_needed",
+                    "room_id": str(room_id),
+                })
+    elif role is None and payload.get("type") == "access":
+        emp = await db.get(Employee, uuid.UUID(member_id_str))
+        if not emp:
+            raise HTTPException(status_code=401, detail="Not found")
+        emp.public_key = body.public_key
+        await db.commit()
     else:
         raise HTTPException(status_code=401, detail="Invalid role")
-    await db.commit()
     return {"ok": True}
 
 
@@ -259,7 +377,7 @@ async def send_message(
     room = await crud.get_room_by_id(db, room_id)
     if room:
         for member in room.members:
-            key = f"{member.member_type.value}:{member.member_id}"
+            key = f"{_mt(member.member_type)}:{member.member_id}"
             await manager.send_to_user(key, payload_out)
 
     return msg_out
@@ -333,6 +451,160 @@ async def get_or_create_direct_room(
     return await _serialize_room(room, db, me.member_id, me.member_type)
 
 
+@router.post("/rooms/group")
+async def create_or_get_group_room(
+    body: dict,
+    me: ChatIdentity = Depends(get_chat_identity),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create (or return existing) group chat room for a school group.
+    Only employees can create group rooms. All active non-trial students in the group are added.
+    body: { group_id: str, member_keys: [{ member_id, member_type, room_key_encrypted }] }
+    """
+    if me.member_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can create group rooms")
+
+    group_id_str = body.get("group_id")
+    if not group_id_str:
+        raise HTTPException(status_code=422, detail="group_id required")
+    try:
+        group_id = uuid.UUID(group_id_str)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid group_id")
+
+    # Return existing room if already created (get_room_by_group_id loads members eagerly)
+    existing = await crud.get_room_by_group_id(db, group_id)
+
+    # Fetch group name (needed for both create and sync paths)
+    group_res = await db.execute(select(Group).where(Group.id == group_id))
+    group = group_res.scalar_one_or_none()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    member_keys: list[dict] = body.get("member_keys", [])
+
+    if existing:
+        # Sync: add any new members from member_keys not already in room
+        from app.models.chat import ChatRoomMember as ChatRoomMemberModel
+        existing_member_ids = {m.member_id for m in existing.members}
+        new_members_added = False
+        for mk in member_keys:
+            try:
+                mid = uuid.UUID(mk["member_id"])
+            except Exception:
+                continue
+            if mid not in existing_member_ids:
+                mt = mk.get("member_type", "student")
+                db.add(ChatRoomMemberModel(
+                    id=uuid.uuid4(),
+                    room_id=existing.id,
+                    member_id=mid,
+                    member_type=mt,
+                    room_key_encrypted=None,  # CRM loadRooms will distribute existing room key
+                ))
+                existing_member_ids.add(mid)
+                new_members_added = True
+        if new_members_added:
+            await db.commit()
+            existing = await crud.get_room_by_group_id(db, group_id)
+        return await _serialize_room(existing, db, me.member_id, me.member_type)
+
+    # Build member list from all member_keys; creator is always included
+    seen_ids = set()
+    members = []
+
+    for mk in member_keys:
+        mt = mk.get("member_type", "student")
+        try:
+            mid = uuid.UUID(mk["member_id"])
+        except Exception:
+            continue
+        if mid in seen_ids:
+            continue
+        seen_ids.add(mid)
+        members.append({
+            "member_id": mid,
+            "member_type": mt,
+            "room_key_encrypted": mk.get("room_key_encrypted"),
+        })
+
+    # Ensure creator is always a member
+    if me.member_id not in seen_ids:
+        members.append({
+            "member_id": me.member_id,
+            "member_type": "employee",
+            "room_key_encrypted": None,
+        })
+
+    room = await crud.create_group_room(db, group_id, group.name, members)
+    return await _serialize_room(room, db, me.member_id, me.member_type)
+
+
+@router.get("/rooms/group/{group_id}")
+async def get_group_room_info(
+    group_id: uuid.UUID,
+    me: ChatIdentity = Depends(get_chat_identity),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get existing group chat room for a group (to check if it exists and get member public keys)."""
+    from app.models.chat import ChatRoom as ChatRoomModel
+    res = await db.execute(
+        select(ChatRoomModel)
+        .where(ChatRoomModel.group_id == group_id)
+        .options(selectinload(ChatRoomModel.members))
+    )
+    room = res.scalar_one_or_none()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    return await _serialize_room(room, db, me.member_id, me.member_type)
+
+
+@router.get("/groups/{group_id}/students")
+async def get_group_students_for_chat(
+    group_id: uuid.UUID,
+    me: ChatIdentity = Depends(get_chat_identity),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return active students + teacher of a group with their public keys (for key distribution)."""
+    if me.member_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can access this")
+    result = await db.execute(
+        select(Student, GroupStudent)
+        .join(GroupStudent, Student.id == GroupStudent.student_id)
+        .where(
+            GroupStudent.group_id == group_id,
+            GroupStudent.is_archived == False,
+            GroupStudent.is_trial == False,
+            Student.status == StudentStatus.active,
+        )
+    )
+    rows = result.all()
+    members = [
+        {
+            "id": str(s.id),
+            "member_type": "student",
+            "name": s.chat_display_name or f"{s.first_name} {s.last_name}",
+            "public_key": s.public_key,
+        }
+        for s, _ in rows
+    ]
+
+    # Add the group teacher if different from the creator
+    group_res = await db.execute(select(Group).where(Group.id == group_id))
+    group = group_res.scalar_one_or_none()
+    if group and group.teacher_id and group.teacher_id != me.member_id:
+        teacher = await db.get(Employee, group.teacher_id)
+        if teacher and teacher.is_active:
+            members.append({
+                "id": str(teacher.id),
+                "member_type": "employee",
+                "name": f"{teacher.first_name} {teacher.last_name}",
+                "public_key": teacher.public_key,
+            })
+
+    return members
+
+
 @router.delete("/messages/{message_id}")
 async def delete_message(
     message_id: uuid.UUID,
@@ -351,8 +623,27 @@ async def delete_message(
             "room_id": str(msg.room_id),
         }
         for member in room.members:
-            key = f"{member.member_type.value}:{member.member_id}"
+            key = f"{_mt(member.member_type)}:{member.member_id}"
             await manager.send_to_user(key, payload)
+    return {"ok": True}
+
+
+@router.delete("/rooms/{room_id}/full")
+async def delete_room_full(
+    room_id: uuid.UUID,
+    me: ChatIdentity = Depends(get_chat_identity),
+    db: AsyncSession = Depends(get_db),
+):
+    """Полное удаление комнаты со всеми сообщениями. Только для сотрудников."""
+    if me.member_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can delete rooms")
+    from app.models.chat import ChatRoom as ChatRoomModel
+    res = await db.execute(select(ChatRoomModel).where(ChatRoomModel.id == room_id))
+    room = res.scalar_one_or_none()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    await db.delete(room)
+    await db.commit()
     return {"ok": True}
 
 
@@ -383,6 +674,12 @@ async def update_room_key(
         body.member_type,
         body.room_key_encrypted,
     )
+    # Notify the member that their room key was distributed
+    member_ws_key = f"{body.member_type}:{body.member_id}"
+    await manager.send_to_user(member_ws_key, {
+        "type": "room_key_updated",
+        "room_id": str(room_id),
+    })
     return {"ok": True}
 
 
@@ -430,6 +727,18 @@ async def chat_websocket(
             return
         member_type = "app_user"
         display_name = app_user.display_name
+    elif role is None and payload.get("type") == "access":
+        try:
+            member_id = uuid.UUID(payload["sub"])
+        except Exception:
+            await websocket.close(code=4001)
+            return
+        emp = await db.get(Employee, member_id)
+        if not emp or not emp.is_active:
+            await websocket.close(code=4001)
+            return
+        member_type = "employee"
+        display_name = f"{emp.first_name} {emp.last_name}"
     else:
         await websocket.close(code=4001)
         return
@@ -481,7 +790,7 @@ async def chat_websocket(
                 room = await crud.get_room_by_id(db, room_id)
                 if room:
                     for m in room.members:
-                        key = f"{m.member_type.value}:{m.member_id}"
+                        key = f"{_mt(m.member_type)}:{m.member_id}"
                         await manager.send_to_user(key, payload_out)
 
             elif msg_type == "typing":
@@ -506,9 +815,9 @@ async def chat_websocket(
                 room = await crud.get_room_by_id(db, room_id)
                 if room:
                     for m in room.members:
-                        if m.member_id == member_id and m.member_type.value == member_type:
+                        if m.member_id == member_id and _mt(m.member_type) == member_type:
                             continue  # don't send typing to self
-                        key = f"{m.member_type.value}:{m.member_id}"
+                        key = f"{_mt(m.member_type)}:{m.member_id}"
                         await manager.send_to_user(key, typing_payload)
 
             elif msg_type == "read":
@@ -529,9 +838,9 @@ async def chat_websocket(
                 room = await crud.get_room_by_id(db, room_id)
                 if room:
                     for m in room.members:
-                        if m.member_id == member_id and m.member_type.value == member_type:
+                        if m.member_id == member_id and _mt(m.member_type) == member_type:
                             continue
-                        key = f"{m.member_type.value}:{m.member_id}"
+                        key = f"{_mt(m.member_type)}:{m.member_id}"
                         await manager.send_to_user(key, read_payload)
 
     except WebSocketDisconnect:

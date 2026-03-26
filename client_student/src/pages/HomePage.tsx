@@ -151,21 +151,21 @@ function StudentHome() {
   });
 
   return (
-    <div className="bg-[#f5f5fa] min-h-screen pb-28 max-w-[430px] mx-auto">
+    <div className="bg-[#f5f5fa] dark:bg-gray-900 min-h-screen pb-28 max-w-[430px] mx-auto">
       {/* Header */}
       <div className="px-5 pt-14 pb-4 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
             Привет, {firstName}
             <span>👋</span>
           </h1>
-          <p className="text-gray-500 text-sm mt-0.5">
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5">
             {firstGroup ? `Группа «${firstGroup.name}»` : "Школа Гарри"}
           </p>
         </div>
         <button
           onClick={() => navigate("/profile")}
-          className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center"
+          className="w-10 h-10 rounded-full bg-brand-100 dark:bg-brand-900/40 flex items-center justify-center"
         >
           <svg viewBox="0 0 24 24" className="w-5 h-5 text-brand-700" fill="none" stroke="currentColor" strokeWidth={2}>
             <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
@@ -215,14 +215,14 @@ function StudentHome() {
         {registrations.length > 0 && (
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h2 className="font-bold text-gray-900">Мои экзамены</h2>
+              <h2 className="font-bold text-gray-900 dark:text-gray-100">Мои экзамены</h2>
               <button onClick={() => navigate("/exams")} className="text-sm text-brand-700 font-medium">Все →</button>
             </div>
             <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1">
               {registrations.slice(0, 4).map((reg, i) => {
                 const c = EXAM_COLORS[i % EXAM_COLORS.length];
                 return (
-                  <div key={reg.id} className={`${c.bg} rounded-2xl p-4 min-w-[140px] flex-shrink-0`}>
+                  <div key={reg.id} className={`${c.bg} dark:bg-gray-800 rounded-2xl p-4 min-w-[140px] flex-shrink-0`}>
                     <div className="flex items-start justify-between mb-2">
                       <div className={`w-9 h-9 rounded-xl ${c.icon} flex items-center justify-center`}>
                         <svg viewBox="0 0 24 24" className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -236,8 +236,8 @@ function StudentHome() {
                     <div className={`text-xs font-semibold ${c.text} mb-0.5`}>
                       {reg.exam_type ?? "Экзамен"}
                     </div>
-                    <div className="text-sm font-bold text-gray-900 leading-tight">{reg.subject_name ?? reg.exam_title}</div>
-                    <div className="text-xs text-gray-500 mt-1">{fmtDate(reg.date)}</div>
+                    <div className="text-sm font-bold text-gray-900 dark:text-gray-100 leading-tight">{reg.subject_name ?? reg.exam_title}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{fmtDate(reg.date)}</div>
                   </div>
                 );
               })}
@@ -247,33 +247,33 @@ function StudentHome() {
 
         {/* Schedule */}
         <div>
-          <h2 className="font-bold text-gray-900 mb-3">Расписание</h2>
+          <h2 className="font-bold text-gray-900 dark:text-gray-100 mb-3">Расписание</h2>
 
           {weekLessons.length === 0 ? (
-            <div className="bg-white rounded-2xl p-6 text-center">
-              <p className="text-gray-400 text-sm">Занятий на этой неделе нет</p>
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 text-center">
+              <p className="text-gray-400 dark:text-gray-500 text-sm">Занятий на этой неделе нет</p>
             </div>
           ) : (
             <div className="space-y-4">
               {lessonsByDay.map(({ dayLabel, lessons }) => (
                 <div key={dayLabel}>
-                  <div className="text-xs font-semibold text-gray-400 mb-2 px-1">{dayLabel}</div>
+                  <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 mb-2 px-1">{dayLabel}</div>
                   <div className="space-y-2">
                     {lessons.map(l => (
-                      <div key={l.key} className="bg-white rounded-2xl px-4 py-3 flex items-center gap-4">
+                      <div key={l.key} className="bg-white dark:bg-gray-800 rounded-2xl px-4 py-3 flex items-center gap-4">
                         <div className="text-right flex-shrink-0 w-14">
-                          <div className="text-sm font-bold text-gray-900">{fmtTime(l.startTime)}</div>
-                          <div className="text-xs text-gray-400">{fmtTime(l.endTime)}</div>
+                          <div className="text-sm font-bold text-gray-900 dark:text-gray-100">{fmtTime(l.startTime)}</div>
+                          <div className="text-xs text-gray-400 dark:text-gray-500">{fmtTime(l.endTime)}</div>
                         </div>
                         <div className="w-px h-10 bg-brand-200 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold text-gray-900 truncate">{l.groupName}</div>
-                          <div className="text-xs text-gray-400 truncate">
+                          <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{l.groupName}</div>
+                          <div className="text-xs text-gray-400 dark:text-gray-500 truncate">
                             {[l.teacherName, l.locationName].filter(Boolean).join(" · ")}
                           </div>
                         </div>
                         {l.isNow && (
-                          <span className="text-[11px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full flex-shrink-0">
+                          <span className="text-[11px] font-bold text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded-full flex-shrink-0">
                             Скоро
                           </span>
                         )}
@@ -305,19 +305,19 @@ function GuestHome() {
   ];
 
   return (
-    <div className="bg-[#f5f5fa] min-h-screen pb-28 max-w-[430px] mx-auto">
+    <div className="bg-[#f5f5fa] dark:bg-gray-900 min-h-screen pb-28 max-w-[430px] mx-auto">
       {/* Header */}
       <div className="px-5 pt-14 pb-4 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
             Школа Гарри
             <span className="text-amber-400">✦</span>
           </h1>
-          <p className="text-gray-500 text-sm">Подготовка к экзаменам</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">Подготовка к экзаменам</p>
         </div>
         <button
           onClick={() => navigate("/profile")}
-          className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center"
+          className="w-10 h-10 rounded-full bg-brand-100 dark:bg-brand-900/40 flex items-center justify-center"
         >
           <svg viewBox="0 0 24 24" className="w-5 h-5 text-brand-700" fill="none" stroke="currentColor" strokeWidth={2}>
             <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
@@ -350,15 +350,15 @@ function GuestHome() {
         {/* Courses */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="font-bold text-gray-900">Курсы подготовки</h2>
+            <h2 className="font-bold text-gray-900 dark:text-gray-100">Курсы подготовки</h2>
             <button className="text-sm text-brand-700 font-medium">Все →</button>
           </div>
           <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1">
             {courses.map((c, i) => (
-              <div key={i} className="bg-white rounded-2xl p-4 min-w-[150px] flex-shrink-0 shadow-sm">
+              <div key={i} className="bg-white dark:bg-gray-800 rounded-2xl p-4 min-w-[150px] flex-shrink-0 shadow-sm">
                 <span className={`text-[11px] font-bold ${c.tagColor} px-2 py-0.5 rounded-full`}>{c.tag}</span>
-                <div className="text-base font-bold text-gray-900 mt-2 mb-1">{c.name}</div>
-                <div className="text-xs text-gray-400 mb-3">{c.price}</div>
+                <div className="text-base font-bold text-gray-900 dark:text-gray-100 mt-2 mb-1">{c.name}</div>
+                <div className="text-xs text-gray-400 dark:text-gray-500 mb-3">{c.price}</div>
                 <button className="w-full bg-brand-700 text-white text-xs font-bold py-2 rounded-xl">
                   Подробнее
                 </button>
@@ -369,16 +369,16 @@ function GuestHome() {
 
         {/* Career guidance */}
         <div>
-          <h2 className="font-bold text-gray-900 mb-3">Профориентация</h2>
-          <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-start gap-3 mb-3">
+          <h2 className="font-bold text-gray-900 dark:text-gray-100 mb-3">Профориентация</h2>
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/40 rounded-2xl p-4 flex items-start gap-3 mb-3">
             <div className="w-10 h-10 rounded-xl bg-amber-400 flex items-center justify-center flex-shrink-0">
               <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2}>
                 <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><circle cx="12" cy="16" r="0.5" fill="currentColor" />
               </svg>
             </div>
             <div>
-              <div className="font-semibold text-gray-900 text-sm">Найди свою профессию</div>
-              <div className="text-xs text-gray-500 mt-0.5">Тестирование и консультация с экспертом. Помогаем определиться с направлением.</div>
+              <div className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Найди свою профессию</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Тестирование и консультация с экспертом. Помогаем определиться с направлением.</div>
             </div>
           </div>
           <button

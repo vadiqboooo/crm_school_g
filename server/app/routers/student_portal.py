@@ -15,6 +15,7 @@ import uuid
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,7 +29,11 @@ from app.models.lesson import Lesson, LessonAttendance
 from app.models.schedule import Schedule
 from app.models.student import Student
 from app.models.subject import Subject
+from app.auth.security import decode_token, verify_password
+from app.models.app_user import AppUser
 from app.routers.student_auth import get_current_student_dep
+
+_bearer = HTTPBearer()
 
 router = APIRouter(prefix="/student-portal", tags=["student-portal"])
 
@@ -510,9 +515,18 @@ class VerifyPasswordRequest(BaseModel):
 async def verify_student_password(
     body: VerifyPasswordRequest,
     student: Student = Depends(get_current_student_dep),
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.auth.security import verify_password
+    payload = decode_token(credentials.credentials)
+    role = payload.get("role") if payload else None
+    if role == "app_user":
+        user_id = uuid.UUID(payload["sub"])
+        u = await db.get(AppUser, user_id)
+        if not u:
+            raise HTTPException(status_code=400, detail="Пользователь не найден")
+        return {"valid": verify_password(body.password, u.password_hash)}
+    # role == "student"
     s_result = await db.execute(select(Student).where(Student.id == student.id))
     s = s_result.scalar_one()
     if not s.portal_password_hash:
@@ -524,29 +538,53 @@ async def verify_student_password(
 async def update_settings(
     body: UpdateSettingsRequest,
     student: Student = Depends(get_current_student_dep),
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
 ):
+    from app.auth.security import hash_password, encrypt_field
+    payload = decode_token(credentials.credentials)
+    role = payload.get("role") if payload else None
+    is_app_user = role == "app_user"
+
     s_result = await db.execute(select(Student).where(Student.id == student.id))
     s = s_result.scalar_one()
 
-    if body.portal_login is not None and body.portal_login != s.portal_login:
-        taken = await db.execute(
-            select(Student).where(Student.portal_login == body.portal_login, Student.id != s.id)
-        )
-        if taken.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail="Логин уже занят")
-        s.portal_login = body.portal_login
+    # For app_user: load their AppUser record for login/password changes
+    app_user = None
+    if is_app_user:
+        user_id = uuid.UUID(payload["sub"])
+        app_user = await db.get(AppUser, user_id)
+
+    if body.portal_login is not None:
+        if is_app_user and app_user:
+            if body.portal_login != app_user.login:
+                taken = await db.execute(
+                    select(AppUser).where(AppUser.login == body.portal_login, AppUser.id != app_user.id)
+                )
+                if taken.scalar_one_or_none():
+                    raise HTTPException(status_code=400, detail="Логин уже занят")
+                app_user.login = body.portal_login
+        elif not is_app_user and body.portal_login != s.portal_login:
+            taken = await db.execute(
+                select(Student).where(Student.portal_login == body.portal_login, Student.id != s.id)
+            )
+            if taken.scalar_one_or_none():
+                raise HTTPException(status_code=400, detail="Логин уже занят")
+            s.portal_login = body.portal_login
 
     if body.new_password is not None and body.new_password.strip():
-        from app.auth.security import derive_chat_public_key, hash_password, verify_password
         if not body.old_password:
             raise HTTPException(status_code=400, detail="Введите старый пароль")
-        if not s.portal_password_hash or not verify_password(body.old_password, s.portal_password_hash):
-            raise HTTPException(status_code=400, detail="Старый пароль неверный")
-        from app.auth.security import derive_chat_public_key, encrypt_field
-        s.portal_password_hash = hash_password(body.new_password)
-        s.portal_password_plain = encrypt_field(body.new_password)
-        s.public_key = derive_chat_public_key(body.new_password, str(s.id))
+        if is_app_user and app_user:
+            if not verify_password(body.old_password, app_user.password_hash):
+                raise HTTPException(status_code=400, detail="Старый пароль неверный")
+            app_user.password_hash = hash_password(body.new_password)
+            app_user.password_plain = body.new_password
+        else:
+            if not s.portal_password_hash or not verify_password(body.old_password, s.portal_password_hash):
+                raise HTTPException(status_code=400, detail="Старый пароль неверный")
+            s.portal_password_hash = hash_password(body.new_password)
+            s.portal_password_plain = encrypt_field(body.new_password)
 
     if body.phone is not None:
         s.phone = body.phone or None

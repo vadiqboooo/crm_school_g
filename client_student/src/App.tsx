@@ -6,6 +6,7 @@ import ExamRegisterPage from "./pages/ExamRegisterPage";
 import ResultsPage from "./pages/ResultsPage";
 import ChatPage from "./pages/ChatPage";
 import ProfilePage from "./pages/ProfilePage";
+import { ThemeProvider } from "./contexts/ThemeContext";
 
 function isAuthenticated() {
   return !!localStorage.getItem("s_access_token");
@@ -32,8 +33,10 @@ function AnimatedRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <AnimatedRoutes />
-    </BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <AnimatedRoutes />
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }

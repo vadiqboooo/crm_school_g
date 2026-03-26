@@ -48,6 +48,9 @@ import type {
   AppUser,
   AppUserCreate,
   AppUserUpdate,
+  ChatRoom,
+  ChatMessage,
+  ChatGroupStudent,
 } from "../types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -1014,6 +1017,74 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify({ new_password: newPassword }),
     });
+  }
+
+  // ── Chat ──────────────────────────────────────────────────────────────────
+
+  async uploadChatPublicKey(publicKey: string): Promise<void> {
+    await this.request<void>("/chat/public-key", {
+      method: "PATCH",
+      body: JSON.stringify({ public_key: publicKey }),
+    });
+  }
+
+  async getChatRooms(): Promise<ChatRoom[]> {
+    return this.request<ChatRoom[]>("/chat/rooms");
+  }
+
+  async getChatMessages(roomId: string, before?: string): Promise<ChatMessage[]> {
+    const params = before ? `?before=${encodeURIComponent(before)}&limit=50` : "?limit=50";
+    return this.request<ChatMessage[]>(`/chat/rooms/${roomId}/messages${params}`);
+  }
+
+  async sendChatMessage(roomId: string, contentEncrypted: string): Promise<ChatMessage> {
+    return this.request<ChatMessage>(`/chat/rooms/${roomId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content_encrypted: contentEncrypted }),
+    });
+  }
+
+  async markChatRoomRead(roomId: string): Promise<void> {
+    await this.request<void>(`/chat/rooms/${roomId}/read`, { method: "POST" });
+  }
+
+  async deleteChatMessage(messageId: string): Promise<void> {
+    await this.request<void>(`/chat/messages/${messageId}`, { method: "DELETE" });
+  }
+
+  async deleteChatRoom(roomId: string): Promise<void> {
+    await this.request<void>(`/chat/rooms/${roomId}/full`, { method: "DELETE" });
+  }
+
+  async getGroupStudentsForChat(groupId: string): Promise<ChatGroupStudent[]> {
+    return this.request<ChatGroupStudent[]>(`/chat/groups/${groupId}/students`);
+  }
+
+  async createOrGetGroupChatRoom(
+    groupId: string,
+    memberKeys: { member_id: string; member_type: string; room_key_encrypted: string | null }[]
+  ): Promise<ChatRoom> {
+    return this.request<ChatRoom>("/chat/rooms/group", {
+      method: "POST",
+      body: JSON.stringify({ group_id: groupId, member_keys: memberKeys }),
+    });
+  }
+
+  async getGroupChatRoom(groupId: string): Promise<ChatRoom> {
+    return this.request<ChatRoom>(`/chat/rooms/group/${groupId}`);
+  }
+
+  async updateChatRoomKey(roomId: string, memberId: string, memberType: string, roomKeyEncrypted: string): Promise<void> {
+    await this.request<void>(`/chat/rooms/${roomId}/room-key`, {
+      method: "PATCH",
+      body: JSON.stringify({ member_id: memberId, member_type: memberType, room_key_encrypted: roomKeyEncrypted }),
+    });
+  }
+
+  getChatWsUrl(): string {
+    const token = localStorage.getItem("access_token") || "";
+    const wsBase = this.baseURL.replace(/^http/, "ws");
+    return `${wsBase}/chat/ws?token=${encodeURIComponent(token)}`;
   }
 }
 

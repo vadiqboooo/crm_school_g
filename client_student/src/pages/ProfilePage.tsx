@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, StudentProfile } from "../lib/api";
 import BottomNav from "../components/BottomNav";
+import { useTheme } from "../contexts/ThemeContext";
 
 function SettingsField({
   label, value, onChange, placeholder, type = "text", disabled = false, error,
@@ -10,7 +11,7 @@ function SettingsField({
 }) {
   return (
     <div>
-      <label className="block text-xs text-gray-500 mb-1">{label}</label>
+      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
       <input
         type={type}
         value={value}
@@ -19,10 +20,10 @@ function SettingsField({
         disabled={disabled}
         className={`w-full border rounded-xl px-3 py-2.5 text-sm outline-none transition-colors ${
           disabled
-            ? "bg-gray-100 border-gray-100 text-gray-400 cursor-not-allowed"
+            ? "bg-gray-100 dark:bg-gray-700 border-gray-100 dark:border-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed"
             : error
-            ? "bg-gray-50 border-red-300 text-gray-900 focus:border-red-400"
-            : "bg-gray-50 border-gray-200 text-gray-900 focus:border-brand-400"
+            ? "bg-gray-50 dark:bg-gray-800 border-red-300 text-gray-900 dark:text-gray-100 focus:border-red-400"
+            : "bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 focus:border-brand-400 dark:placeholder-gray-500"
         }`}
       />
       {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
@@ -32,6 +33,7 @@ function SettingsField({
 
 export default function ProfilePage() {
   const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
   const role = localStorage.getItem("s_role") ?? "student";
   const stored = JSON.parse(localStorage.getItem("s_student") ?? "{}");
 
@@ -131,33 +133,56 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="bg-cream min-h-screen pb-28 max-w-[430px] mx-auto">
+    <div className="bg-cream dark:bg-gray-900 min-h-screen pb-28 max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="px-5 pt-14 pb-6 bg-white border-b border-gray-100">
+      <div className="px-5 pt-14 pb-6 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center gap-3">
-          <div className="w-14 h-14 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0">
+          <div className="w-14 h-14 rounded-full bg-brand-100 dark:bg-brand-900/40 flex items-center justify-center flex-shrink-0">
             <span className="text-brand-700 font-bold text-xl">{initials}</span>
           </div>
           <div>
-            <div className="font-bold text-gray-900 text-lg">{displayName}</div>
+            <div className="font-bold text-gray-900 dark:text-gray-100 text-lg">{displayName}</div>
             {profile?.portal_login && (
-              <div className="text-sm text-gray-400">@{profile.portal_login}</div>
+              <div className="text-sm text-gray-400 dark:text-gray-500">@{profile.portal_login}</div>
             )}
           </div>
         </div>
       </div>
 
       <div className="px-5 py-5 space-y-4">
+        {/* Theme toggle */}
+        <div className="flex items-center justify-between py-1">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">{theme === "dark" ? "🌙" : "☀️"}</span>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              {theme === "dark" ? "Тёмная тема" : "Светлая тема"}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${
+              theme === "dark" ? "bg-brand-700" : "bg-gray-200"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${
+                theme === "dark" ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </button>
+        </div>
+
         {hasStudentAccess && (
           <>
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Аккаунт</div>
+            <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Аккаунт</div>
             <SettingsField label="Логин" value={login} onChange={setLogin} placeholder="Введите логин" />
 
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider pt-2">Смена пароля</div>
+            <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider pt-2">Смена пароля</div>
 
             {!oldPasswordVerified ? (
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Старый пароль</label>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Старый пароль</label>
                 <div className="flex gap-2">
                   <input
                     type="password"
@@ -165,7 +190,9 @@ export default function ProfilePage() {
                     onChange={e => { setOldPassword(e.target.value); setOldPasswordError(null); }}
                     placeholder="Введите текущий пароль"
                     className={`flex-1 border rounded-xl px-3 py-2.5 text-sm outline-none transition-colors ${
-                      oldPasswordError ? "border-red-300 bg-gray-50" : "border-gray-200 bg-gray-50 focus:border-brand-400"
+                      oldPasswordError
+                        ? "border-red-300 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                        : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 dark:placeholder-gray-500 focus:border-brand-400"
                     }`}
                     onKeyDown={e => { if (e.key === "Enter") handleVerifyOldPassword(); }}
                   />
@@ -194,11 +221,11 @@ export default function ProfilePage() {
               </>
             )}
 
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider pt-2">Контакты</div>
+            <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider pt-2">Контакты</div>
             <SettingsField label="Телефон" value={phone} onChange={setPhone} placeholder="+7..." type="tel" />
             <SettingsField label="Email" value={email} onChange={setEmail} placeholder="example@mail.ru" type="email" />
 
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider pt-2">Чат</div>
+            <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider pt-2">Чат</div>
             <SettingsField label="Имя в чате" value={chatName} onChange={setChatName} placeholder="Как вас называть в чате" disabled />
 
             {error && <p className="text-red-500 text-sm">{error}</p>}
@@ -216,7 +243,7 @@ export default function ProfilePage() {
 
         <button
           onClick={handleLogout}
-          className="w-full text-red-500 text-sm font-semibold py-3 border border-red-100 rounded-2xl hover:bg-red-50 transition"
+          className="w-full text-red-500 text-sm font-semibold py-3 border border-red-100 dark:border-red-900/40 rounded-2xl hover:bg-red-50 dark:hover:bg-red-900/20 transition"
         >
           Выйти из аккаунта
         </button>

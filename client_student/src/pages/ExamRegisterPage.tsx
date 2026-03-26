@@ -104,7 +104,7 @@ export default function ExamRegisterPage() {
 
   if (loading) {
     return (
-      <div className="bg-cream min-h-screen flex items-center justify-center text-gray-400 text-sm">
+      <div className="bg-cream dark:bg-gray-900 min-h-screen flex items-center justify-center text-gray-400 text-sm">
         Загрузка...
       </div>
     );
@@ -112,17 +112,17 @@ export default function ExamRegisterPage() {
 
   if (registered) {
     return (
-      <div className="bg-cream min-h-screen flex flex-col items-center justify-center px-6 gap-4">
-        <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center">
-          <svg viewBox="0 0 24 24" className="w-10 h-10 text-emerald-600" fill="none" stroke="currentColor" strokeWidth={2.5}>
+      <div className="bg-cream dark:bg-gray-900 min-h-screen flex flex-col items-center justify-center px-6 gap-4">
+        <div className="w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+          <svg viewBox="0 0 24 24" className="w-10 h-10 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" strokeWidth={2.5}>
             <polyline points="20 6 9 17 4 12" />
           </svg>
         </div>
-        <h2 className="text-xl font-bold text-gray-900 text-center">Вы записаны!</h2>
-        <p className="text-gray-500 text-sm text-center">
+        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 text-center">Вы записаны!</h2>
+        <p className="text-gray-500 dark:text-gray-400 text-sm text-center">
           {selectedSubject?.name} · {selectedDate} в {selectedSlot?.start_time}
         </p>
-        <p className="text-gray-400 text-xs text-center">{selectedLocation?.name}</p>
+        <p className="text-gray-400 dark:text-gray-500 text-xs text-center">{selectedLocation?.name}</p>
         <button onClick={() => navigate("/exams")} className="mt-4 w-full py-4 bg-brand-700 text-white rounded-2xl font-semibold">
           К экзаменам
         </button>
@@ -131,15 +131,15 @@ export default function ExamRegisterPage() {
   }
 
   return (
-    <div className="bg-cream min-h-screen pb-8">
+    <div className="bg-cream dark:bg-gray-900 min-h-screen pb-8">
       {/* Header */}
       <div className="px-5 pt-12 pb-4 flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="w-9 h-9 rounded-full bg-white shadow-sm flex items-center justify-center shrink-0">
-          <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" strokeWidth={2.5}>
+        <button onClick={() => navigate(-1)} className="w-9 h-9 rounded-full bg-white dark:bg-gray-800 shadow-sm flex items-center justify-center shrink-0">
+          <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" strokeWidth={2.5}>
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
-        <h1 className="text-lg font-bold text-gray-900">Запись на экзамен</h1>
+        <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">Запись на экзамен</h1>
         {studentExamTypes.size > 0 && (
           <div className="ml-auto flex gap-1 shrink-0">
             {[...studentExamTypes].map(type => (
@@ -169,8 +169,8 @@ export default function ExamRegisterPage() {
                 <div className="flex flex-col items-center flex-1">
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
                     isDone ? "bg-brand-700 text-white" :
-                    isActive ? "bg-brand-100 text-brand-700 border-2 border-brand-700" :
-                    "bg-gray-100 text-gray-400"
+                    isActive ? "bg-brand-100 dark:bg-brand-900/40 text-brand-700 border-2 border-brand-700" :
+                    "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500"
                   }`}>
                     {isDone ? (
                       <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={3}>
@@ -195,26 +195,26 @@ export default function ExamRegisterPage() {
 
         {/* School selector */}
         <div>
-          <label className="text-xs font-medium text-gray-500 mb-1.5 block">Школа</label>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 block">Школа</label>
           <button
             onClick={() => setLocationOpen(v => !v)}
-            className="w-full bg-white rounded-2xl px-4 py-3.5 shadow-sm flex items-center justify-between text-sm active:scale-[0.98] transition-transform"
+            className="w-full bg-white dark:bg-gray-800 rounded-2xl px-4 py-3.5 shadow-sm flex items-center justify-between text-sm active:scale-[0.98] transition-transform"
           >
-            <span className={selectedLocation ? "text-gray-900 font-medium" : "text-gray-400"}>
+            <span className={selectedLocation ? "text-gray-900 dark:text-gray-100 font-medium" : "text-gray-400 dark:text-gray-500"}>
               {selectedLocation?.name ?? "Выберите школу"}
             </span>
             <ChevronIcon open={locationOpen} />
           </button>
           {locationOpen && (
-            <div className="mt-1.5 bg-white rounded-2xl shadow-sm overflow-hidden divide-y divide-gray-50">
+            <div className="mt-1.5 bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden divide-y divide-gray-50 dark:divide-gray-700">
               {locations.length === 0 ? (
-                <div className="px-4 py-3 text-sm text-gray-400">Нет доступных школ</div>
+                <div className="px-4 py-3 text-sm text-gray-400 dark:text-gray-500">Нет доступных школ</div>
               ) : locations.map(loc => (
                 <button
                   key={loc.id ?? "__all__"}
                   onClick={() => handleSelectLocation(loc)}
                   className={`w-full px-4 py-3 text-left text-sm transition-colors ${
-                    selectedLocation?.id === loc.id ? "bg-brand-700/10 text-brand-700 font-semibold" : "text-gray-700"
+                    selectedLocation?.id === loc.id ? "bg-brand-700/10 text-brand-700 font-semibold" : "text-gray-700 dark:text-gray-300"
                   }`}
                 >
                   {loc.name}
@@ -227,13 +227,13 @@ export default function ExamRegisterPage() {
         {/* Subject selector */}
         {selectedLocation && (
           <div>
-            <label className="text-xs font-medium text-gray-500 mb-1.5 block">Предмет</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 block">Предмет</label>
             <button
               onClick={() => setSubjectOpen(v => !v)}
-              className="w-full bg-white rounded-2xl px-4 py-3.5 shadow-sm flex items-center justify-between text-sm active:scale-[0.98] transition-transform"
+              className="w-full bg-white dark:bg-gray-800 rounded-2xl px-4 py-3.5 shadow-sm flex items-center justify-between text-sm active:scale-[0.98] transition-transform"
             >
               <div className="flex items-center gap-2">
-                <span className={selectedSubject ? "text-gray-900 font-medium" : "text-gray-400"}>
+                <span className={selectedSubject ? "text-gray-900 dark:text-gray-100 font-medium" : "text-gray-400 dark:text-gray-500"}>
                   {selectedSubject?.name ?? "Выберите предмет"}
                 </span>
                 {selectedSubject?.exam_type && (
@@ -245,15 +245,15 @@ export default function ExamRegisterPage() {
               <ChevronIcon open={subjectOpen} />
             </button>
             {subjectOpen && (
-              <div className="mt-1.5 bg-white rounded-2xl shadow-sm overflow-hidden divide-y divide-gray-50 max-h-64 overflow-y-auto">
+              <div className="mt-1.5 bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden divide-y divide-gray-50 dark:divide-gray-700 max-h-64 overflow-y-auto">
                 {filteredSubjects.length === 0 ? (
-                  <div className="px-4 py-3 text-sm text-gray-400">Нет доступных предметов</div>
+                  <div className="px-4 py-3 text-sm text-gray-400 dark:text-gray-500">Нет доступных предметов</div>
                 ) : filteredSubjects.map(subj => (
                   <button
                     key={subj.id}
                     onClick={() => handleSelectSubject(subj)}
                     className={`w-full px-4 py-3 text-left text-sm flex items-center gap-2 transition-colors ${
-                      selectedSubject?.id === subj.id ? "bg-brand-700/10 text-brand-700 font-semibold" : "text-gray-700"
+                      selectedSubject?.id === subj.id ? "bg-brand-700/10 text-brand-700 font-semibold" : "text-gray-700 dark:text-gray-300"
                     }`}
                   >
                     {subj.exam_type && (
@@ -275,7 +275,7 @@ export default function ExamRegisterPage() {
         {selectedSubject && matchedSession && (
           <>
             <div>
-              <label className="text-xs font-medium text-gray-500 mb-1.5 block">Дата проведения</label>
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 block">Дата проведения</label>
               <div className="flex gap-2 overflow-x-auto pb-1 -mx-5 px-5 scrollbar-none">
                 {allDates.map(d => {
                   const date = new Date(d);
@@ -287,11 +287,11 @@ export default function ExamRegisterPage() {
                       key={d}
                       onClick={() => { setSelectedDate(d); setSelectedSlot(null); }}
                       className={`shrink-0 w-16 h-16 rounded-2xl flex flex-col items-center justify-center transition-all ${
-                        active ? "bg-brand-700 text-white" : "bg-white text-gray-700 shadow-sm"
+                        active ? "bg-brand-700 text-white" : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 shadow-sm"
                       }`}
                     >
-                      <span className={`text-xl font-bold leading-none ${active ? "text-white" : "text-gray-900"}`}>{day}</span>
-                      <span className={`text-xs mt-0.5 ${active ? "text-white/80" : "text-gray-400"}`}>{month}</span>
+                      <span className={`text-xl font-bold leading-none ${active ? "text-white" : "text-gray-900 dark:text-gray-100"}`}>{day}</span>
+                      <span className={`text-xs mt-0.5 ${active ? "text-white/80" : "text-gray-400 dark:text-gray-500"}`}>{month}</span>
                     </button>
                   );
                 })}
@@ -299,7 +299,7 @@ export default function ExamRegisterPage() {
             </div>
 
             <div>
-              <label className="text-xs font-medium text-gray-500 mb-1.5 block">Время проведения</label>
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 block">Время проведения</label>
               <div className="flex gap-2 flex-wrap">
                 {slotsForDate.map(slot => {
                   const active = selectedSlot?.id === slot.id;
@@ -313,20 +313,20 @@ export default function ExamRegisterPage() {
                       onClick={() => !disabled && setSelectedSlot(slot)}
                       disabled={disabled}
                       className={`rounded-2xl px-4 py-3 flex flex-col items-center min-w-[80px] transition-all ${
-                        alreadyRegistered ? "bg-emerald-50 border border-emerald-200 cursor-not-allowed" :
-                        full ? "bg-gray-100 opacity-50 cursor-not-allowed" :
-                        active ? "bg-brand-700 text-white" : "bg-white shadow-sm text-gray-900"
+                        alreadyRegistered ? "bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/40 cursor-not-allowed" :
+                        full ? "bg-gray-100 dark:bg-gray-800 opacity-50 cursor-not-allowed" :
+                        active ? "bg-brand-700 text-white" : "bg-white dark:bg-gray-800 shadow-sm text-gray-900 dark:text-gray-100"
                       }`}
                     >
-                      <span className={`text-base font-bold ${active ? "text-white" : alreadyRegistered ? "text-emerald-700" : ""}`}>{slot.start_time}</span>
+                      <span className={`text-base font-bold ${active ? "text-white" : alreadyRegistered ? "text-emerald-700 dark:text-emerald-400" : ""}`}>{slot.start_time}</span>
                       {alreadyRegistered ? (
-                        <span className="text-[11px] mt-0.5 text-emerald-600">Записан</span>
+                        <span className="text-[11px] mt-0.5 text-emerald-600 dark:text-emerald-400">Записан</span>
                       ) : slot.available_seats > 0 ? (
                         <span className={`text-[11px] mt-0.5 ${active ? "text-white/80" : low ? "text-red-500" : "text-emerald-600"}`}>
                           {slot.available_seats} {low ? "места" : "мест"}
                         </span>
                       ) : (
-                        <span className="text-[11px] mt-0.5 text-gray-400">Занято</span>
+                        <span className="text-[11px] mt-0.5 text-gray-400 dark:text-gray-500">Занято</span>
                       )}
                     </button>
                   );
@@ -335,7 +335,7 @@ export default function ExamRegisterPage() {
             </div>
 
             {matchedSession.notes && (
-              <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3.5 flex gap-2.5 text-sm text-amber-800">
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/40 rounded-2xl p-3.5 flex gap-2.5 text-sm text-amber-800 dark:text-amber-300">
                 <span className="shrink-0">ⓘ</span>
                 <span>{matchedSession.notes}</span>
               </div>

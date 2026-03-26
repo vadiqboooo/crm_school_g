@@ -9,6 +9,7 @@ import { FinancesPage } from "./pages/FinancesPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { ReportFormPage } from "./pages/ReportFormPage";
 import { TasksPage } from "./pages/TasksPage";
+import { ChatPage } from "./pages/ChatPage";
 import { LoginPage } from "./pages/LoginPage";
 import { Layout } from "./components/Layout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -73,6 +74,10 @@ export const router = createBrowserRouter([
       {
         path: "tasks",
         Component: TasksPage,
+      },
+      {
+        path: "chat",
+        Component: ChatPage,
       },
     ],
   },

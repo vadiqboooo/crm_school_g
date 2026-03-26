@@ -6,7 +6,8 @@ export type WsIncomingMessage =
   | { type: "typing"; room_id: string; sender_id: string; sender_name: string }
   | { type: "read_receipt"; room_id: string; reader_id: string; read_at: string | null }
   | { type: "message_deleted"; message_id: string }
-  | { type: "pong" };
+  | { type: "pong" }
+  | { type: "room_key_updated"; room_id: string };
 
 interface Options {
   onMessage: (msg: WsIncomingMessage) => void;

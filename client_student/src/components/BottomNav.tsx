@@ -52,9 +52,9 @@ export default function BottomNav({ chatUnread: chatUnreadProp }: BottomNavProps
   const chatUnread = chatUnreadProp ?? lsUnread;
 
   return (
-    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white flex items-center px-4 py-3 z-50">
+    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white dark:bg-gray-900 flex items-center px-4 py-3 z-50">
       {/* Top separator line */}
-      <div className="absolute inset-x-0 top-0 h-px bg-gray-100" />
+      <div className="absolute inset-x-0 top-0 h-px bg-gray-100 dark:bg-gray-700" />
 
       {tabs.map(({ path, label, icon: Icon }) => {
         const active = pathname === path || (path !== "/" && pathname.startsWith(path));
@@ -74,14 +74,14 @@ export default function BottomNav({ chatUnread: chatUnreadProp }: BottomNavProps
             ) : (
               <div className="flex flex-col items-center gap-0.5 transition-all duration-200">
                 <div className="relative">
-                  <Icon className="text-gray-400" />
+                  <Icon className="text-gray-400 dark:text-gray-500" />
                   {badge > 0 && (
                     <span className="absolute -top-1.5 -right-2 bg-rose-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 leading-none">
                       {badge > 99 ? "99+" : badge}
                     </span>
                   )}
                 </div>
-                <span className="text-[10px] font-semibold text-gray-400 tracking-wide">{label}</span>
+                <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 tracking-wide">{label}</span>
               </div>
             )}
           </button>

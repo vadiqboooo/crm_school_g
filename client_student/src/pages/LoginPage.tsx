@@ -35,7 +35,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-cream flex flex-col items-center justify-between px-6 py-10">
+    <div className="min-h-screen bg-cream dark:bg-gray-900 flex flex-col items-center justify-between px-6 py-10">
       {/* Logo + Title */}
       <div />
       <div className="w-full flex flex-col items-center gap-4">
@@ -43,16 +43,16 @@ export default function LoginPage() {
           <span className="text-3xl font-bold text-amber-400">Г</span>
         </div>
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900">Школа Гарри</h1>
-          <p className="text-gray-500 text-sm mt-1">Войдите в свой аккаунт</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Школа Гарри</h1>
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Войдите в свой аккаунт</p>
         </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="w-full mt-4 space-y-3">
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Логин</label>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 block">Логин</label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500">
                 <UserIcon />
               </span>
               <input
@@ -60,16 +60,16 @@ export default function LoginPage() {
                 value={login}
                 onChange={e => setLogin(e.target.value)}
                 placeholder="Введите логин"
-                className="w-full pl-10 pr-4 py-3.5 bg-white rounded-2xl border border-gray-200 text-sm outline-none focus:border-brand-700 transition-colors"
+                className="w-full pl-10 pr-4 py-3.5 bg-white dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 rounded-2xl border border-gray-200 dark:border-gray-700 text-sm outline-none focus:border-brand-700 dark:focus:border-brand-500 transition-colors"
                 autoComplete="username"
               />
             </div>
           </div>
 
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Пароль</label>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 block">Пароль</label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500">
                 <LockIcon />
               </span>
               <input
@@ -77,13 +77,13 @@ export default function LoginPage() {
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="Введите пароль"
-                className="w-full pl-10 pr-10 py-3.5 bg-white rounded-2xl border border-gray-200 text-sm outline-none focus:border-brand-700 transition-colors"
+                className="w-full pl-10 pr-10 py-3.5 bg-white dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 rounded-2xl border border-gray-200 dark:border-gray-700 text-sm outline-none focus:border-brand-700 dark:focus:border-brand-500 transition-colors"
                 autoComplete="current-password"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500"
               >
                 {showPassword ? <EyeOffIcon /> : <EyeIcon />}
               </button>
@@ -97,7 +97,7 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="bg-red-50 text-red-600 text-sm px-4 py-2 rounded-xl text-center">
+            <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-sm px-4 py-2 rounded-xl text-center">
               {error}
             </div>
           )}
@@ -112,18 +112,18 @@ export default function LoginPage() {
         </form>
 
         <div className="flex items-center gap-3 w-full my-1">
-          <div className="flex-1 h-px bg-gray-200" />
-          <span className="text-xs text-gray-400">или</span>
-          <div className="flex-1 h-px bg-gray-200" />
+          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+          <span className="text-xs text-gray-400 dark:text-gray-500">или</span>
+          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
         </div>
 
-        <button className="w-full py-3.5 border border-gray-200 bg-white rounded-2xl text-sm font-medium text-gray-700 flex items-center justify-center gap-2">
+        <button className="w-full py-3.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-2xl text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center justify-center gap-2">
           <PhoneIcon />
           Связаться с поддержкой
         </button>
       </div>
 
-      <p className="text-xs text-gray-400">© 2026 Школа Гарри</p>
+      <p className="text-xs text-gray-400 dark:text-gray-600">© 2026 Школа Гарри</p>
     </div>
   );
 }

@@ -11,6 +11,10 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
 }
 
+html.dark, html.dark body, html.dark #root {
+  background-color: #111827;
+}
+
 /* Mobile-first: max width container */
 #root {
   max-width: 430px;

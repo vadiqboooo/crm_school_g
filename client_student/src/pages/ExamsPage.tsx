@@ -27,28 +27,28 @@ export default function ExamsPage() {
   const featured = sessions[0];
 
   return (
-    <div className="bg-cream min-h-screen pb-24">
+    <div className="bg-cream dark:bg-gray-900 min-h-screen pb-24">
       <div className="px-5 pt-12 pb-2 flex items-center gap-3">
         <button
           onClick={() => navigate(-1)}
-          className="w-9 h-9 flex items-center justify-center rounded-full bg-white border border-gray-100 shadow-sm flex-shrink-0"
+          className="w-9 h-9 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm flex-shrink-0"
         >
-          <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" strokeWidth={2}>
+          <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" strokeWidth={2}>
             <path d="M15 18l-6-6 6-6" />
           </svg>
         </button>
-        <h1 className="text-2xl font-bold text-gray-900">Экзамены</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Экзамены</h1>
       </div>
 
       {/* Tabs */}
       <div className="px-5 mb-4">
-        <div className="bg-white rounded-2xl p-1 flex shadow-sm">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl p-1 flex shadow-sm">
           {(["current", "results"] as Tab[]).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
-                tab === t ? "bg-brand-700 text-white" : "text-gray-500"
+                tab === t ? "bg-brand-700 text-white" : "text-gray-500 dark:text-gray-400"
               }`}
             >
               {t === "current" ? "Текущие" : "Результаты"}
@@ -58,7 +58,7 @@ export default function ExamsPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-gray-400 text-sm">Загрузка...</div>
+        <div className="flex items-center justify-center py-16 text-gray-400 dark:text-gray-500 text-sm">Загрузка...</div>
       ) : tab === "current" ? (
         <div className="px-5 space-y-4">
           {/* Featured exam */}
@@ -91,7 +91,7 @@ export default function ExamsPage() {
           {registrations.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <h3 className="font-semibold text-gray-900">Мои записи</h3>
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100">Мои записи</h3>
                 <span className="text-brand-700 text-sm font-semibold">{registrations.length}</span>
               </div>
               <div className="space-y-2">
@@ -116,7 +116,7 @@ export default function ExamsPage() {
           )}
 
           {sessions.length === 0 && (
-            <div className="bg-white rounded-2xl p-6 text-center text-gray-400 text-sm shadow-sm">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 text-center text-gray-400 dark:text-gray-500 text-sm shadow-sm">
               Нет активных экзаменов
             </div>
           )}
@@ -124,7 +124,7 @@ export default function ExamsPage() {
       ) : (
         <div className="px-5">
           {results.length === 0 ? (
-            <div className="bg-white rounded-2xl p-6 text-center text-gray-400 text-sm shadow-sm">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 text-center text-gray-400 dark:text-gray-500 text-sm shadow-sm">
               Нет результатов
             </div>
           ) : (
@@ -227,11 +227,11 @@ function RegistrationCard({
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
-          className="bg-white p-4 relative z-10"
+          className="bg-white dark:bg-gray-800 p-4 relative z-10"
         >
           {reg.exam_type && (
             <div className="mb-2">
-              <span className="text-[11px] font-semibold bg-brand-100 text-brand-700 px-2.5 py-0.5 rounded-full">
+              <span className="text-[11px] font-semibold bg-brand-100 dark:bg-brand-900/40 text-brand-700 px-2.5 py-0.5 rounded-full">
                 {reg.exam_type}
               </span>
             </div>
@@ -242,22 +242,22 @@ function RegistrationCard({
               <span className="text-[10px] leading-none">дн.</span>
             </div>
             <div className="flex-1 min-w-0">
-              <div className="font-semibold text-sm text-gray-900 truncate">{reg.exam_title}</div>
+              <div className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">{reg.exam_title}</div>
               {reg.subject_name && (
                 <div className="text-xs text-brand-700 font-medium mt-0.5 truncate">{reg.subject_name}</div>
               )}
-              <div className="text-xs text-gray-400 mt-0.5">
+              <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
                 {reg.date} · {reg.start_time.slice(0, 5)} · {reg.school_location_name ?? ""}
               </div>
             </div>
           </div>
           {/* Swipe hint */}
-          <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-gray-50">
+          <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-gray-50 dark:border-gray-700">
             <span className="flex items-center gap-1 text-[10px] text-brand-400 font-medium">
               <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M15 18l-6-6 6-6"/></svg>
               Изменить
             </span>
-            <span className="text-[10px] text-gray-300">свайп</span>
+            <span className="text-[10px] text-gray-300 dark:text-gray-600">свайп</span>
             <span className="flex items-center gap-1 text-[10px] text-red-400 font-medium">
               Удалить
               <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M9 18l6-6-6-6"/></svg>

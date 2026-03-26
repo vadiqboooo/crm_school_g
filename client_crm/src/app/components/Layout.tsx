@@ -1,5 +1,5 @@
 import { Outlet, useLocation, Link, useNavigate } from "react-router";
-import { Sparkles, Users, GraduationCap, School, BarChart3, Wallet, ClipboardList, LogOut, FileText, ChevronLeft, ChevronRight, CheckSquare, Menu, X } from "lucide-react";
+import { Sparkles, Users, GraduationCap, School, BarChart3, Wallet, ClipboardList, LogOut, FileText, ChevronLeft, ChevronRight, CheckSquare, Menu, X, MessageCircle } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { useAuth } from "../contexts/AuthContext";
@@ -39,6 +39,7 @@ export function Layout() {
     { path: "/finances", icon: Wallet, label: "Финансы" },
     { path: "/reports", icon: ClipboardList, label: "Отчеты" },
     { path: "/tasks", icon: CheckSquare, label: "Задачи" },
+    { path: "/chat", icon: MessageCircle, label: "Мессенджер" },
   ];
 
   const managerNavItems = [
@@ -51,6 +52,7 @@ export function Layout() {
   const teacherNavItems = [
     { path: "/", icon: Users, label: "Группы" },
     { path: "/exams", icon: FileText, label: "Экзамены" },
+    { path: "/chat", icon: MessageCircle, label: "Мессенджер" },
   ];
 
   const navItems = isAdmin ? adminNavItems : isManager ? managerNavItems : teacherNavItems;
@@ -114,6 +116,7 @@ export function Layout() {
         "/analytics": "Аналитика",
         "/finances": "Финансы",
         "/reports": "Отчеты",
+        "/chat": "Мессенджер",
       };
       document.title = `${titleMap[path] || "Школа Гарри"} | Школа Гарри`;
     };
@@ -235,7 +238,8 @@ export function Layout() {
               location.pathname === item.path ||
               (item.path === "/" && location.pathname.startsWith("/group")) ||
               (item.path === "/reports" && location.pathname.startsWith("/reports")) ||
-              (item.path === "/exams" && location.pathname.startsWith("/exams"));
+              (item.path === "/exams" && location.pathname.startsWith("/exams")) ||
+              (item.path === "/chat" && location.pathname.startsWith("/chat"));
 
             const navigateTo = item.path === "/reports" ? lastReportsUrl : item.path;
 

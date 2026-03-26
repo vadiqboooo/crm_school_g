@@ -10,6 +10,15 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Apply dark class before React renders to prevent flash -->
+    <script>
+      (function() {
+        var theme = localStorage.getItem("s_theme");
+        if (theme === "dark") {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

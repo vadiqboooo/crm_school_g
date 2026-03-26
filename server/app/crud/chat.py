@@ -38,7 +38,9 @@ async def get_member_public_key(db: AsyncSession, member_id: uuid.UUID, member_t
     if member_type == "app_user":
         result = await db.execute(select(AppUser.public_key).where(AppUser.id == member_id))
         return result.scalar_one_or_none()
-    # Employees don't have public keys yet (future: CRM chat)
+    if member_type == "employee":
+        result = await db.execute(select(Employee.public_key).where(Employee.id == member_id))
+        return result.scalar_one_or_none()
     return None
 
 
@@ -199,15 +201,18 @@ async def create_group_room(
         db.add(member)
 
     await db.commit()
-    await db.refresh(room)
-    return room
+    # Re-query with members eagerly loaded (refresh doesn't load relationships in async)
+    result = await db.execute(
+        select(ChatRoom).where(ChatRoom.id == room.id).options(selectinload(ChatRoom.members))
+    )
+    return result.scalar_one()
 
 
 async def get_room_by_group_id(db: AsyncSession, group_id: uuid.UUID) -> Optional[ChatRoom]:
     result = await db.execute(
-        select(ChatRoom).where(
-            and_(ChatRoom.group_id == group_id, ChatRoom.room_type == RoomType.group)
-        )
+        select(ChatRoom)
+        .where(and_(ChatRoom.group_id == group_id, ChatRoom.room_type == RoomType.group))
+        .options(selectinload(ChatRoom.members))
     )
     return result.scalar_one_or_none()
 
@@ -348,6 +353,44 @@ async def leave_room(
     await db.delete(member)
     await db.commit()
     return True
+
+
+async def get_group_rooms_needing_key(
+    db: AsyncSession,
+    member_id: uuid.UUID,
+    member_type: str,
+) -> list[tuple[uuid.UUID, list[uuid.UUID]]]:
+    """Return [(room_id, [employee_member_ids])] for group rooms where member has null room_key_encrypted."""
+    result = await db.execute(
+        select(ChatRoomMember.room_id)
+        .join(ChatRoom, ChatRoom.id == ChatRoomMember.room_id)
+        .where(
+            and_(
+                ChatRoomMember.member_id == member_id,
+                ChatRoomMember.member_type == member_type,
+                ChatRoomMember.room_key_encrypted.is_(None),
+                ChatRoom.room_type == RoomType.group,
+            )
+        )
+    )
+    room_ids = list(result.scalars().all())
+    if not room_ids:
+        return []
+
+    rooms_info = []
+    for room_id in room_ids:
+        emp_result = await db.execute(
+            select(ChatRoomMember.member_id)
+            .where(
+                and_(
+                    ChatRoomMember.room_id == room_id,
+                    ChatRoomMember.member_type == "employee",
+                )
+            )
+        )
+        emp_ids = list(emp_result.scalars().all())
+        rooms_info.append((room_id, emp_ids))
+    return rooms_info
 
 
 async def update_room_key_for_member(
