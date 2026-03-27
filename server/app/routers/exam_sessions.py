@@ -456,13 +456,19 @@ async def generate_group_portal_credentials(
     students = result.scalars().all()
     credentials = []
     for student in students:
+        plain_password = "garryschool"
         if student.portal_login:
-            # Already has credentials — skip
+            # Already has credentials — include in response with default password
+            credentials.append({
+                "student_id": str(student.id),
+                "student_name": f"{student.last_name} {student.first_name}",
+                "portal_login": student.portal_login,
+                "plain_password": plain_password,
+            })
             continue
         base_login = generate_login(student.last_name, student.first_name)
         login = await make_unique_login(base_login, db)
         student.portal_login = login
-        plain_password = "garryschool"
         student.portal_password_hash = hash_password(plain_password)
         student.portal_password_plain = encrypt_field(plain_password)
         if not student.public_key:
