@@ -490,33 +490,60 @@ async def generate_all_groups_portal_credentials(
     current_user: Employee = Depends(get_current_user),
 ):
     """Генерирует/возвращает логин/пароль для всех активных студентов всех групп."""
+    from collections import defaultdict
+
+    # 1. Все активные группы
     groups_result = await db.execute(
-        select(Group)
-        .where(Group.is_archived == False)
-        .order_by(Group.name)
+        select(Group).where(Group.is_archived == False).order_by(Group.name)
     )
     groups = groups_result.scalars().all()
+    if not groups:
+        return []
+    group_ids = [g.id for g in groups]
 
-    result = []
-    for group in groups:
-        students_result = await db.execute(
-            select(Student)
-            .join(GroupStudent, Student.id == GroupStudent.student_id)
-            .where(
-                GroupStudent.group_id == group.id,
-                GroupStudent.is_archived == False,
-                GroupStudent.is_trial == False,
-                Student.status == "active",
-            )
-            .order_by(Student.last_name, Student.first_name)
+    # 2. Все студенты всех групп за один запрос (student + group_id)
+    rows_result = await db.execute(
+        select(Student, GroupStudent.group_id)
+        .join(GroupStudent, Student.id == GroupStudent.student_id)
+        .where(
+            GroupStudent.group_id.in_(group_ids),
+            GroupStudent.is_archived == False,
+            GroupStudent.is_trial == False,
+            Student.status == "active",
         )
-        students = students_result.scalars().all()
+        .order_by(Student.last_name, Student.first_name)
+    )
+    rows = rows_result.all()
+
+    # 3. Все существующие логины для проверки уникальности (in-memory)
+    logins_result = await db.execute(
+        select(Student.portal_login).where(Student.portal_login.isnot(None))
+    )
+    existing_logins: set[str] = set(logins_result.scalars().all())
+
+    # 4. Все AppUser по student_id
+    app_users_result = await db.execute(
+        select(AppUser).where(AppUser.student_id.isnot(None))
+    )
+    app_users_by_student: dict[str, AppUser] = {
+        str(au.student_id): au for au in app_users_result.scalars().all()
+    }
+
+    # Сгруппировать студентов по group_id
+    students_by_group: dict[str, list[Student]] = defaultdict(list)
+    for student, group_id in rows:
+        students_by_group[str(group_id)].append(student)
+
+    plain_password = "garryschool"
+    result = []
+
+    for group in groups:
+        students = students_by_group.get(str(group.id), [])
         if not students:
             continue
 
         credentials = []
         for student in students:
-            plain_password = "garryschool"
             if student.portal_login:
                 credentials.append({
                     "student_id": str(student.id),
@@ -525,14 +552,45 @@ async def generate_all_groups_portal_credentials(
                     "plain_password": plain_password,
                 })
                 continue
+
+            # Генерируем уникальный логин in-memory
             base_login = generate_login(student.last_name, student.first_name)
-            login = await make_unique_login(base_login, db)
+            login = base_login
+            counter = 1
+            while login in existing_logins:
+                login = f"{base_login}{counter}"
+                counter += 1
+            existing_logins.add(login)
+
             student.portal_login = login
             student.portal_password_hash = hash_password(plain_password)
             student.portal_password_plain = encrypt_field(plain_password)
             if not student.public_key:
                 student.public_key = derive_chat_public_key(plain_password, str(student.id))
-            await _ensure_app_user(db, student, login, plain_password, create_only=True)
+
+            # AppUser: создать или обновить
+            sid = str(student.id)
+            display_name = f"{student.last_name} {student.first_name}"
+            app_user = app_users_by_student.get(sid)
+            if app_user:
+                app_user.login = login
+                app_user.password_hash = _hash_pw(plain_password)
+                app_user.password_plain = encrypt_field(plain_password)
+                app_user.display_name = display_name
+                app_user.public_key = derive_chat_public_key(plain_password, str(app_user.id))
+            else:
+                new_user = AppUser(
+                    display_name=display_name,
+                    login=login,
+                    password_hash=_hash_pw(plain_password),
+                    password_plain=encrypt_field(plain_password),
+                    student_id=student.id,
+                )
+                db.add(new_user)
+                await db.flush()
+                new_user.public_key = derive_chat_public_key(plain_password, str(new_user.id))
+                app_users_by_student[sid] = new_user
+
             credentials.append({
                 "student_id": str(student.id),
                 "student_name": f"{student.last_name} {student.first_name}",

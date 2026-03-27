@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { useNavigate } from "react-router";
-import { Users, GraduationCap, Plus, LayoutGrid, LayoutList, Loader2, Trash2, Edit, X, Filter, Archive, ArchiveRestore, ChevronUp } from "lucide-react";
+import { Users, GraduationCap, Plus, LayoutGrid, LayoutList, Loader2, Trash2, Edit, X, Filter, Archive, ArchiveRestore, ChevronUp, FileText } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -93,6 +93,7 @@ export function HomePage() {
   const [showArchived, setShowArchived] = useState(false);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [generatingAllCreds, setGeneratingAllCreds] = useState(false);
   const { setHeaderActions } = useHeaderActions();
 
   useEffect(() => {
@@ -131,22 +132,91 @@ export function HomePage() {
     loadData();
   }, []);
 
-  // Inject Archive button into the mobile top bar
+  const handlePrintAllGroups = async () => {
+    setGeneratingAllCreds(true);
+    try {
+      const groups = await api.generateAllGroupsCredentials();
+      const date = new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+
+      const pages = groups.map((g, idx) => {
+        const cards = g.credentials.map((c) => `
+          <div class="card">
+            <div class="school">Школа Гарри</div>
+            <div class="name">${c.student_name}</div>
+            <div class="field"><span class="label">Логин</span><span class="value">${c.portal_login}</span></div>
+            <div class="field"><span class="label">Пароль</span><span class="value">${c.plain_password}</span></div>
+            <div class="site">web.garryschool.ru</div>
+          </div>
+        `).join("");
+        const isLast = idx === groups.length - 1;
+        return `
+          <div class="page${isLast ? "" : " page-break"}">
+            <div class="page-header">${g.group_name} · ${date}</div>
+            <div class="grid">${cards}</div>
+          </div>
+        `;
+      }).join("");
+
+      const win = window.open("", "_blank", "width=900,height=700");
+      if (!win) return;
+      win.document.write(`
+        <!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8" />
+        <title>Доступы учеников — все группы</title>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: Arial, sans-serif; color: #000; background: #fff; }
+          .page { padding: 8mm; }
+          .page-break { page-break-after: always; }
+          .page-header { font-size: 13px; font-weight: bold; color: #333; margin-bottom: 5mm; border-bottom: 1px solid #ddd; padding-bottom: 2mm; }
+          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+          .card { border: 1.5px dashed #bbb; border-radius: 3mm; padding: 4mm 5mm; page-break-inside: avoid; min-height: 32mm; display: flex; flex-direction: column; justify-content: space-between; }
+          .school { font-size: 8px; color: #aaa; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 3mm; }
+          .name { font-size: 13px; font-weight: bold; margin-bottom: 3mm; line-height: 1.3; }
+          .field { display: flex; align-items: baseline; gap: 4px; margin-bottom: 1.5mm; }
+          .label { font-size: 9px; color: #888; width: 40px; flex-shrink: 0; }
+          .value { font-family: monospace; font-size: 12px; font-weight: bold; word-break: break-all; }
+          .site { font-size: 8px; color: #ccc; margin-top: 2mm; }
+          @media print { body { padding: 0; } }
+        </style></head><body>${pages}</body></html>
+      `);
+      win.document.close();
+      win.focus();
+      setTimeout(() => { win.print(); }, 400);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setGeneratingAllCreds(false);
+    }
+  };
+
+  // Inject Archive + PDF buttons into the mobile top bar
   useEffect(() => {
     if (!(isAdmin || isManager)) return;
     setHeaderActions(
-      <Button
-        variant="ghost"
-        size="sm"
-        className={`rounded-full gap-1.5 text-sm ${showArchived ? "text-violet-600" : "text-slate-600"}`}
-        onClick={() => setShowArchived(!showArchived)}
-      >
-        <Archive className="w-4 h-4" />
-        Архив
-      </Button>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="rounded-full gap-1.5 text-sm text-slate-600"
+          disabled={generatingAllCreds}
+          onClick={handlePrintAllGroups}
+          title="PDF — доступы всех групп"
+        >
+          {generatingAllCreds ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={`rounded-full gap-1.5 text-sm ${showArchived ? "text-violet-600" : "text-slate-600"}`}
+          onClick={() => setShowArchived(!showArchived)}
+        >
+          <Archive className="w-4 h-4" />
+          Архив
+        </Button>
+      </div>
     );
     return () => setHeaderActions(null);
-  }, [showArchived, isAdmin, isManager]);
+  }, [showArchived, isAdmin, isManager, generatingAllCreds]);
 
   // Save viewMode preference to localStorage
   useEffect(() => {
