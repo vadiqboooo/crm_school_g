@@ -484,6 +484,72 @@ async def generate_group_portal_credentials(
     return credentials
 
 
+@students_router.post("/all-groups-portal-credentials")
+async def generate_all_groups_portal_credentials(
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    """Генерирует/возвращает логин/пароль для всех активных студентов всех групп."""
+    groups_result = await db.execute(
+        select(Group)
+        .where(Group.is_archived == False)
+        .order_by(Group.name)
+    )
+    groups = groups_result.scalars().all()
+
+    result = []
+    for group in groups:
+        students_result = await db.execute(
+            select(Student)
+            .join(GroupStudent, Student.id == GroupStudent.student_id)
+            .where(
+                GroupStudent.group_id == group.id,
+                GroupStudent.is_archived == False,
+                GroupStudent.is_trial == False,
+                Student.status == "active",
+            )
+            .order_by(Student.last_name, Student.first_name)
+        )
+        students = students_result.scalars().all()
+        if not students:
+            continue
+
+        credentials = []
+        for student in students:
+            plain_password = "garryschool"
+            if student.portal_login:
+                credentials.append({
+                    "student_id": str(student.id),
+                    "student_name": f"{student.last_name} {student.first_name}",
+                    "portal_login": student.portal_login,
+                    "plain_password": plain_password,
+                })
+                continue
+            base_login = generate_login(student.last_name, student.first_name)
+            login = await make_unique_login(base_login, db)
+            student.portal_login = login
+            student.portal_password_hash = hash_password(plain_password)
+            student.portal_password_plain = encrypt_field(plain_password)
+            if not student.public_key:
+                student.public_key = derive_chat_public_key(plain_password, str(student.id))
+            await _ensure_app_user(db, student, login, plain_password, create_only=True)
+            credentials.append({
+                "student_id": str(student.id),
+                "student_name": f"{student.last_name} {student.first_name}",
+                "portal_login": login,
+                "plain_password": plain_password,
+            })
+
+        result.append({
+            "group_id": str(group.id),
+            "group_name": group.name,
+            "credentials": credentials,
+        })
+
+    await db.commit()
+    return result
+
+
 @students_router.post("/backfill-chat-keys")
 async def backfill_chat_public_keys(
     db: AsyncSession = Depends(get_db),

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, useLocation } from "react-router";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { Button } from "../components/ui/button";
-import { ArrowLeft, Loader2, KeyRound } from "lucide-react";
+import { ArrowLeft, Loader2, KeyRound, FileText } from "lucide-react";
 import { LessonsTab } from "../components/LessonsTab";
 import { ExamsTab } from "../components/ExamsTab";
 import { GroupInfoTab } from "../components/GroupInfoTab";
@@ -37,6 +37,7 @@ export function GroupPage() {
   const [error, setError] = useState<string | null>(null);
   const [generatingCreds, setGeneratingCreds] = useState(false);
   const [printCredentials, setPrintCredentials] = useState<PortalCredential[] | null>(null);
+  const [generatingAllCreds, setGeneratingAllCreds] = useState(false);
   // If returning from a student that was opened from a lesson, force lessons tab
   const [activeTab, setActiveTab] = useState(openLessonId ? "lessons" : "lessons");
   const [lessonDetailOpen, setLessonDetailOpen] = useState(false);
@@ -65,6 +66,70 @@ export function GroupPage() {
       setError("Не удалось загрузить группу");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePrintAllGroups = async () => {
+    setGeneratingAllCreds(true);
+    try {
+      const groups = await api.generateAllGroupsCredentials();
+      const date = new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+
+      const pages = groups.map((g, idx) => {
+        const cards = g.credentials.map((c) => `
+          <div class="card">
+            <div class="school">Школа Гарри</div>
+            <div class="name">${c.student_name}</div>
+            <div class="field"><span class="label">Логин</span><span class="value">${c.portal_login}</span></div>
+            <div class="field"><span class="label">Пароль</span><span class="value">${c.plain_password}</span></div>
+            <div class="site">web.garryschool.ru</div>
+          </div>
+        `).join("");
+
+        const isLast = idx === groups.length - 1;
+        return `
+          <div class="page${isLast ? "" : " page-break"}">
+            <div class="page-header">${g.group_name} · ${date}</div>
+            <div class="grid">${cards}</div>
+          </div>
+        `;
+      }).join("");
+
+      const win = window.open("", "_blank", "width=900,height=700");
+      if (!win) return;
+      win.document.write(`
+        <!DOCTYPE html>
+        <html lang="ru">
+        <head>
+          <meta charset="UTF-8" />
+          <title>Доступы учеников — все группы</title>
+          <style>
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body { font-family: Arial, sans-serif; color: #000; background: #fff; }
+            .page { padding: 8mm; }
+            .page-break { page-break-after: always; }
+            .page-header { font-size: 13px; font-weight: bold; color: #333; margin-bottom: 5mm; border-bottom: 1px solid #ddd; padding-bottom: 2mm; }
+            .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+            .card { border: 1.5px dashed #bbb; border-radius: 3mm; padding: 4mm 5mm; page-break-inside: avoid; min-height: 32mm; display: flex; flex-direction: column; justify-content: space-between; }
+            .school { font-size: 8px; color: #aaa; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 3mm; }
+            .name { font-size: 13px; font-weight: bold; margin-bottom: 3mm; line-height: 1.3; }
+            .field { display: flex; align-items: baseline; gap: 4px; margin-bottom: 1.5mm; }
+            .label { font-size: 9px; color: #888; width: 40px; flex-shrink: 0; }
+            .value { font-family: monospace; font-size: 12px; font-weight: bold; word-break: break-all; }
+            .site { font-size: 8px; color: #ccc; margin-top: 2mm; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>${pages}</body>
+        </html>
+      `);
+      win.document.close();
+      win.focus();
+      setTimeout(() => { win.print(); }, 400);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setGeneratingAllCreds(false);
     }
   };
 
@@ -118,12 +183,25 @@ export function GroupPage() {
             </p>
           </div>
 
+          {/* PDF all groups button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 text-slate-400 hover:bg-transparent hover:text-slate-600"
+            disabled={generatingAllCreds}
+            title="PDF — доступы всех групп"
+            onClick={handlePrintAllGroups}
+          >
+            {generatingAllCreds ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />}
+          </Button>
+
           {/* Key button */}
           <Button
             variant="ghost"
             size="icon"
             className="shrink-0 text-slate-400 hover:bg-transparent hover:text-slate-600"
             disabled={generatingCreds}
+            title="Доступы для этой группы"
             onClick={async () => {
               setGeneratingCreds(true);
               try {

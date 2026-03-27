@@ -984,6 +984,10 @@ class ApiClient {
     return this.request<PortalCredential[]>("/students/generate-portal-credentials-bulk", { method: "POST" });
   }
 
+  async generateAllGroupsCredentials(): Promise<{ group_id: string; group_name: string; credentials: PortalCredential[] }[]> {
+    return this.request("/students/all-groups-portal-credentials", { method: "POST" });
+  }
+
   // App Users
   async getAppUsers(): Promise<AppUser[]> {
     return this.request<AppUser[]>("/app-users/");
