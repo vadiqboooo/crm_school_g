@@ -1248,6 +1248,7 @@ export function StudentsPage() {
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [appUsersLoading, setAppUsersLoading] = useState(false);
   const [appUserSearch, setAppUserSearch] = useState("");
+  const [appUserGroupFilter, setAppUserGroupFilter] = useState<string>("all");
   const [createAppUserOpen, setCreateAppUserOpen] = useState(false);
   const [newAppUser, setNewAppUser] = useState<AppUserCreate>({ display_name: "", login: "", password: "" });
   const [creatingAppUser, setCreatingAppUser] = useState(false);
@@ -1386,6 +1387,7 @@ export function StudentsPage() {
   useEffect(() => {
     if (mainTab === "archive") loadArchivedLeads();
     if (mainTab === "app_users") {
+      setAppUserGroupFilter("all");
       setAppUsersLoading(true);
       api.getAppUsers().then(setAppUsers).catch(console.error).finally(() => setAppUsersLoading(false));
     }
@@ -1872,6 +1874,23 @@ export function StudentsPage() {
                   className="pl-9"
                 />
               </div>
+              <Select value={appUserGroupFilter} onValueChange={setAppUserGroupFilter}>
+                <SelectTrigger className="w-52">
+                  <SelectValue placeholder="Все группы" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все группы</SelectItem>
+                  {Array.from(
+                    new Map(
+                      students.flatMap((s) => s.groups.map((g) => [g.id, g.name]))
+                    ).entries()
+                  )
+                    .sort((a, b) => a[1].localeCompare(b[1], "ru"))
+                    .map(([id, name]) => (
+                      <SelectItem key={id} value={id}>{name}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <div className="flex-1 min-h-0 overflow-auto px-6 pb-4">
@@ -1890,11 +1909,14 @@ export function StudentsPage() {
                 </TableHeader>
                 <TableBody>
                   {appUsers
-                    .filter((u) =>
-                      !appUserSearch ||
-                      u.display_name.toLowerCase().includes(appUserSearch.toLowerCase()) ||
-                      u.login.toLowerCase().includes(appUserSearch.toLowerCase())
-                    )
+                    .filter((u) => {
+                      if (appUserSearch && !u.display_name.toLowerCase().includes(appUserSearch.toLowerCase()) && !u.login.toLowerCase().includes(appUserSearch.toLowerCase())) return false;
+                      if (appUserGroupFilter !== "all") {
+                        const student = u.student_id ? students.find((s) => s.id === u.student_id) : null;
+                        if (!student?.groups.some((g) => g.id === appUserGroupFilter)) return false;
+                      }
+                      return true;
+                    })
                     .map((u) => (
                       <TableRow key={u.id}>
                         <TableCell className="font-medium">{u.display_name}</TableCell>
