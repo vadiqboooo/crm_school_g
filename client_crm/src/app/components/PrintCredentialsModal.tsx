@@ -131,7 +131,7 @@ export function PrintCredentialsModal({ title, credentials, onClose }: Props) {
           {/* Footer note */}
           <div className="px-6 py-3 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
             <p className="text-xs text-slate-500">
-              ⚠️ Новые пароли показаны только один раз. После закрытия восстановить невозможно.
+              Стандартный пароль для всех учеников: <span className="font-mono font-semibold">garryschool</span>
             </p>
           </div>
         </div>
