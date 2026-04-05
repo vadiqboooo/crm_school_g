@@ -425,11 +425,13 @@ export function ExamsTab({ groupId, groupName, groupSubject }: ExamsTabProps) {
         })
       );
 
-      // Update editing state to match saved values instead of clearing
-      setEditingResults((prev) => ({
-        ...prev,
-        [studentId]: updates,
-      }));
+      // Merge saved values into editing state without overwriting newer user input
+      setEditingResults((prev) => {
+        const current = prev[studentId];
+        if (!current) return prev;
+        // Keep current editing state — it may have newer user input than what was just saved
+        return prev;
+      });
 
       // Hide success indicator after delay
       setTimeout(() => {
@@ -766,9 +768,24 @@ export function ExamsTab({ groupId, groupName, groupSubject }: ExamsTabProps) {
                           <Label className="text-xs">Комментарий по результатам</Label>
                           <Textarea
                             value={editingResults[student.id]?.student_comment ?? (result.student_comment || "")}
-                            onChange={(e) =>
-                              updateEditingResult(student.id, result.id, "student_comment", e.target.value)
-                            }
+                            onChange={(e) => {
+                              // Only update local state, don't auto-save on every keystroke
+                              setEditingResults((prev) => ({
+                                ...prev,
+                                [student.id]: {
+                                  ...(prev[student.id] || {}),
+                                  student_comment: e.target.value,
+                                },
+                              }));
+                            }}
+                            onBlur={() => {
+                              const comment = editingResults[student.id]?.student_comment;
+                              if (comment !== undefined && comment !== (result.student_comment || "")) {
+                                handleUpdateResult(student.id, result.id, {
+                                  ...(editingResults[student.id] || {}),
+                                });
+                              }
+                            }}
                             placeholder="Добавить комментарий..."
                             className="min-h-[60px] text-sm resize-none"
                           />
