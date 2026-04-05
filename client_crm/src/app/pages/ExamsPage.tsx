@@ -629,16 +629,14 @@ export function ExamsPage() {
           <span className="text-sm text-slate-500">
             {worksCount} {worksCount === 1 ? "работа" : worksCount < 5 ? "работы" : "работ"} · {filteredStudents.length} студентов
           </span>
-          {!isTeacher && (
-            <Button
-              onClick={() => setIsAddResultDialogOpen(true)}
-              className="gap-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl px-4 h-9 text-sm font-semibold"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">Добавить результат</span>
-              <span className="sm:hidden">Добавить</span>
-            </Button>
-          )}
+          <Button
+            onClick={() => setIsAddResultDialogOpen(true)}
+            className="gap-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl px-4 h-9 text-sm font-semibold"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Добавить результат</span>
+            <span className="sm:hidden">Добавить</span>
+          </Button>
         </div>
       )}
 
