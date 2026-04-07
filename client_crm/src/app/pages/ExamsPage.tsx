@@ -39,7 +39,6 @@ import {
   Edit,
   Trash2,
   ChevronUp,
-  Expand,
 } from "lucide-react";
 import { cn } from "../components/ui/utils";
 import { Label } from "../components/ui/label";
@@ -93,6 +92,7 @@ export function ExamsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterSubject, setFilterSubject] = useState<string>("all");
   const [filterTeacher, setFilterTeacher] = useState<string>("all");
+  const [filterExam, setFilterExam] = useState<string>("all");
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   const [selectedComment, setSelectedComment] = useState<{
     comment: string;
@@ -100,9 +100,8 @@ export function ExamsPage() {
     examTitle: string;
   } | null>(null);
   const [isAddResultDialogOpen, setIsAddResultDialogOpen] = useState(false);
-  const [isEditResultDialogOpen, setIsEditResultDialogOpen] = useState(false);
-  const [viewingDetailResult, setViewingDetailResult] = useState<{ result: ExamResult & { exam: Exam }; student: Student } | null>(null);
-  const [editingResult, setEditingResult] = useState<ExamResult | null>(null);
+  // Unified result modal (view + edit)
+  const [resultModal, setResultModal] = useState<{ result: ExamResult & { exam: Exam }; student: Student; editing: boolean } | null>(null);
   const [editResultSubjectId, setEditResultSubjectId] = useState<string>("");
   const [editResultTeacherId, setEditResultTeacherId] = useState<string>("");
 
@@ -178,6 +177,14 @@ export function ExamsPage() {
         filteredResults = filteredResults.filter(r => {
           const exam = exams.find(e => e.id === r.exam_id) || r.exam;
           return exam?.subject_id === filterSubject;
+        });
+      }
+
+      // Filter by exam title
+      if (filterExam !== "all") {
+        filteredResults = filteredResults.filter(r => {
+          const exam = exams.find(e => e.id === r.exam_id) || r.exam;
+          return exam?.title === filterExam;
         });
       }
 
@@ -344,52 +351,45 @@ export function ExamsPage() {
     return { primary, final };
   };
 
-  const handleEditResult = (result: ExamResult & { exam: Exam }) => {
-    setEditingResult(result);
-
-    // Get exam to find subject_id
-    const exam = exams.find(e => e.id === result.exam_id) || (result as any).exam;
+  const openResultModal = (result: ExamResult & { exam: Exam }, student: Student, editing = false) => {
+    const exam = exams.find(e => e.id === result.exam_id) || result.exam;
     const subjectId = exam?.subject_id || exam?.subject_rel?.id || "";
     setEditResultSubjectId(subjectId);
 
-    // Get subject from subjects list (this has the current configuration)
     const currentSubject = subjects.find(s => s.id === subjectId);
     const taskCount = currentSubject?.tasks?.length || 27;
-
-    // Resize answers array to match current subject configuration
     const existingAnswers = result.answers || [];
     const resizedAnswers = Array(taskCount).fill(null).map((_, index) =>
       existingAnswers[index] !== undefined ? existingAnswers[index] : null
     );
     setAnswers(resizedAnswers);
-
     setStudentComment(result.student_comment || "");
-
-    // Get current teacher who checked the work
     setEditResultTeacherId(result.added_by_employee?.id || "");
 
-    setIsEditResultDialogOpen(true);
+    setResultModal({ result, student, editing });
+  };
+
+  const handleEditResult = (result: ExamResult & { exam: Exam }, student?: Student) => {
+    const s = student || students.find(st => st.id === result.student_id);
+    if (s) openResultModal(result, s, true);
   };
 
   const handleUpdateResult = async () => {
-    if (!editingResult) return;
+    if (!resultModal) return;
+    const editingResult = resultModal.result;
 
     try {
       setIsSubmitting(true);
 
-      const currentExam = exams.find(e => e.id === editingResult.exam_id) || (editingResult as any).exam;
+      const currentExam = exams.find(e => e.id === editingResult.exam_id) || editingResult.exam;
       let examIdToUse = editingResult.exam_id;
       let newExamCreated: Exam | null = null;
 
-      // Save current expanded student to restore after reload
       const currentExpandedStudent = expandedStudentId;
 
-      // If subject changed, create a new exam instead of updating the existing one
-      // This prevents affecting other students' results for the same exam
       if (editResultSubjectId && currentExam?.subject_id !== editResultSubjectId) {
         const selectedSubject = subjects.find(s => s.id === editResultSubjectId);
 
-        // Create new exam with the new subject
         newExamCreated = await api.createExam({
           title: currentExam?.title || "Экзамен",
           subject: selectedSubject?.name,
@@ -403,22 +403,15 @@ export function ExamsPage() {
         });
 
         examIdToUse = newExamCreated.id;
-
-        // Delete the old result from the old exam
         await api.deleteExamResult(editingResult.exam_id, editingResult.id);
       }
 
-      // Get subject for score calculation
-      const examSubject = subjects.find(s => s.id === editResultSubjectId) || (editingResult as any).exam?.subject_rel;
-
-      // Calculate scores from answers
+      const examSubject = subjects.find(s => s.id === editResultSubjectId) || editingResult.exam?.subject_rel;
       const { primary: calculatedPrimaryScore, final: calculatedFinalScore } = calculateScores(answers, examSubject);
 
       let updatedOrCreatedResult: ExamResult;
 
-      // If subject changed, create new result; otherwise update existing
       if (examIdToUse !== editingResult.exam_id) {
-        // Create new result (added_by will be set automatically to current user)
         updatedOrCreatedResult = await api.createExamResult(examIdToUse, {
           student_id: editingResult.student_id,
           primary_score: calculatedPrimaryScore,
@@ -427,16 +420,12 @@ export function ExamsPage() {
           student_comment: studentComment || undefined,
         });
 
-        // Admin can update added_by to any teacher or remove it (set to null)
-        // Teachers can't change added_by when creating new results
         if (isAdmin) {
           updatedOrCreatedResult = await api.updateExamResult(examIdToUse, updatedOrCreatedResult.id, {
             added_by: editResultTeacherId || null,
           } as any);
         }
       } else {
-        // Update the existing result
-        // Admin can change added_by, teachers can only update if it's already theirs
         const updateData: any = {
           primary_score: calculatedPrimaryScore,
           final_score: calculatedFinalScore,
@@ -444,7 +433,6 @@ export function ExamsPage() {
           student_comment: studentComment || undefined,
         };
 
-        // Only update added_by if user is admin
         if (isAdmin) {
           updateData.added_by = editResultTeacherId || null;
         }
@@ -452,20 +440,12 @@ export function ExamsPage() {
         updatedOrCreatedResult = await api.updateExamResult(editingResult.exam_id, editingResult.id, updateData);
       }
 
-      // Update state locally instead of full reload for better UX
       if (newExamCreated) {
-        // Add new exam to state
         setExams(prev => [...prev, newExamCreated!]);
       }
 
-      // Update results in state
       setAllResults(prev => {
-        // Remove old result if it was replaced
-        const filtered = examIdToUse !== editingResult.exam_id
-          ? prev.filter(r => r.id !== editingResult.id)
-          : prev.filter(r => r.id !== editingResult.id);
-
-        // Add/update the result
+        const filtered = prev.filter(r => r.id !== editingResult.id);
         const examForResult = newExamCreated || currentExam;
         return [
           ...filtered,
@@ -473,12 +453,9 @@ export function ExamsPage() {
         ];
       });
 
-      // Restore expanded state
       setExpandedStudentId(currentExpandedStudent);
 
-      // Reset form
-      setIsEditResultDialogOpen(false);
-      setEditingResult(null);
+      setResultModal(null);
       setAnswers(Array(27).fill(null));
       setStudentComment("");
       setEditResultSubjectId("");
@@ -1031,7 +1008,7 @@ export function ExamsPage() {
       {/* Filters — desktop */}
       <Card className="hidden sm:block mb-6">
         <CardContent className="py-4">
-          <div className={`grid grid-cols-1 gap-4 ${isAdmin ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
+          <div className={`grid grid-cols-1 gap-4 ${isAdmin ? "md:grid-cols-5" : "md:grid-cols-4"}`}>
             <div className={`relative ${isAdmin ? "md:col-span-2" : "md:col-span-2"}`}>
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
               <Input
@@ -1047,6 +1024,15 @@ export function ExamsPage() {
                 <SelectItem value="all">Все предметы</SelectItem>
                 {subjects.map((s) => (
                   <SelectItem key={s.id} value={s.id}>{s.name}{s.exam_type && ` [${s.exam_type}]`}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filterExam} onValueChange={setFilterExam}>
+              <SelectTrigger><SelectValue placeholder="Все пробники" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все пробники</SelectItem>
+                {[...new Map(exams.map(e => [e.title, e])).values()].map((e) => (
+                  <SelectItem key={e.id} value={e.title}>{e.title}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1083,7 +1069,7 @@ export function ExamsPage() {
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" /></svg>
           Фильтры
-          {(filterSubject !== "all" || filterTeacher !== "all") && (
+          {(filterSubject !== "all" || filterTeacher !== "all" || filterExam !== "all") && (
             <span className="w-2 h-2 rounded-full bg-violet-600 ml-0.5" />
           )}
         </button>
@@ -1110,6 +1096,19 @@ export function ExamsPage() {
                   <SelectItem value="all">Все предметы</SelectItem>
                   {subjects.map(s => (
                     <SelectItem key={s.id} value={s.id}>{s.name}{s.exam_type ? ` [${s.exam_type}]` : ""}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Пробник */}
+            <div className="mb-5">
+              <p className="text-sm font-medium text-slate-700 mb-2">Пробник</p>
+              <Select value={filterExam} onValueChange={setFilterExam}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Все пробники" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все пробники</SelectItem>
+                  {exams.map(e => (
+                    <SelectItem key={e.id} value={e.id}>{e.title}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1210,7 +1209,11 @@ export function ExamsPage() {
                       const { primary: calcPrimary, final: calcFinal } = calculateScores(resultAnswers, resultExam?.subject_rel);
                       const isOGE = resultExam?.subject_rel?.exam_type === "ОГЭ";
                       return (
-                        <div key={result.id} className="bg-white rounded-xl p-3 border border-slate-100 space-y-2">
+                        <div
+                          key={result.id}
+                          className="bg-white rounded-xl p-3 border border-slate-100 space-y-2 cursor-pointer active:bg-slate-50 transition-colors"
+                          onClick={() => openResultModal(result as ExamResult & { exam: Exam }, student)}
+                        >
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-medium text-slate-900 text-sm leading-tight">{(result as any).exam?.title || resultExam?.title || "—"}</span>
                             <span className={`text-xs font-semibold px-2 py-0.5 rounded-lg shrink-0 ${isOGE ? "bg-violet-100 text-violet-700" : "bg-green-100 text-green-700"}`}>
@@ -1235,15 +1238,8 @@ export function ExamsPage() {
                             </div>
                           )}
                           {result.student_comment && (
-                            <p className="text-xs text-slate-500 leading-relaxed">{result.student_comment}</p>
+                            <p className="text-xs text-slate-500 leading-relaxed line-clamp-1">{result.student_comment}</p>
                           )}
-                          <button
-                            onClick={() => setViewingDetailResult({ result: result as ExamResult & { exam: Exam }, student })}
-                            className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 mt-1"
-                          >
-                            <Expand className="w-3 h-3" />
-                            Подробнее
-                          </button>
                         </div>
                       );
                     })}
@@ -1386,7 +1382,11 @@ export function ExamsPage() {
                                       const { primary: calculatedPrimary, final: calculatedFinal } = calculateScores(resultAnswers, resultExam?.subject_rel);
 
                                       return (
-                                        <TableRow key={result.id} className="bg-white">
+                                        <TableRow
+                                          key={result.id}
+                                          className="bg-white cursor-pointer hover:bg-blue-50/50 transition-colors"
+                                          onClick={() => openResultModal(result as ExamResult & { exam: Exam }, student)}
+                                        >
                                           <TableCell className="font-medium">
                                             {index + 1}
                                           </TableCell>
@@ -1486,27 +1486,16 @@ export function ExamsPage() {
                                           )}
                                         </TableCell>
                                         <TableCell>
-                                          <div className="flex items-center gap-2">
+                                          <div className="flex items-center gap-1">
                                             <Button
                                               variant="ghost"
                                               size="sm"
                                               onClick={(e) => {
                                                 e.stopPropagation();
-                                                setViewingDetailResult({ result: result as ExamResult & { exam: Exam }, student });
+                                                handleEditResult(result as ExamResult & { exam: Exam }, student);
                                               }}
                                               className="h-8 w-8 p-0"
-                                              title="Подробный просмотр"
-                                            >
-                                              <Expand className="w-4 h-4" />
-                                            </Button>
-                                            <Button
-                                              variant="ghost"
-                                              size="sm"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleEditResult(result);
-                                              }}
-                                              className="h-8 w-8 p-0"
+                                              title="Редактировать"
                                             >
                                               <Edit className="w-4 h-4" />
                                             </Button>
@@ -1518,6 +1507,7 @@ export function ExamsPage() {
                                                 handleDeleteResult(result.exam_id!, result.id);
                                               }}
                                               className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                              title="Удалить"
                                             >
                                               <Trash2 className="w-4 h-4" />
                                             </Button>
@@ -1545,187 +1535,204 @@ export function ExamsPage() {
 
       </>}
 
-      {/* Edit Result Dialog */}
-      <Dialog open={isEditResultDialogOpen} onOpenChange={setIsEditResultDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Edit className="w-5 h-5 text-blue-600" />
-              Редактировать результат
-            </DialogTitle>
-            <DialogDescription>
-              Изменение результатов экзамена
-            </DialogDescription>
-          </DialogHeader>
-          {editingResult && (
-            <div className="space-y-1 text-sm text-slate-600 pb-4 border-b">
-              <div><strong>Экзамен:</strong> {(editingResult as any).exam?.title}</div>
-              <div><strong>Дата:</strong> {formatDate((editingResult as any).exam?.date)}</div>
-            </div>
-          )}
-          <div className="space-y-4 mt-4">
-            {/* Subject Selection */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-900">
-                Предмет
-              </label>
-              <Select
-                value={editResultSubjectId}
-                onValueChange={(subjectId) => {
-                  setEditResultSubjectId(subjectId);
-                  // Update answers array when subject changes
-                  const subject = subjects.find(s => s.id === subjectId);
-                  const taskCount = subject?.tasks?.length || 27;
-                  // Keep existing answers, resize array if needed
-                  const currentAnswers = [...answers];
-                  if (currentAnswers.length < taskCount) {
-                    setAnswers([...currentAnswers, ...Array(taskCount - currentAnswers.length).fill(null)]);
-                  } else if (currentAnswers.length > taskCount) {
-                    setAnswers(currentAnswers.slice(0, taskCount));
-                  }
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите предмет" />
-                </SelectTrigger>
-                <SelectContent>
-                  {subjects.map((subject) => (
-                    <SelectItem key={subject.id} value={subject.id}>
-                      {subject.name}
-                      {subject.exam_type && ` [${subject.exam_type}]`}
-                      {subject.code && ` (${subject.code})`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      {/* Unified Result Modal (view + edit) */}
+      <Dialog open={!!resultModal} onOpenChange={(open) => { if (!open) { setResultModal(null); setAnswers(Array(27).fill(null)); setStudentComment(""); setEditResultSubjectId(""); setEditResultTeacherId(""); } }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          {resultModal && (() => {
+            const { result, student, editing } = resultModal;
+            const resultExam = exams.find(e => e.id === result.exam_id) || result.exam;
+            const examSubject = subjects.find(s => s.id === (editing ? editResultSubjectId : (resultExam?.subject_id || resultExam?.subject_rel?.id))) || resultExam?.subject_rel;
+            const taskCount = (examSubject as Subject)?.tasks?.length || 27;
+            const currentAnswers = editing ? answers : (result.answers || Array(taskCount).fill(null));
+            const { primary, final: finalScore } = calculateScores(currentAnswers, examSubject as Subject);
+            const isOGE = (examSubject as Subject)?.exam_type === "ОГЭ";
+            const coveredTasks = resultExam?.selected_tasks || [];
 
-            {/* Teacher Selection */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-900">
-                Проверил
-              </label>
-              <Select
-                value={editResultTeacherId || "none"}
-                onValueChange={(value) => setEditResultTeacherId(value === "none" ? "" : value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите преподавателя" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Не указан</SelectItem>
-                  {teachers.map((teacher) => (
-                    <SelectItem key={teacher.id} value={teacher.id}>
-                      {teacher.last_name} {teacher.first_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            const subjectName = (examSubject as Subject)?.name || resultExam?.subject || "";
+            const subjectDisplay = subjectName + ((examSubject as Subject)?.exam_type ? ` [${(examSubject as Subject).exam_type}]` : "");
+            const teacherDisplay = (() => {
+              if (editing) {
+                const t = teachers.find(t => t.id === editResultTeacherId);
+                return t ? `${t.last_name} ${t.first_name.charAt(0)}.` : "Не указан";
+              }
+              return result.added_by_employee
+                ? `${result.added_by_employee.last_name} ${result.added_by_employee.first_name.charAt(0)}.`
+                : "Не указан";
+            })();
 
-            {/* Task Scores Grid */}
-            <div>
-              <label className="text-sm font-medium text-slate-900 mb-2 block">
-                Баллы по заданиям
-              </label>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(50px,1fr))] gap-1 border rounded-lg p-3 bg-slate-50">
-                {answers.map((answer, index) => {
-                  const examSubject = subjects.find(s => s.id === editResultSubjectId) || (editingResult as any)?.exam?.subject_rel;
-                  const task = examSubject?.tasks?.[index];
-                  const taskLabel = task?.label || (index + 1).toString();
-                  const taskMaxScore = task?.maxScore || 1;
-
-                  return (
-                    <div key={index} className="flex flex-col">
-                      <div className="bg-slate-200 border border-slate-300 text-xs font-medium text-slate-700 px-2 py-1 text-center rounded-t">
-                        {taskLabel}
-                      </div>
-                      <input
-                        type="text"
-                        value={answer ?? ""}
-                        onChange={(e) => {
-                          const newAnswers = [...answers];
-                          const value = e.target.value;
-                          const numValue = value === "" ? null : parseInt(value);
-                          // Validate max score
-                          if (numValue !== null && numValue > taskMaxScore) {
-                            newAnswers[index] = taskMaxScore;
-                          } else {
-                            newAnswers[index] = numValue;
-                          }
-                          setAnswers(newAnswers);
-                        }}
-                        placeholder="—"
-                        title={`Максимум: ${taskMaxScore}`}
-                        className="w-full h-9 text-center text-sm border border-slate-300 border-t-0 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:z-10 bg-white rounded-b"
-                      />
+            return (
+              <>
+                <DialogHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <DialogTitle className="text-lg">
+                        {student.last_name} {student.first_name}
+                      </DialogTitle>
+                      <DialogDescription>
+                        {resultExam?.title || "Экзамен"}
+                      </DialogDescription>
                     </div>
-                  );
-                })}
-              </div>
-              {(() => {
-                const examSubject = subjects.find(s => s.id === editResultSubjectId) || (editingResult as any)?.exam?.subject_rel;
-                const scores = calculateScores(answers, examSubject);
-                const isOGE = examSubject?.exam_type === 'ОГЭ';
-                return (
-                  <div className="flex gap-4 mt-2 text-sm">
-                    <div className="text-slate-700">
-                      <span className="font-medium">Первичный балл:</span> {scores.primary}
-                    </div>
-                    {scores.final !== scores.primary && (
-                      <div className="text-slate-700">
-                        <span className="font-medium">{isOGE ? 'Оценка:' : 'Итоговый балл:'}</span> {scores.final}
+                    <div className="flex items-center gap-3 text-right shrink-0 mr-6">
+                      <div>
+                        <div className="text-xs text-slate-500 uppercase">первичный</div>
+                        <div className="text-xl font-bold text-slate-800">{primary}</div>
                       </div>
+                      <div>
+                        <div className="text-xs text-slate-500 uppercase">{isOGE ? "оценка" : "итоговый"}</div>
+                        <div className="text-xl font-bold text-blue-600">{finalScore}</div>
+                      </div>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                <div className="space-y-4 pt-2">
+                  {/* Header fields */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-slate-500 uppercase">Экзамен</label>
+                      <Input value={resultExam?.title || ""} readOnly disabled className="bg-slate-50" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-slate-500 uppercase">Дата</label>
+                      <Input value={formatDate(resultExam?.date)} readOnly disabled className="bg-slate-50" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-slate-500 uppercase">Предмет</label>
+                      {editing ? (
+                        <Select
+                          value={editResultSubjectId}
+                          onValueChange={(subjectId) => {
+                            setEditResultSubjectId(subjectId);
+                            const subj = subjects.find(s => s.id === subjectId);
+                            const tc = subj?.tasks?.length || 27;
+                            const cur = [...answers];
+                            if (cur.length < tc) setAnswers([...cur, ...Array(tc - cur.length).fill(null)]);
+                            else if (cur.length > tc) setAnswers(cur.slice(0, tc));
+                          }}
+                        >
+                          <SelectTrigger><SelectValue placeholder="Выберите предмет" /></SelectTrigger>
+                          <SelectContent>
+                            {subjects.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>
+                                {s.name}{s.exam_type && ` [${s.exam_type}]`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input value={subjectDisplay || "—"} readOnly disabled className="bg-slate-50" />
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-slate-500 uppercase">Проверил</label>
+                      {editing ? (
+                        <Select
+                          value={editResultTeacherId || "none"}
+                          onValueChange={(v) => setEditResultTeacherId(v === "none" ? "" : v)}
+                        >
+                          <SelectTrigger><SelectValue placeholder="Не указан" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Не указан</SelectItem>
+                            {teachers.map((t) => (
+                              <SelectItem key={t.id} value={t.id}>{t.last_name} {t.first_name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input value={teacherDisplay} readOnly disabled className="bg-slate-50" />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Task scores grid */}
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 uppercase mb-2 block">Баллы по заданиям</label>
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(50px,1fr))] gap-1 border rounded-lg p-3 bg-slate-50">
+                      {currentAnswers.map((answer: number | null, index: number) => {
+                        const task = (examSubject as Subject)?.tasks?.[index];
+                        const taskLabel = task?.label || (index + 1).toString();
+                        const taskMaxScore = task?.maxScore || 1;
+                        const isCovered = coveredTasks.includes(index + 1);
+                        return (
+                          <div key={index} className="flex flex-col">
+                            <div className={cn(
+                              "border text-xs font-medium px-2 py-1 text-center rounded-t",
+                              isCovered
+                                ? "bg-green-200 border-green-300 text-green-800"
+                                : "bg-slate-200 border-slate-300 text-slate-700"
+                            )}>
+                              {taskLabel}
+                            </div>
+                            <input
+                              type="text"
+                              value={answer ?? ""}
+                              onChange={editing ? (e) => {
+                                const newAnswers = [...answers];
+                                const v = e.target.value;
+                                const num = v === "" ? null : parseInt(v);
+                                newAnswers[index] = num !== null && num > taskMaxScore ? taskMaxScore : num;
+                                setAnswers(newAnswers);
+                              } : undefined}
+                              readOnly={!editing}
+                              disabled={!editing}
+                              placeholder="—"
+                              title={`Максимум: ${taskMaxScore}`}
+                              className={cn(
+                                "w-full h-9 text-center text-sm border border-t-0 rounded-b",
+                                editing
+                                  ? "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:z-10 bg-white"
+                                  : "bg-slate-50 text-slate-700",
+                                answer === 0 ? "text-red-600" : ""
+                              )}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Comment */}
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 uppercase mb-2 block">
+                      Комментарий к работе {editing && "(необязательно)"}
+                    </label>
+                    <Textarea
+                      placeholder={editing ? "Добавьте примечание для студента..." : "Нет комментария"}
+                      value={editing ? studentComment : (result.student_comment || "")}
+                      onChange={editing ? (e) => setStudentComment(e.target.value) : undefined}
+                      readOnly={!editing}
+                      disabled={!editing}
+                      className={cn("min-h-[80px]", !editing && "bg-slate-50")}
+                    />
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex justify-end gap-2 pt-2">
+                    {editing ? (
+                      <>
+                        <Button variant="outline" onClick={() => {
+                          // Reset to original values and switch to view
+                          openResultModal(result, student, false);
+                        }} disabled={isSubmitting}>
+                          Отмена
+                        </Button>
+                        <Button onClick={handleUpdateResult} disabled={isSubmitting}>
+                          {isSubmitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Сохранение...</> : "Сохранить"}
+                        </Button>
+                      </>
+                    ) : (
+                      <Button onClick={() => openResultModal(result, student, true)}>
+                        <Edit className="w-4 h-4 mr-1.5" />
+                        Редактировать
+                      </Button>
                     )}
                   </div>
-                );
-              })()}
-            </div>
-
-            {/* Student Comment */}
-            <div>
-              <label className="text-sm font-medium text-slate-900 mb-2 block">
-                Комментарий к работе (необязательно)
-              </label>
-              <Textarea
-                placeholder="Добавить комментарий..."
-                value={studentComment}
-                onChange={(e) => setStudentComment(e.target.value)}
-                className="min-h-[80px]"
-              />
-            </div>
-
-            {/* Actions */}
-            <div className="flex justify-end gap-2 mt-6">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setIsEditResultDialogOpen(false);
-                  setEditingResult(null);
-                  setAnswers(Array(27).fill(null));
-                  setStudentComment("");
-                  setEditResultSubjectId("");
-                  setEditResultTeacherId("");
-                }}
-                disabled={isSubmitting}
-              >
-                Отмена
-              </Button>
-              <Button
-                onClick={handleUpdateResult}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Сохранение...
-                  </>
-                ) : (
-                  "Сохранить"
-                )}
-              </Button>
-            </div>
-          </div>
+                </div>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
@@ -2004,150 +2011,6 @@ export function ExamsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Detail View Modal */}
-      <Dialog open={!!viewingDetailResult} onOpenChange={(open) => { if (!open) setViewingDetailResult(null); }}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-          {viewingDetailResult && (() => {
-            const { result, student } = viewingDetailResult;
-            const resultExam = exams.find(e => e.id === result.exam_id) || result.exam;
-            const subjectData = resultExam?.subject_rel
-              ? subjects.find(s => s.id === resultExam.subject_id) || resultExam.subject_rel
-              : undefined;
-            const taskCount = (subjectData as Subject)?.tasks?.length || 27;
-            const resultAnswers = result.answers || Array(taskCount).fill(null);
-            const { primary, final: finalScore } = calculateScores(resultAnswers, subjectData as Subject);
-            const coveredTasks = resultExam?.selected_tasks || [];
-            const coveredTopics = resultExam?.task_topics || {};
-            const topicsFromSubject = getSubjectTopicsMap(subjectData as Subject);
-            const isOGE = (subjectData as Subject)?.exam_type === "ОГЭ";
-
-            return (
-              <>
-                <DialogHeader>
-                  <DialogTitle>
-                    {student.last_name} {student.first_name} — {resultExam?.title || "Экзамен"}
-                  </DialogTitle>
-                  <DialogDescription>
-                    <div className="flex items-center gap-3 mt-1 flex-wrap">
-                      {(subjectData as Subject)?.name && (
-                        <Badge className="bg-violet-100 text-violet-700">{(subjectData as Subject).name}</Badge>
-                      )}
-                      <Badge variant="secondary">Первичный: {primary}</Badge>
-                      <Badge className={isOGE ? "bg-green-600" : "bg-blue-600"}>
-                        {isOGE ? "Оценка" : "Итоговый"}: {finalScore}
-                      </Badge>
-                      {result.added_by_employee && (
-                        <span className="text-xs text-slate-500 flex items-center gap-1">
-                          <GraduationCap className="w-3 h-3" />
-                          {result.added_by_employee.last_name} {result.added_by_employee.first_name}
-                        </span>
-                      )}
-                    </div>
-                  </DialogDescription>
-                </DialogHeader>
-
-                <div className="space-y-4 py-2">
-                  {coveredTasks.length > 0 && (
-                    <div className="flex items-center gap-4 text-xs text-slate-500">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded bg-green-100 border border-green-300" />
-                        Пройденная тема
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded bg-white border border-slate-300" />
-                        Не пройдена
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="border rounded-lg overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-slate-100 border-b">
-                          <th className="text-left px-3 py-2 font-medium text-slate-700 w-16">№</th>
-                          <th className="text-left px-3 py-2 font-medium text-slate-700">Темы</th>
-                          <th className="text-center px-3 py-2 font-medium text-slate-700 w-20">Балл</th>
-                          <th className="text-center px-3 py-2 font-medium text-slate-700 w-16">Макс</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Array.from({ length: taskCount }, (_, index) => {
-                          const taskNumber = index + 1;
-                          const task = (subjectData as Subject)?.tasks?.[index];
-                          const taskLabel = task?.label || taskNumber.toString();
-                          const taskMaxScore = task?.maxScore || 1;
-                          const isCovered = coveredTasks.includes(taskNumber);
-                          const topics = coveredTopics[taskNumber] || coveredTopics[String(taskNumber)] || [];
-                          const allTopics = topicsFromSubject[taskNumber] || [];
-                          const answerValue = resultAnswers[index];
-
-                          return (
-                            <tr
-                              key={index}
-                              className={cn(
-                                "border-b last:border-b-0 transition-colors",
-                                isCovered ? "bg-green-50" : "bg-white"
-                              )}
-                            >
-                              <td className="px-3 py-2">
-                                <span className={cn(
-                                  "inline-flex items-center justify-center w-8 h-8 rounded text-xs font-medium",
-                                  isCovered ? "bg-green-200 text-green-800" : "bg-slate-200 text-slate-600"
-                                )}>
-                                  {taskLabel}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2">
-                                {topics.length > 0 ? (
-                                  <div className="flex flex-wrap gap-1">
-                                    {topics.map((topic: string) => (
-                                      <Badge key={topic} variant="secondary" className="text-xs bg-green-100 text-green-700 border-green-200">
-                                        {topic}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                ) : allTopics.length > 0 ? (
-                                  <div className="flex flex-wrap gap-1">
-                                    {allTopics.map((topic) => (
-                                      <span key={topic} className="text-xs text-slate-400">{topic}</span>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <span className="text-xs text-slate-300">—</span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                <span className={cn(
-                                  "inline-flex items-center justify-center w-10 h-8 rounded text-sm font-medium",
-                                  answerValue != null && answerValue > 0
-                                    ? answerValue >= taskMaxScore ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
-                                    : answerValue === 0 ? "bg-red-100 text-red-600" : "text-slate-400"
-                                )}>
-                                  {answerValue != null ? answerValue : "—"}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-center text-xs text-slate-500">
-                                {taskMaxScore}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {result.student_comment && (
-                    <div className="space-y-1">
-                      <Label className="text-xs">Комментарий</Label>
-                      <p className="text-sm text-slate-700 bg-slate-50 rounded-lg p-3">{result.student_comment}</p>
-                    </div>
-                  )}
-                </div>
-              </>
-            );
-          })()}
-        </DialogContent>
-      </Dialog>
 
       <button
         onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
