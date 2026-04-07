@@ -279,26 +279,20 @@ export function ExamsTab({ groupId, groupName, groupSubject }: ExamsTabProps) {
     try {
       setCreatingExam(true);
 
-      // If a template is selected, use the API endpoint to create from template
-      if (selectedTemplate && selectedTemplate !== "custom") {
-        await api.createExamFromTemplate(selectedTemplate, groupId);
-        toast.success("Экзамен создан из шаблона");
-      } else {
-        const examData: ExamCreate = {
-          group_id: groupId,
-          title: examTitle,
-          subject: groupSubject,
-          subject_id: subject?.id || undefined,
-          difficulty: examDifficulty || undefined,
-          selected_tasks: selectedTasks.length > 0 ? selectedTasks : undefined,
-          task_topics: Object.keys(taskTopics).length > 0 ? taskTopics : undefined,
-          comment: examComment || undefined,
-        };
+      const examData: ExamCreate = {
+        group_id: groupId,
+        title: examTitle,
+        subject: groupSubject,
+        subject_id: subject?.id || undefined,
+        difficulty: examDifficulty || undefined,
+        selected_tasks: selectedTasks.length > 0 ? selectedTasks : undefined,
+        task_topics: Object.keys(taskTopics).length > 0 ? taskTopics : undefined,
+        comment: examComment || undefined,
+      };
 
-        console.log("Creating exam with data:", JSON.stringify(examData, null, 2));
-        await api.createExam(examData);
-        toast.success("Экзамен успешно создан");
-      }
+      console.log("Creating exam with data:", JSON.stringify(examData, null, 2));
+      await api.createExam(examData);
+      toast.success("Экзамен успешно создан");
 
       // Reset form
       setIsAddExamOpen(false);
