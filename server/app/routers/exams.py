@@ -56,12 +56,9 @@ async def create_exam(
         group = group_result.scalar_one_or_none()
 
     # Auto-populate subject_id from group if not provided
-    exam_data = data.model_dump()
+    exam_data = data.model_dump(exclude_none=True)
     if not exam_data.get('subject_id') and group and group.subject_id:
         exam_data['subject_id'] = group.subject_id
-        # Also populate subject name for backward compatibility
-        if group.subject:
-            exam_data['subject'] = group.subject.name
 
     # If subject_id is provided, populate subject name for backward compatibility
     if exam_data.get('subject_id'):

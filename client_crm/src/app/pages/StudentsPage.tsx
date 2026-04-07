@@ -82,7 +82,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { StudentPerformanceTab } from "../components/StudentPerformanceTab";
 import { StudentReportsPanel } from "../components/StudentReportsPanel";
-import type { Student, StudentCreate, StudentHistory, ParentRelation, WeeklyReport, GroupInfo, Schedule, Lead, SubscriptionPlan, Lesson, AppUser, AppUserCreate } from "../types/api";
+import type { Student, StudentCreate, StudentHistory, ParentRelation, WeeklyReport, GroupInfo, Schedule, Lead, SubscriptionPlan, Lesson, AppUser, AppUserCreate, Group } from "../types/api";
 
 const parentRelations: { value: ParentRelation; label: string }[] = [
   { value: "мама", label: "Мама" },
@@ -194,6 +194,85 @@ function CopyButtonHelper({ text }: { text: string }) {
   );
 }
 
+/* Add to Group Dropdown */
+function AddToGroupDropdown({ studentGroups, allGroups, onAdd }: {
+  studentGroups: GroupInfo[];
+  allGroups: Group[];
+  onAdd: (groupId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const studentGroupIds = new Set(studentGroups.map(g => g.id));
+  const available = allGroups
+    .filter(g => !g.is_archived && !studentGroupIds.has(g.id))
+    .filter(g => {
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return g.name.toLowerCase().includes(q) || g.subject?.name?.toLowerCase().includes(q);
+    });
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+      >
+        <Plus className="w-3 h-3" />
+        Добавить
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-64 bg-white border rounded-lg shadow-lg z-50">
+          <div className="p-2 border-b">
+            <input
+              type="text"
+              placeholder="Поиск группы..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full px-2 py-1.5 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              autoFocus
+            />
+          </div>
+          <div className="max-h-48 overflow-y-auto p-1">
+            {available.length === 0 ? (
+              <p className="text-xs text-muted-foreground p-2 text-center">Нет доступных групп</p>
+            ) : (
+              available.map(g => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => { onAdd(g.id); setOpen(false); setSearch(""); }}
+                  className="w-full text-left px-3 py-2 text-sm rounded hover:bg-blue-50 transition-colors flex items-center gap-2"
+                >
+                  <div
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: g.subject?.color || "#2563eb" }}
+                  />
+                  <div className="min-w-0">
+                    <span className="block truncate font-medium">{g.name}</span>
+                    {g.subject?.name && <span className="block text-xs text-muted-foreground truncate">{g.subject.name}</span>}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* Info Card Component */
 function InfoCardComponent({
   student,
@@ -213,6 +292,9 @@ function InfoCardComponent({
   retroactiveLoading,
   onGenerateCredentials,
   generatingCreds,
+  onRemoveFromGroup,
+  onAddToGroup,
+  allGroups,
 }: {
   student: Student;
   studentHistory: StudentHistory[];
@@ -231,6 +313,9 @@ function InfoCardComponent({
   retroactiveLoading?: boolean;
   onGenerateCredentials: () => void;
   generatingCreds?: boolean;
+  onRemoveFromGroup: (groupId: string, groupName: string) => void;
+  onAddToGroup: (groupId: string) => void;
+  allGroups: Group[];
 }) {
   const navigate = useNavigate();
   const hasPhone = student.phone && student.phone.length > 0;
@@ -499,30 +584,46 @@ function InfoCardComponent({
             </div>
 
             {/* Groups + Schedule */}
-            {student.groups && student.groups.length > 0 && (
-              <>
-                <div className="border-t border-border my-3" />
-                <div className="space-y-3">
+            <>
+              <div className="border-t border-border my-3" />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4 text-muted-foreground" />
                     <span className="text-sm font-medium text-muted-foreground">Группы и расписание</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    {groupSchedules.map((gs) => (
+                  <AddToGroupDropdown
+                    studentGroups={student.groups || []}
+                    allGroups={allGroups}
+                    onAdd={onAddToGroup}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {student.groups && student.groups.length > 0 && groupSchedules.map((gs) => (
                       <div
                         key={gs.id}
                         className="rounded-lg border border-border overflow-hidden"
                         style={{ borderLeftColor: gs.color || "#2563eb", borderLeftWidth: 3 }}
                       >
                         <div className="px-3 py-2 space-y-1.5">
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/group/${gs.id}`, { state: { from: "student", studentId: student.id } })}
-                            className="text-sm font-semibold hover:underline transition-colors text-left leading-tight"
-                            style={{ color: gs.color || "#2563eb" }}
-                          >
-                            {gs.name}
-                          </button>
+                          <div className="flex items-start justify-between gap-1">
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/group/${gs.id}`, { state: { from: "student", studentId: student.id } })}
+                              className="text-sm font-semibold hover:underline transition-colors text-left leading-tight"
+                              style={{ color: gs.color || "#2563eb" }}
+                            >
+                              {gs.name}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onRemoveFromGroup(gs.id, gs.name)}
+                              className="shrink-0 p-0.5 rounded hover:bg-red-100 text-slate-400 hover:text-red-600 transition-colors"
+                              title="Удалить из группы"
+                            >
+                              <CloseIcon className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                           {gs.schedules.length > 0 ? (
                             <div className="space-y-1">
                               {gs.schedules.map((s) => (
@@ -539,7 +640,7 @@ function InfoCardComponent({
                         </div>
                       </div>
                     ))}
-                    {groupSchedules.length === 0 && student.groups.map((group) => (
+                    {student.groups && student.groups.length > 0 && groupSchedules.length === 0 && student.groups.map((group) => (
                       <div
                         key={group.id}
                         className="rounded-lg border border-border border-l-[3px] border-l-blue-600 overflow-hidden"
@@ -555,10 +656,12 @@ function InfoCardComponent({
                         </div>
                       </div>
                     ))}
+                    {(!student.groups || student.groups.length === 0) && (
+                      <p className="text-xs text-muted-foreground col-span-2">Нет групп</p>
+                    )}
                   </div>
                 </div>
               </>
-            )}
 
             {/* Unified lesson tiles across all groups */}
             {(() => {
@@ -1265,6 +1368,7 @@ export function StudentsPage() {
   const [archiveSearch, setArchiveSearch] = useState("");
   const [selectedLeadForDetail, setSelectedLeadForDetail] = useState<Lead | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
+  const [allGroups, setAllGroups] = useState<Group[]>([]);
   const [activeTab, setActiveTab] = useState("info"); // Student detail tabs
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -1312,9 +1416,10 @@ export function StudentsPage() {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const tableAreaRef = useRef<HTMLDivElement>(null);
 
-  // Load students
+  // Load students and groups
   useEffect(() => {
     loadStudents();
+    api.getGroups().then(setAllGroups).catch(console.error);
   }, []);
 
   // Load latest reports when entering reports view
@@ -1726,6 +1831,37 @@ export function StudentsPage() {
     }
   };
 
+  const handleRemoveFromGroup = async (groupId: string, groupName: string) => {
+    if (!selectedStudent) return;
+    if (!confirm(`Удалить ${selectedStudent.first_name} ${selectedStudent.last_name} из группы "${groupName}"?`)) return;
+
+    try {
+      await api.removeStudentFromGroup(groupId, selectedStudent.id);
+      toast.success(`Удален из группы "${groupName}"`);
+      // Reload student data
+      await loadStudents();
+      // Reload history
+      loadStudentHistory(selectedStudent.id);
+    } catch (error) {
+      console.error("Failed to remove from group:", error);
+      toast.error("Ошибка при удалении из группы");
+    }
+  };
+
+  const handleAddToGroup = async (groupId: string) => {
+    if (!selectedStudent) return;
+
+    try {
+      await api.addStudentToGroup(groupId, selectedStudent.id);
+      toast.success("Добавлен в группу");
+      await loadStudents();
+      loadStudentHistory(selectedStudent.id);
+    } catch (error) {
+      console.error("Failed to add to group:", error);
+      toast.error("Ошибка при добавлении в группу");
+    }
+  };
+
   const filteredStudents = students.filter((student) => {
     const fullName = `${student.last_name} ${student.first_name}`.toLowerCase();
     const matchesSearch = fullName.includes(searchQuery.toLowerCase());
@@ -1794,6 +1930,62 @@ export function StudentsPage() {
       default:
         return <Clock className="w-4 h-4 text-slate-600" />;
     }
+  };
+
+  const getGroupMembershipPeriod = (entry: StudentHistory, allHistory: StudentHistory[]) => {
+    if (entry.event_type !== 'added_to_group' && entry.event_type !== 'removed_from_group') return null;
+
+    const groupName = entry.description?.replace(/^(Добавлен в группу|Удален из группы):\s*/, '');
+    if (!groupName) return null;
+
+    const sorted = allHistory.slice().sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+    const pluralDays = (n: number) => {
+      const mod10 = n % 10;
+      const mod100 = n % 100;
+      if (mod10 === 1 && mod100 !== 11) return 'день';
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'дня';
+      return 'дней';
+    };
+
+    const pluralMonths = (n: number) => {
+      const mod10 = n % 10;
+      const mod100 = n % 100;
+      if (mod10 === 1 && mod100 !== 11) return 'месяц';
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'месяца';
+      return 'месяцев';
+    };
+
+    const formatPeriod = (from: Date, to: Date) => {
+      const days = Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+      if (days < 1) return 'менее дня';
+      if (days < 30) return `${days} ${pluralDays(days)}`;
+      const months = Math.floor(days / 30);
+      const rem = days % 30;
+      let result = `${months} ${pluralMonths(months)}`;
+      if (rem > 0) result += ` ${rem} ${pluralDays(rem)}`;
+      return result;
+    };
+
+    if (entry.event_type === 'removed_from_group') {
+      const addedEntry = sorted.filter(e =>
+        e.event_type === 'added_to_group' &&
+        e.description?.includes(groupName) &&
+        new Date(e.created_at).getTime() < new Date(entry.created_at).getTime()
+      ).pop();
+      if (addedEntry) return formatPeriod(new Date(addedEntry.created_at), new Date(entry.created_at));
+    } else {
+      const removedEntry = sorted.find(e =>
+        e.event_type === 'removed_from_group' &&
+        e.description?.includes(groupName) &&
+        new Date(e.created_at).getTime() > new Date(entry.created_at).getTime()
+      );
+      if (removedEntry) {
+        return formatPeriod(new Date(entry.created_at), new Date(removedEntry.created_at));
+      }
+      return formatPeriod(new Date(entry.created_at), new Date()) + ' — до сих пор';
+    }
+    return null;
   };
 
   if (loading) {
@@ -2654,6 +2846,9 @@ export function StudentsPage() {
                   retroactiveLoading={retroactiveLoading}
                   onGenerateCredentials={handleGenerateCredentials}
                   generatingCreds={generatingCreds}
+                  onRemoveFromGroup={handleRemoveFromGroup}
+                  onAddToGroup={handleAddToGroup}
+                  allGroups={allGroups}
                 />
                 <ParentContactsComponent
                   student={selectedStudent}
@@ -2691,23 +2886,32 @@ export function StudentsPage() {
                     studentHistory
                       .slice()
                       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                      .map((entry) => (
-                        <div key={entry.id} className="flex items-start gap-3 border-l-2 border-blue-500 pl-4 py-2">
-                          <div className="mt-0.5 shrink-0">{getHistoryIcon(entry.event_type)}</div>
-                          <div className="flex-1">
-                            <p className="text-sm text-gray-900">{entry.description}</p>
-                            <p className="text-xs text-gray-500 mt-1">
-                              {new Date(entry.created_at).toLocaleString('ru-RU', {
-                                year: 'numeric',
-                                month: 'long',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </p>
+                      .map((entry) => {
+                        const period = getGroupMembershipPeriod(entry, studentHistory);
+                        return (
+                          <div key={entry.id} className="flex items-start gap-3 border-l-2 border-blue-500 pl-4 py-2">
+                            <div className="mt-0.5 shrink-0">{getHistoryIcon(entry.event_type)}</div>
+                            <div className="flex-1">
+                              <p className="text-sm text-gray-900">{entry.description}</p>
+                              {period && (
+                                <p className="text-xs text-blue-600 mt-0.5 flex items-center gap-1">
+                                  <Calendar className="w-3 h-3" />
+                                  {period}
+                                </p>
+                              )}
+                              <p className="text-xs text-gray-500 mt-1">
+                                {new Date(entry.created_at).toLocaleString('ru-RU', {
+                                  year: 'numeric',
+                                  month: 'long',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                   ) : (
                     <p className="text-gray-500 text-sm">История пуста</p>
                   )}

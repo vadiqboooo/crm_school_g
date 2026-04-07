@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { FileText, ArrowLeft, MessageSquare, Loader2, User, Check, Trash2, Edit2, ChevronUp } from "lucide-react";
+import { FileText, ArrowLeft, MessageSquare, Loader2, User, Check, Trash2, Edit2, ChevronUp, Expand } from "lucide-react";
 import {
   HoverCard,
   HoverCardContent,
@@ -72,6 +72,9 @@ export function ExamsTab({ groupId, groupName, groupSubject }: ExamsTabProps) {
   const [updatingExam, setUpdatingExam] = useState(false);
   const [editingExam, setEditingExam] = useState<Exam | null>(null);
   const [editingExamSubjectId, setEditingExamSubjectId] = useState<string>("");
+
+  // Student work modal
+  const [viewingStudent, setViewingStudent] = useState<StudentWithResult | null>(null);
 
   // Scroll to top button
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -271,6 +274,7 @@ export function ExamsTab({ groupId, groupName, groupSubject }: ExamsTabProps) {
           group_id: groupId,
           title: examTitle,
           subject: groupSubject,
+          subject_id: subject?.id || undefined,
           difficulty: examDifficulty || undefined,
           selected_tasks: selectedTasks.length > 0 ? selectedTasks : undefined,
           task_topics: Object.keys(taskTopics).length > 0 ? taskTopics : undefined,
@@ -695,6 +699,15 @@ export function ExamsTab({ groupId, groupName, groupSubject }: ExamsTabProps) {
                             <Button
                               size="sm"
                               variant="ghost"
+                              className="h-7 text-xs"
+                              onClick={() => setViewingStudent(student)}
+                              title="Подробный просмотр работы"
+                            >
+                              <Expand className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
                               className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
                               onClick={() => handleDeleteResult(result.id)}
                             >
@@ -805,6 +818,185 @@ export function ExamsTab({ groupId, groupName, groupSubject }: ExamsTabProps) {
             })}
           </div>
         )}
+
+        {/* Student Work Modal */}
+        <Dialog open={!!viewingStudent} onOpenChange={(open) => { if (!open) setViewingStudent(null); }}>
+          <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+            {viewingStudent && viewingStudent.result && (() => {
+              const student = viewingStudent;
+              const result = student.result!;
+              const taskCount = subject?.tasks?.length || 27;
+              const currentAnswers = editingResults[student.id]?.answers || result.answers || Array(taskCount).fill(null);
+              const { primaryScore, finalScore } = calculateScores(currentAnswers);
+              const coveredTasks = selectedExam?.selected_tasks || [];
+              const coveredTopics = selectedExam?.task_topics || {};
+
+              return (
+                <>
+                  <DialogHeader>
+                    <DialogTitle>
+                      Работа: {student.first_name} {student.last_name}
+                    </DialogTitle>
+                    <DialogDescription>
+                      <div className="flex items-center gap-3 mt-1">
+                        <Badge variant="secondary">Первичный: {primaryScore}</Badge>
+                        <Badge className={subject?.exam_type === 'ОГЭ' ? 'bg-green-600' : 'bg-blue-600'}>
+                          {subject?.exam_type === 'ОГЭ' ? 'Оценка' : 'Итоговый'}: {finalScore}
+                        </Badge>
+                        {savingResults[student.id] && (
+                          <span className="flex items-center gap-1 text-xs text-green-600">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            Сохранение...
+                          </span>
+                        )}
+                      </div>
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <div className="space-y-4 py-2">
+                    {/* Legend */}
+                    {coveredTasks.length > 0 && (
+                      <div className="flex items-center gap-4 text-xs text-slate-500">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-3 h-3 rounded bg-green-100 border border-green-300" />
+                          Пройденная тема
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-3 h-3 rounded bg-white border border-slate-300" />
+                          Не пройдена
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Task Table */}
+                    <div className="border rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-slate-100 border-b">
+                            <th className="text-left px-3 py-2 font-medium text-slate-700 w-16">№</th>
+                            <th className="text-left px-3 py-2 font-medium text-slate-700">Темы</th>
+                            <th className="text-center px-3 py-2 font-medium text-slate-700 w-20">Балл</th>
+                            <th className="text-center px-3 py-2 font-medium text-slate-700 w-16">Макс</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Array.from({ length: taskCount }, (_, index) => {
+                            const taskNumber = index + 1;
+                            const task = subject?.tasks?.[index];
+                            const taskLabel = task?.label || taskNumber.toString();
+                            const taskMaxScore = task?.maxScore || 1;
+                            const isCovered = coveredTasks.includes(taskNumber);
+                            const topics = coveredTopics[taskNumber] || coveredTopics[String(taskNumber)] || [];
+                            const topicsFromSubject = taskTopicsFromSubject[taskNumber] || [];
+
+                            return (
+                              <tr
+                                key={index}
+                                className={cn(
+                                  "border-b last:border-b-0 transition-colors",
+                                  isCovered
+                                    ? "bg-green-50 hover:bg-green-100"
+                                    : "bg-white hover:bg-slate-50"
+                                )}
+                              >
+                                <td className="px-3 py-2">
+                                  <span className={cn(
+                                    "inline-flex items-center justify-center w-8 h-8 rounded text-xs font-medium",
+                                    isCovered
+                                      ? "bg-green-200 text-green-800"
+                                      : "bg-slate-200 text-slate-600"
+                                  )}>
+                                    {taskLabel}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2">
+                                  {topics.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {topics.map((topic: string) => (
+                                        <Badge key={topic} variant="secondary" className="text-xs bg-green-100 text-green-700 border-green-200">
+                                          {topic}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  ) : topicsFromSubject.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {topicsFromSubject.map((topic) => (
+                                        <span key={topic} className="text-xs text-slate-400">{topic}</span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs text-slate-300">—</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <input
+                                    type="text"
+                                    value={
+                                      editingResults[student.id]?.answers?.[index] !== undefined
+                                        ? editingResults[student.id].answers![index] ?? ""
+                                        : currentAnswers[index] ?? ""
+                                    }
+                                    onChange={(e) => {
+                                      const answersForEdit = editingResults[student.id]?.answers || result.answers || Array(taskCount).fill(null);
+                                      const newAnswers = [...answersForEdit];
+                                      const value = e.target.value;
+                                      const numValue = value === "" ? null : parseInt(value);
+                                      if (numValue !== null && numValue > taskMaxScore) {
+                                        newAnswers[index] = taskMaxScore;
+                                      } else {
+                                        newAnswers[index] = numValue;
+                                      }
+                                      updateEditingResult(student.id, result.id, "answers", newAnswers);
+                                    }}
+                                    placeholder="—"
+                                    className={cn(
+                                      "w-14 h-8 text-center text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500",
+                                      isCovered ? "border-green-300 bg-green-50" : "border-slate-300 bg-white"
+                                    )}
+                                  />
+                                </td>
+                                <td className="px-3 py-2 text-center text-xs text-slate-500">
+                                  {taskMaxScore}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Comment */}
+                    <div className="space-y-1">
+                      <Label className="text-xs">Комментарий по результатам</Label>
+                      <Textarea
+                        value={editingResults[student.id]?.student_comment ?? (result.student_comment || "")}
+                        onChange={(e) => {
+                          setEditingResults((prev) => ({
+                            ...prev,
+                            [student.id]: {
+                              ...(prev[student.id] || {}),
+                              student_comment: e.target.value,
+                            },
+                          }));
+                        }}
+                        onBlur={() => {
+                          const comment = editingResults[student.id]?.student_comment;
+                          if (comment !== undefined && comment !== (result.student_comment || "")) {
+                            handleUpdateResult(student.id, result.id, {
+                              ...(editingResults[student.id] || {}),
+                            });
+                          }
+                        }}
+                        placeholder="Добавить комментарий..."
+                        className="min-h-[80px] text-sm resize-none"
+                      />
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
