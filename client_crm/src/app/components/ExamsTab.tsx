@@ -210,11 +210,25 @@ export function ExamsTab({ groupId, groupName, groupSubject }: ExamsTabProps) {
   };
 
   const handleTaskToggle = (taskNumber: number) => {
-    setSelectedTasks((prev) =>
-      prev.includes(taskNumber)
-        ? prev.filter((t) => t !== taskNumber)
-        : [...prev, taskNumber]
-    );
+    setSelectedTasks((prev) => {
+      const isRemoving = prev.includes(taskNumber);
+      if (isRemoving) {
+        // Remove task topics when deselecting
+        setTaskTopics((tp) => {
+          const copy = { ...tp };
+          delete copy[taskNumber];
+          return copy;
+        });
+        return prev.filter((t) => t !== taskNumber);
+      } else {
+        // Auto-select all available topics when selecting a task
+        const topics = taskTopicsFromSubject[taskNumber] || [];
+        if (topics.length > 0) {
+          setTaskTopics((tp) => ({ ...tp, [taskNumber]: [...topics] }));
+        }
+        return [...prev, taskNumber];
+      }
+    });
   };
 
   const handleTopicChange = (taskNumber: number, topic: string) => {
@@ -281,6 +295,7 @@ export function ExamsTab({ groupId, groupName, groupSubject }: ExamsTabProps) {
           comment: examComment || undefined,
         };
 
+        console.log("Creating exam with data:", JSON.stringify(examData, null, 2));
         await api.createExam(examData);
         toast.success("Экзамен успешно создан");
       }
