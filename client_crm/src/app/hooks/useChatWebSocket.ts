@@ -43,10 +43,11 @@ export function useChatWebSocket({ wsUrl, onEvent, enabled = true }: UseChatWebS
   const reconnectRef = useRef<ReturnType<typeof setTimeout>>();
   const pingRef = useRef<ReturnType<typeof setInterval>>();
   const onEventRef = useRef(onEvent);
+  const disposedRef = useRef(false);
   onEventRef.current = onEvent;
 
   const connect = useCallback(() => {
-    if (!enabled) return;
+    if (!enabled || disposedRef.current) return;
 
     const ws = new WebSocket(wsUrl);
 
@@ -74,8 +75,10 @@ export function useChatWebSocket({ wsUrl, onEvent, enabled = true }: UseChatWebS
 
     ws.onclose = () => {
       clearInterval(pingRef.current);
-      // Reconnect with backoff
-      reconnectRef.current = setTimeout(connect, 3000);
+      // Only reconnect if not disposed (cleanup not called)
+      if (!disposedRef.current) {
+        reconnectRef.current = setTimeout(connect, 3000);
+      }
     };
 
     wsRef.current = ws;
@@ -83,8 +86,10 @@ export function useChatWebSocket({ wsUrl, onEvent, enabled = true }: UseChatWebS
 
   useEffect(() => {
     if (!enabled) return;
+    disposedRef.current = false;
     connect();
     return () => {
+      disposedRef.current = true;
       clearTimeout(reconnectRef.current);
       clearInterval(pingRef.current);
       wsRef.current?.close();

@@ -908,7 +908,7 @@ export function GroupInfoTab({ group, onUpdate }: GroupInfoTabProps) {
                 onChange={(e) =>
                   setNewSchedule({
                     ...newSchedule,
-                    duration_minutes: parseInt(e.target.value) || 90,
+                    duration_minutes: e.target.value === "" ? "" as any : (parseInt(e.target.value) || 0),
                   })
                 }
                 className="mt-2"

@@ -225,7 +225,7 @@ export function SubjectEditDialog({
     const updated = [...gradeScale];
     updated[index] = {
       ...updated[index],
-      [field]: parseInt(value) || 0,
+      [field]: value === "" ? "" : (parseInt(value) || 0),
     };
     setGradeScale(updated);
   };

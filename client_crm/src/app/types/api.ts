@@ -1039,16 +1039,34 @@ export interface ChatMessage {
   sender_type: ChatMemberType;
   sender_name: string;
   content_encrypted: string;
-  message_type: "text" | "image" | "sticker" | "system";
+  message_type: "text" | "image" | "file" | "sticker" | "system";
   file_url: string | null;
+  file_name: string | null;
+  file_size: number | null;
   reply_to_id: string | null;
   is_deleted: boolean;
   created_at: string;
+}
+
+export interface ChatFileUploadResult {
+  file_url: string;
+  file_name: string;
+  file_size: number;
+  message_type: "image" | "file";
 }
 
 export interface ChatGroupStudent {
   id: string;
   member_type: "student" | "employee";
   name: string;
+  public_key: string | null;
+}
+
+export interface ChatSearchResult {
+  id: string;
+  member_type: "student" | "employee" | "app_user";
+  name: string;
+  portal_login: string | null;
+  phone: string | null;
   public_key: string | null;
 }

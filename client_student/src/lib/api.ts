@@ -216,15 +216,61 @@ class StudentApiClient {
     );
   }
 
-  async sendMessage(roomId: string, contentEncrypted: string, messageType = "text", replyToId?: string) {
+  async sendMessage(
+    roomId: string,
+    contentEncrypted: string,
+    messageType = "text",
+    replyToId?: string,
+    fileOpts?: { file_url?: string; file_name?: string; file_size?: number }
+  ) {
     return this.request<ChatMessage>(`/chat/rooms/${roomId}/messages`, {
       method: "POST",
       body: JSON.stringify({
         content_encrypted: contentEncrypted,
         message_type: messageType,
         ...(replyToId ? { reply_to_id: replyToId } : {}),
+        ...fileOpts,
       }),
     });
+  }
+
+  async uploadChatFile(file: File): Promise<ChatFileUploadResult> {
+    const formData = new FormData();
+    formData.append("file", file);
+    const url = `${API_URL}/chat/upload`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {},
+      body: formData,
+    });
+    if (res.status === 401 && this.refreshToken) {
+      const role = localStorage.getItem("s_role") ?? "student";
+      const refreshEndpoint = role === "app_user" ? "/app-auth/refresh" : "/student-auth/refresh";
+      const refreshRes = await fetch(`${API_URL}${refreshEndpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: this.refreshToken }),
+      });
+      if (refreshRes.ok) {
+        const data = await refreshRes.json();
+        this.setTokens(data.access_token, data.refresh_token);
+        const retryRes = await fetch(url, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${this.accessToken}` },
+          body: formData,
+        });
+        if (!retryRes.ok) {
+          const err = await retryRes.json().catch(() => ({}));
+          throw new Error(err.detail || `Upload failed: ${retryRes.status}`);
+        }
+        return retryRes.json();
+      }
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Upload failed: ${res.status}`);
+    }
+    return res.json();
   }
 
   async searchUsers(query: string) {
@@ -386,9 +432,18 @@ export interface ChatMessage {
   content_encrypted: string;
   message_type: string;
   file_url: string | null;
+  file_name: string | null;
+  file_size: number | null;
   reply_to_id: string | null;
   is_deleted: boolean;
   created_at: string;
+}
+
+export interface ChatFileUploadResult {
+  file_url: string;
+  file_name: string;
+  file_size: number;
+  message_type: "image" | "file";
 }
 
 export interface ExamResult {

@@ -17,7 +17,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -111,6 +112,8 @@ async def _serialize_message(msg, db: AsyncSession) -> dict:
         "content_encrypted": msg.content_encrypted,
         "message_type": msg.message_type,
         "file_url": msg.file_url,
+        "file_name": msg.file_name,
+        "file_size": msg.file_size,
         "reply_to_id": str(msg.reply_to_id) if msg.reply_to_id else None,
         "is_deleted": msg.is_deleted,
         "created_at": msg.created_at.isoformat(),
@@ -278,7 +281,22 @@ async def mark_read(
 ):
     if not await crud.is_member(db, room_id, me.member_id, me.member_type):
         raise HTTPException(status_code=403, detail="Not a member of this room")
-    await crud.mark_read(db, room_id, me.member_id, me.member_type)
+    read_at = await crud.mark_read(db, room_id, me.member_id, me.member_type)
+    # Broadcast read_receipt to other room members via WebSocket
+    if read_at:
+        read_payload = {
+            "type": "read_receipt",
+            "room_id": str(room_id),
+            "reader_id": str(me.member_id),
+            "read_at": read_at.isoformat(),
+        }
+        room = await crud.get_room_by_id(db, room_id)
+        if room:
+            for m in room.members:
+                if m.member_id == me.member_id and _mt(m.member_type) == me.member_type:
+                    continue
+                key = f"{_mt(m.member_type)}:{m.member_id}"
+                await manager.send_to_user(key, read_payload)
     return {"ok": True}
 
 
@@ -367,6 +385,9 @@ async def send_message(
         sender_type=me.member_type,
         content_encrypted=content_encrypted,
         message_type=body.get("message_type", "text"),
+        file_url=body.get("file_url"),
+        file_name=body.get("file_name"),
+        file_size=body.get("file_size"),
         reply_to_id=uuid.UUID(body["reply_to_id"]) if body.get("reply_to_id") else None,
     )
 
@@ -389,26 +410,44 @@ async def search_users(
     me: ChatIdentity = Depends(get_chat_identity),
     db: AsyncSession = Depends(get_db),
 ):
-    """Search students and app_users by login or phone number."""
-    students = await crud.search_students(db, q, exclude_id=me.member_id if me.member_type == "student" else None)
-    results = [
-        {
+    """Search students, employees and app_users by name, login or phone."""
+    from sqlalchemy import or_
+
+    results = []
+
+    # Search employees (for CRM users searching teachers/managers)
+    employees = await crud.search_employees(
+        db, q, exclude_id=me.member_id if me.member_type == "employee" else None
+    )
+    for e in employees:
+        results.append({
+            "id": str(e.id),
+            "member_type": "employee",
+            "name": f"{e.first_name} {e.last_name}",
+            "portal_login": e.email,
+            "phone": e.phone,
+            "public_key": e.public_key,
+        })
+
+    # Search students
+    students = await crud.search_students(
+        db, q, exclude_id=me.member_id if me.member_type == "student" else None
+    )
+    for s in students:
+        results.append({
             "id": str(s.id),
             "member_type": "student",
             "name": s.chat_display_name or f"{s.first_name} {s.last_name}",
             "portal_login": s.portal_login,
             "phone": s.phone,
             "public_key": s.public_key,
-        }
-        for s in students
-    ]
+        })
+
     # Also search app_users that are NOT linked to a student
-    # (linked ones already appear in the students list above)
-    from sqlalchemy import or_
     app_users_res = await db.execute(
         select(AppUser).where(
             AppUser.is_active == True,
-            AppUser.student_id.is_(None),  # exclude linked app_users — already shown as students
+            AppUser.student_id.is_(None),
             AppUser.id != (me.member_id if me.member_type == "app_user" else uuid.uuid4()),
             or_(AppUser.display_name.ilike(f"%{q}%"), AppUser.login.ilike(f"%{q}%")),
         )
@@ -422,6 +461,7 @@ async def search_users(
             "phone": None,
             "public_key": u.public_key,
         })
+
     return results
 
 
@@ -659,6 +699,71 @@ async def leave_room(
     return {"ok": True}
 
 
+@router.post("/upload")
+async def upload_chat_file(
+    file: UploadFile = File(...),
+    me: ChatIdentity = Depends(get_chat_identity),
+):
+    """Upload a file to S3 for chat attachment. Returns file metadata."""
+    from app.s3 import (
+        ALLOWED_CONTENT_TYPES, MAX_FILE_SIZE,
+        upload_file as s3_upload, get_message_type_for_content,
+    )
+
+    content_type = file.content_type or "application/octet-stream"
+    if content_type not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Неподдерживаемый тип файла: {content_type}",
+        )
+
+    data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="Файл слишком большой (макс. 10 МБ)")
+
+    original_name = file.filename or "file"
+    key = await s3_upload(data, original_name, content_type)
+    msg_type = get_message_type_for_content(content_type)
+
+    return {
+        "file_url": key,
+        "file_name": original_name,
+        "file_size": len(data),
+        "message_type": msg_type,
+    }
+
+
+@router.get("/files/{file_key:path}")
+async def serve_chat_file(
+    file_key: str,
+    token: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Proxy-serve a chat file from S3. Auth via ?token= query param (for <img src>)."""
+    from app.s3 import download_file
+
+    # Validate token
+    payload = decode_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    try:
+        data, content_type = download_file(file_key)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Файл не найден")
+
+    filename = file_key.rsplit("/", 1)[-1] if "/" in file_key else file_key
+
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Cache-Control": "private, max-age=86400",
+        },
+    )
+
+
 @router.patch("/rooms/{room_id}/room-key")
 async def update_room_key(
     room_id: uuid.UUID,
@@ -781,6 +886,9 @@ async def chat_websocket(
                     sender_type=member_type,
                     content_encrypted=content_encrypted,
                     message_type=message_type,
+                    file_url=data.get("file_url"),
+                    file_name=data.get("file_name"),
+                    file_size=data.get("file_size"),
                     reply_to_id=reply_to_id,
                 )
 

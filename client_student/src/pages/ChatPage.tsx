@@ -3,6 +3,8 @@ import BottomNav from "../components/BottomNav";
 import { api, ChatRoom, ChatMessage, ChatSearchResult } from "../lib/api";
 import { useChatWebSocket } from "../hooks/useChatWebSocket";
 
+const ACCEPT_TYPES = "image/jpeg,image/png,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,application/rtf,application/vnd.oasis.opendocument.text,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,application/vnd.oasis.opendocument.spreadsheet";
+
 interface DecryptedMessage extends ChatMessage {
   text: string | null;
 }
@@ -24,11 +26,21 @@ const AVATAR_COLORS = [
   "bg-violet-500", "bg-indigo-500", "bg-emerald-500",
   "bg-rose-500", "bg-amber-500", "bg-sky-500",
 ];
+const AVATAR_TEXT_COLORS = [
+  "text-violet-500", "text-indigo-500", "text-emerald-500",
+  "text-rose-500", "text-amber-500", "text-sky-500",
+];
 
-function avatarColor(name: string) {
+function nameHash(name: string) {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xfffff;
-  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+  return h;
+}
+function avatarColor(name: string) {
+  return AVATAR_COLORS[nameHash(name) % AVATAR_COLORS.length];
+}
+function avatarTextColor(name: string) {
+  return AVATAR_TEXT_COLORS[nameHash(name) % AVATAR_TEXT_COLORS.length];
 }
 
 function formatTime(iso: string) {
@@ -72,6 +84,78 @@ function decryptMsg(msg: ChatMessage): string {
   return msg.content_encrypted;
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
+function isImageUrl(url: string): boolean {
+  return /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(url);
+}
+
+function getFileUrl(fileKey: string): string {
+  if (fileKey.startsWith("http")) return fileKey;
+  const base = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+  const token = localStorage.getItem("s_access_token") || "";
+  return `${base}/chat/files/${fileKey}?token=${encodeURIComponent(token)}`;
+}
+
+function isImageMessage(msg: ChatMessage): boolean {
+  return !!(msg.file_url && (msg.message_type === "image" || isImageUrl(msg.file_url)));
+}
+function isFileOnlyMessage(msg: ChatMessage): boolean {
+  return !!(msg.file_url && (!msg.text || msg.text === msg.file_name));
+}
+
+function FileAttachment({ msg, isMe, onImageClick }: { msg: ChatMessage; isMe: boolean; onImageClick?: (url: string) => void }) {
+  if (!msg.file_url) return null;
+  const url = getFileUrl(msg.file_url);
+
+  if (msg.message_type === "image" || isImageUrl(msg.file_url)) {
+    return (
+      <button onClick={() => onImageClick?.(url)} className="block cursor-zoom-in">
+        <img
+          src={url}
+          alt={msg.file_name || "Изображение"}
+          className="max-w-full rounded-2xl object-cover"
+          style={{ maxHeight: 220 }}
+          loading="lazy"
+        />
+      </button>
+    );
+  }
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-colors ${
+        isMe
+          ? "bg-white/15 hover:bg-white/25"
+          : "bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600"
+      }`}
+    >
+      <svg viewBox="0 0 24 24" className="w-8 h-8 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5}>
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+      </svg>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium break-all line-clamp-2">{msg.file_name || "Файл"}</div>
+        {msg.file_size && (
+          <div className={`text-xs ${isMe ? "opacity-70" : "text-gray-400 dark:text-gray-500"}`}>
+            {formatFileSize(msg.file_size)}
+          </div>
+        )}
+      </div>
+      <svg viewBox="0 0 24 24" className="w-5 h-5 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" strokeWidth={2}>
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+      </svg>
+    </a>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function ChatPage() {
@@ -111,9 +195,14 @@ export default function ChatPage() {
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [showMembers, setShowMembers] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingFilePreview, setPendingFilePreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Search ──────────────────────────────────────────────────────────────
 
@@ -308,25 +397,63 @@ export default function ChatPage() {
 
   // ── Send message (via REST — надёжно, WS только для получения) ──────────
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      setSendError("Файл слишком большой (макс. 10 МБ)");
+      return;
+    }
+    setPendingFile(file);
+    if (file.type.startsWith("image/")) {
+      setPendingFilePreview(URL.createObjectURL(file));
+    } else {
+      setPendingFilePreview(null);
+    }
+    e.target.value = "";
+  };
+
+  const clearPendingFile = () => {
+    if (pendingFilePreview) URL.revokeObjectURL(pendingFilePreview);
+    setPendingFile(null);
+    setPendingFilePreview(null);
+  };
+
   const handleSend = async () => {
-    if (!inputText.trim() || !selectedRoom || sending) return;
-    const text = inputText.trim();
+    if ((!inputText.trim() && !pendingFile) || !selectedRoom || sending || uploading) return;
+    const text = inputText.trim() || (pendingFile ? pendingFile.name : "");
+    const fileToSend = pendingFile;
     const tempId = `sending-${Date.now()}`;
     setSendError(null);
     setInputText("");
+    clearPendingFile();
     setSending(true);
     setSendingIds((s) => new Set(s).add(tempId));
     try {
-      const sent = await api.sendMessage(selectedRoom.id, text);
+      let msgType = "text";
+      let fileOpts: { file_url?: string; file_name?: string; file_size?: number } | undefined;
+      if (fileToSend) {
+        setUploading(true);
+        const uploaded = await api.uploadChatFile(fileToSend);
+        setUploading(false);
+        msgType = uploaded.message_type;
+        fileOpts = {
+          file_url: uploaded.file_url,
+          file_name: uploaded.file_name,
+          file_size: uploaded.file_size,
+        };
+      }
+      const sent = await api.sendMessage(selectedRoom.id, text, msgType, undefined, fileOpts);
       setMessages((prev) => {
         if (prev.some((m) => m.id === sent.id)) return prev;
-        return [...prev, { ...sent, text }];
+        return [...prev, { ...sent, text: decryptMsg(sent) }];
       });
     } catch (e: any) {
       setSendError(e?.message ?? "Не удалось отправить сообщение");
-      setInputText(text);
+      if (!fileToSend) setInputText(text);
     } finally {
       setSending(false);
+      setUploading(false);
       setSendingIds((s) => { const n = new Set(s); n.delete(tempId); return n; });
     }
   };
@@ -718,9 +845,10 @@ export default function ChatPage() {
 
       {/* Messages */}
       <div
-        className="flex-1 overflow-y-auto px-4 pt-[88px] pb-[80px]"
+        className="flex-1 overflow-y-auto px-4 pt-[88px] pb-[80px] flex flex-col"
         onClick={() => setCtxMsgId(null)}
       >
+        <div className="mt-auto">
         {/* Load more */}
         {hasMore && messages.length > 0 && (
           <div className="flex justify-center py-3">
@@ -746,75 +874,112 @@ export default function ChatPage() {
           groups.map(({ date, messages: dayMsgs }) => (
             <div key={date}>
               {/* Date separator */}
-              <div className="flex items-center gap-2 my-4">
-                <div className="flex-1 h-px bg-gray-100 dark:bg-gray-700" />
-                <span className="text-xs text-gray-400 dark:text-gray-500 font-medium px-2">{date}</span>
-                <div className="flex-1 h-px bg-gray-100 dark:bg-gray-700" />
+              <div className="flex justify-center my-3">
+                <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 rounded-full px-3 py-1 font-medium shadow-sm">{date}</span>
               </div>
 
-              {dayMsgs.map((msg) => {
+              {dayMsgs.map((msg, idx) => {
                 const isMe = msg.sender_id === myId && msg.sender_type === myMemberType;
                 const isCtx = ctxMsgId === msg.id;
+                const prev = dayMsgs[idx - 1];
+                const next = dayMsgs[idx + 1];
+                const sameSenderPrev = prev && prev.sender_id === msg.sender_id && prev.sender_type === msg.sender_type;
+                const sameSenderNext = next && next.sender_id === msg.sender_id && next.sender_type === msg.sender_type;
+                const isFirst = !sameSenderPrev;
+                const isLast = !sameSenderNext;
+                const imgOnly = !msg.is_deleted && isImageMessage(msg) && isFileOnlyMessage(msg);
+
+                const timeBlock = (
+                  <span className={`inline-flex items-center gap-0.5 text-[10px] ml-2 whitespace-nowrap align-bottom ${
+                    imgOnly ? "text-white/80" : isMe ? "text-brand-300" : "text-gray-400 dark:text-gray-500"
+                  }`}>
+                    {formatTime(msg.created_at)}
+                    {isMe && !msg.is_deleted && (() => {
+                      const isSending = sendingIds.has(msg.id);
+                      const peerRead = peerReadAt[msg.room_id];
+                      const isRead = peerRead != null && new Date(msg.created_at) <= new Date(peerRead);
+                      if (isSending) return (
+                        <span className="ml-0.5 w-3 h-3 border border-current border-t-transparent rounded-full animate-spin inline-block" />
+                      );
+                      if (isRead) return <span className="ml-0.5 text-brand-300">✓✓</span>;
+                      return <span className="ml-0.5">✓</span>;
+                    })()}
+                  </span>
+                );
+
                 return (
                   <div
                     key={msg.id}
-                    className={`flex gap-2 mb-2 ${isMe ? "flex-row-reverse" : "flex-row"}`}
+                    className={`flex ${isMe ? "justify-end" : "justify-start"} ${isFirst && idx > 0 ? "mt-3" : "mt-0.5"}`}
                   >
-                    {/* Avatar (others only) */}
+                    {/* Avatar spacer / avatar */}
                     {!isMe && (
-                      <div className={`w-7 h-7 rounded-full ${avatarColor(msg.sender_name)} flex items-center justify-center flex-shrink-0 self-end`}>
-                        <span className="text-white font-bold text-[10px]">
-                          {getInitials(msg.sender_name)}
-                        </span>
+                      <div className="w-8 flex-shrink-0 flex items-end justify-center">
+                        {isLast && (
+                          <div className={`w-7 h-7 rounded-full ${avatarColor(msg.sender_name)} flex items-center justify-center`}>
+                            <span className="text-white font-bold text-[10px]">
+                              {getInitials(msg.sender_name)}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     )}
 
-                    {/* Bubble */}
-                    <div className={`max-w-[72%] flex flex-col ${isMe ? "items-end" : "items-start"}`}>
-                      {!isMe && (
-                        <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium px-1 mb-0.5">
-                          {msg.sender_name}
-                        </span>
-                      )}
-                      <div
-                        onClick={() => {
-                          if (isMe && !msg.is_deleted) setCtxMsgId(isCtx ? null : msg.id);
-                          else setCtxMsgId(null);
-                        }}
-                        className={`px-3.5 py-2 rounded-2xl text-sm leading-relaxed cursor-pointer select-none ${
-                          isMe
-                            ? "bg-brand-700 text-white rounded-br-sm"
-                            : "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm rounded-bl-sm"
-                        }`}
-                      >
-                        {msg.is_deleted
-                          ? <span className="italic opacity-60 text-xs">Сообщение удалено</span>
-                          : msg.text === null
-                            ? <span className="italic opacity-60 text-xs">🔒 Не удалось расшифровать</span>
-                            : msg.text}
+                    <div
+                      className="relative max-w-[75%]"
+                      onClick={() => {
+                        if (isMe && !msg.is_deleted) setCtxMsgId(isCtx ? null : msg.id);
+                        else setCtxMsgId(null);
+                      }}
+                    >
+                      <div className={`relative text-sm leading-relaxed select-none ${
+                        imgOnly ? "overflow-hidden rounded-2xl" : "px-3 py-1.5"
+                      } ${
+                        imgOnly ? "" :
+                        isMe
+                          ? `rounded-2xl ${isLast ? "rounded-br-sm" : ""}`
+                          : `rounded-2xl ${isLast ? "rounded-bl-sm" : ""}`
+                      } ${
+                        msg.is_deleted
+                          ? "bg-gray-100 dark:bg-gray-800 text-gray-400 italic"
+                          : isMe
+                          ? "bg-brand-700 text-white"
+                          : "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm"
+                      }`}>
+                        {/* Sender name inside bubble */}
+                        {!isMe && isFirst && !msg.is_deleted && (
+                          <div className={`text-xs font-semibold mb-0.5 ${avatarTextColor(msg.sender_name)}`}>
+                            {msg.sender_name}
+                          </div>
+                        )}
+
+                        {!msg.is_deleted && msg.file_url && (
+                          <FileAttachment msg={msg} isMe={isMe} onImageClick={setLightboxUrl} />
+                        )}
+
+                        {msg.is_deleted ? (
+                          <span className="text-xs">Сообщение удалено {timeBlock}</span>
+                        ) : msg.text === null ? (
+                          <span className="italic opacity-60 text-xs">Не удалось расшифровать {timeBlock}</span>
+                        ) : imgOnly ? (
+                          <div className="absolute bottom-2 right-2 bg-black/50 rounded-full px-2 py-0.5">{timeBlock}</div>
+                        ) : (
+                          <span>
+                            {msg.text && (!msg.file_url || msg.text !== msg.file_name) ? msg.text : null}
+                            {timeBlock}
+                          </span>
+                        )}
                       </div>
+
                       {/* Delete button for own messages */}
                       {isCtx && isMe && !msg.is_deleted && (
                         <button
                           onClick={() => handleDeleteMessage(msg.id)}
-                          className="mt-1 text-xs text-red-500 bg-white dark:bg-gray-800 border border-red-100 dark:border-red-900/40 rounded-xl px-3 py-1 shadow-sm hover:bg-red-50 dark:hover:bg-red-900/20 transition"
+                          className="absolute -top-1 -left-2 text-xs text-red-500 bg-white dark:bg-gray-800 border border-red-100 dark:border-red-900/40 rounded-xl px-3 py-1 shadow-sm hover:bg-red-50 dark:hover:bg-red-900/20 transition z-10"
                         >
                           Удалить
                         </button>
                       )}
-                      <span className={`text-[10px] mt-0.5 px-1 flex items-center gap-0.5 ${isMe ? "text-gray-400" : "text-gray-300 dark:text-gray-600"}`}>
-                        {formatTime(msg.created_at)}
-                        {isMe && !msg.is_deleted && (() => {
-                          const isSending = sendingIds.has(msg.id);
-                          const peerRead = peerReadAt[msg.room_id];
-                          const isRead = peerRead != null && new Date(msg.created_at) <= new Date(peerRead);
-                          if (isSending) return (
-                            <span className="ml-1 w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin inline-block" />
-                          );
-                          if (isRead) return <span className="ml-1 text-brand-400">✓✓</span>;
-                          return <span className="ml-1">✓</span>;
-                        })()}
-                      </span>
                     </div>
                   </div>
                 );
@@ -823,6 +988,7 @@ export default function ChatPage() {
           ))
         )}
         <div ref={messagesEndRef} />
+        </div>
       </div>
 
       {/* Input bar */}
@@ -836,7 +1002,46 @@ export default function ChatPage() {
             <button onClick={() => setSendError(null)} className="text-red-400">✕</button>
           </div>
         )}
+        {/* Pending file preview */}
+        {pendingFile && (
+          <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+            {pendingFilePreview ? (
+              <img src={pendingFilePreview} alt="" className="w-10 h-10 rounded object-cover" />
+            ) : (
+              <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-500 dark:text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="text-sm text-gray-700 dark:text-gray-200 truncate">{pendingFile.name}</div>
+              <div className="text-xs text-gray-400 dark:text-gray-500">{formatFileSize(pendingFile.size)}</div>
+            </div>
+            <button onClick={clearPendingFile} className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2}>
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        )}
         <div className="flex items-end gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPT_TYPES}
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 hover:bg-gray-100 dark:hover:bg-gray-800 transition active:scale-95"
+            title="Прикрепить файл"
+          >
+            <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+            </svg>
+          </button>
           <textarea
             rows={1}
             placeholder="Сообщение..."
@@ -848,16 +1053,43 @@ export default function ChatPage() {
           />
           <button
             onClick={handleSend}
-            disabled={!inputText.trim() || sending}
+            disabled={(!inputText.trim() && !pendingFile) || sending || uploading}
             className="w-10 h-10 rounded-full bg-brand-700 flex items-center justify-center flex-shrink-0 disabled:opacity-40 transition active:scale-95"
           >
-            <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2}>
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
+            {sending || uploading ? (
+              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2}>
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
+            )}
           </button>
         </div>
       </div>
+
+      {/* Image lightbox */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 cursor-zoom-out"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <button
+            className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors"
+            onClick={() => setLightboxUrl(null)}
+          >
+            <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2}>
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+          <img
+            src={lightboxUrl}
+            alt=""
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

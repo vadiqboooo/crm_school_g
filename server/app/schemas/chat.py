@@ -38,6 +38,8 @@ class ChatMessageSchema(BaseModel):
     content_encrypted: str
     message_type: str
     file_url: Optional[str] = None
+    file_name: Optional[str] = None
+    file_size: Optional[int] = None
     reply_to_id: Optional[str] = None
     is_deleted: bool
     created_at: datetime
@@ -51,6 +53,8 @@ class SendMessageRequest(BaseModel):
     content_encrypted: str
     message_type: str = "text"
     file_url: Optional[str] = None
+    file_name: Optional[str] = None
+    file_size: Optional[int] = None
     reply_to_id: Optional[str] = None
 
 

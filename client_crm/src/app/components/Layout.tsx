@@ -25,7 +25,7 @@ export function Layout() {
   const isTeacher = user?.role === "teacher";
   const isManager = user?.role === "manager";
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const { headerActions } = useHeaderActions();
+  const { headerActions, mobileHeaderHidden } = useHeaderActions();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [uncompletedLessonsCount, setUncompletedLessonsCount] = useState(0);
   const [lastReportsUrl, setLastReportsUrl] = useState("/reports");
@@ -39,7 +39,7 @@ export function Layout() {
     { path: "/finances", icon: Wallet, label: "Финансы" },
     { path: "/reports", icon: ClipboardList, label: "Отчеты" },
     { path: "/tasks", icon: CheckSquare, label: "Задачи" },
-    { path: "/chat", icon: MessageCircle, label: "Мессенджер" },
+    { path: "/chat", icon: MessageCircle, label: "Чат" },
   ];
 
   const managerNavItems = [
@@ -52,7 +52,7 @@ export function Layout() {
   const teacherNavItems = [
     { path: "/", icon: Users, label: "Группы" },
     { path: "/exams", icon: FileText, label: "Экзамены" },
-    { path: "/chat", icon: MessageCircle, label: "Мессенджер" },
+    { path: "/chat", icon: MessageCircle, label: "Чат" },
   ];
 
   const navItems = isAdmin ? adminNavItems : isManager ? managerNavItems : teacherNavItems;
@@ -116,7 +116,8 @@ export function Layout() {
         "/analytics": "Аналитика",
         "/finances": "Финансы",
         "/reports": "Отчеты",
-        "/chat": "Мессенджер",
+        "/tasks": "Задачи",
+        "/chat": "Чат",
       };
       document.title = `${titleMap[path] || "Школа Гарри"} | Школа Гарри`;
     };
@@ -151,7 +152,7 @@ export function Layout() {
     <div className="min-h-screen bg-slate-50">
 
       {/* ── Mobile top bar ────────────────────────────────────── */}
-      <header className={`lg:hidden fixed top-0 inset-x-0 h-14 bg-white border-b border-slate-200 flex items-center px-4 z-40 gap-3 ${location.pathname.startsWith("/group/") || location.pathname.startsWith("/students/") ? "hidden" : ""}`}>
+      <header className={`lg:hidden fixed top-0 inset-x-0 h-14 bg-white border-b border-slate-200 flex items-center px-4 z-40 gap-3 ${location.pathname.startsWith("/group/") || location.pathname.startsWith("/students/") || mobileHeaderHidden ? "hidden" : ""}`}>
         <button
           onClick={() => setMobileOpen(true)}
           className="p-1.5 -ml-1 rounded-md hover:bg-slate-100 transition-colors"
@@ -178,6 +179,7 @@ export function Layout() {
                 "/finances": "Финансы",
                 "/reports": "Отчёты",
                 "/tasks": "Задачи",
+                "/chat": "Чат",
               };
               return map[path] ?? "Школа Гарри";
             })()}
@@ -342,7 +344,7 @@ export function Layout() {
       {/* ── Main Content ──────────────────────────────────────── */}
       <main
         className={`min-h-screen transition-all duration-300
-          ${location.pathname.startsWith("/group/") || location.pathname.startsWith("/students/") ? "pt-0" : "pt-14"} lg:pt-0
+          ${location.pathname.startsWith("/group/") || location.pathname.startsWith("/students/") || mobileHeaderHidden ? "pt-0" : "pt-14"} lg:pt-0
           ${sidebarCollapsed ? "lg:ml-20" : "lg:ml-64"}
         `}
       >

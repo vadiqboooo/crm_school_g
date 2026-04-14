@@ -96,6 +96,20 @@ export function HomePage() {
   const [generatingAllCreds, setGeneratingAllCreds] = useState(false);
   const { setHeaderActions } = useHeaderActions();
 
+  const [pageHeaderHeight, setPageHeaderHeight] = useState(0);
+  const pageHeaderRef = (el: HTMLDivElement | null) => {
+    if (!el) return;
+    const h = el.getBoundingClientRect().height;
+    if (h && h !== pageHeaderHeight) setPageHeaderHeight(h);
+    if (!(el as any).__ro) {
+      const ro = new ResizeObserver(() => {
+        setPageHeaderHeight(el.getBoundingClientRect().height);
+      });
+      ro.observe(el);
+      (el as any).__ro = ro;
+    }
+  };
+
   useEffect(() => {
     const handleScroll = () => setShowScrollTop(window.scrollY > 300);
     window.addEventListener("scroll", handleScroll, { passive: true });
@@ -448,7 +462,7 @@ export function HomePage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="sticky top-14 lg:top-0 bg-white border-b z-20">
+      <div ref={pageHeaderRef} className="sticky top-14 lg:top-0 bg-white border-b z-20">
         <div className="container mx-auto px-4 sm:px-6 pt-3 pb-3 space-y-3">
           {/* Title (desktop only) */}
           <h1 className="hidden sm:block text-xl sm:text-2xl font-semibold text-slate-900">Группы</h1>
@@ -635,7 +649,7 @@ export function HomePage() {
       </Drawer>
 
       {/* Main Content */}
-      <main className="px-4 sm:px-6 py-4">
+      <main className={`px-4 sm:px-6 pb-4 pt-4 ${canUseTableView && viewMode === "table" ? "lg:pt-0" : ""}`}>
       {/* Groups Display */}
 
       {/* Cards: mobile always / desktop when grid or teacher */}
@@ -768,7 +782,10 @@ export function HomePage() {
       {canUseTableView && viewMode === "table" && (
         <div className="hidden lg:block bg-card border border-border rounded-xl">
           {/* Fixed table header */}
-          <div className="shrink-0">
+          <div
+            className="sticky z-10 bg-card rounded-t-xl shadow-sm"
+            style={{ top: pageHeaderHeight }}
+          >
             <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
               <colgroup>
                 <col style={{ width: '18%' }} />
@@ -1246,7 +1263,7 @@ export function HomePage() {
                           handleUpdateSchedule(
                             index,
                             "duration_minutes",
-                            parseInt(e.target.value) || 90
+                            e.target.value === "" ? "" : (parseInt(e.target.value) || 0)
                           )
                         }
                         placeholder="90"

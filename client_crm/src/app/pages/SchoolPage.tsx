@@ -1357,7 +1357,7 @@ export function SchoolPage() {
                   type="number"
                   min={1}
                   value={subscriptionForm.lessons_count}
-                  onChange={(e) => setSubscriptionForm({ ...subscriptionForm, lessons_count: parseInt(e.target.value) || 0 })}
+                  onChange={(e) => setSubscriptionForm({ ...subscriptionForm, lessons_count: e.target.value === "" ? "" as any : parseInt(e.target.value) || 0 })}
                 />
               </div>
               <div className="space-y-2">
@@ -1367,7 +1367,7 @@ export function SchoolPage() {
                   type="number"
                   min={0}
                   value={subscriptionForm.price}
-                  onChange={(e) => setSubscriptionForm({ ...subscriptionForm, price: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setSubscriptionForm({ ...subscriptionForm, price: e.target.value === "" ? "" as any : parseFloat(e.target.value) || 0 })}
                 />
               </div>
             </div>
@@ -1810,7 +1810,7 @@ export function SchoolPage() {
                   min={1}
                   max={200}
                   value={slotForm.total_seats}
-                  onChange={e => setSlotForm(f => ({ ...f, total_seats: parseInt(e.target.value) || 10 }))}
+                  onChange={e => setSlotForm(f => ({ ...f, total_seats: e.target.value === "" ? "" as any : parseInt(e.target.value) || 0 }))}
                 />
               </div>
             </div>

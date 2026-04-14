@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Text, ForeignKey, Boolean, Enum as SAEnum
+from sqlalchemy import String, Text, Integer, ForeignKey, Boolean, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,6 +23,7 @@ class MemberType(str, enum.Enum):
 class MessageType(str, enum.Enum):
     text = "text"
     image = "image"
+    file = "file"
     sticker = "sticker"
     system = "system"
 
@@ -67,6 +68,8 @@ class ChatMessage(Base):
     content_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
     message_type: Mapped[MessageType] = mapped_column(SAEnum(MessageType, values_callable=lambda x: [e.value for e in x]), default=MessageType.text)
     file_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    file_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reply_to_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("chat_messages.id", ondelete="SET NULL"), nullable=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc))

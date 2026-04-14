@@ -51,6 +51,8 @@ import type {
   ChatRoom,
   ChatMessage,
   ChatGroupStudent,
+  ChatFileUploadResult,
+  ChatSearchResult,
 } from "../types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -1041,11 +1043,46 @@ class ApiClient {
     return this.request<ChatMessage[]>(`/chat/rooms/${roomId}/messages${params}`);
   }
 
-  async sendChatMessage(roomId: string, contentEncrypted: string): Promise<ChatMessage> {
+  async sendChatMessage(
+    roomId: string,
+    contentEncrypted: string,
+    opts?: { message_type?: string; file_url?: string; file_name?: string; file_size?: number }
+  ): Promise<ChatMessage> {
     return this.request<ChatMessage>(`/chat/rooms/${roomId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ content_encrypted: contentEncrypted }),
+      body: JSON.stringify({
+        content_encrypted: contentEncrypted,
+        ...opts,
+      }),
     });
+  }
+
+  async uploadChatFile(file: File): Promise<ChatFileUploadResult> {
+    const formData = new FormData();
+    formData.append("file", file);
+    const url = `${this.baseURL}/chat/upload`;
+    let res = await fetch(url, {
+      method: "POST",
+      headers: this.getAuthHeader(),
+      body: formData,
+    });
+    if (res.status === 401) {
+      const refreshed = await this.refreshToken();
+      if (refreshed) {
+        const retryForm = new FormData();
+        retryForm.append("file", file);
+        res = await fetch(url, {
+          method: "POST",
+          headers: this.getAuthHeader(),
+          body: retryForm,
+        });
+      }
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Upload failed: ${res.status}`);
+    }
+    return res.json();
   }
 
   async markChatRoomRead(roomId: string): Promise<void> {
@@ -1082,6 +1119,17 @@ class ApiClient {
     await this.request<void>(`/chat/rooms/${roomId}/room-key`, {
       method: "PATCH",
       body: JSON.stringify({ member_id: memberId, member_type: memberType, room_key_encrypted: roomKeyEncrypted }),
+    });
+  }
+
+  async searchChatUsers(query: string): Promise<ChatSearchResult[]> {
+    return this.request<ChatSearchResult[]>(`/chat/search?q=${encodeURIComponent(query)}`);
+  }
+
+  async getOrCreateDirectRoom(otherId: string, otherType: string): Promise<ChatRoom> {
+    return this.request<ChatRoom>("/chat/rooms/direct", {
+      method: "POST",
+      body: JSON.stringify({ other_id: otherId, other_type: otherType }),
     });
   }
 

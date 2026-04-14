@@ -110,6 +110,8 @@ async def create_message(
     content_encrypted: str,
     message_type: str = "text",
     file_url: Optional[str] = None,
+    file_name: Optional[str] = None,
+    file_size: Optional[int] = None,
     reply_to_id: Optional[uuid.UUID] = None,
 ) -> ChatMessage:
     msg = ChatMessage(
@@ -120,6 +122,8 @@ async def create_message(
         content_encrypted=content_encrypted,
         message_type=message_type,
         file_url=file_url,
+        file_name=file_name,
+        file_size=file_size,
         reply_to_id=reply_to_id,
     )
     db.add(msg)
@@ -220,23 +224,53 @@ async def get_room_by_group_id(db: AsyncSession, group_id: uuid.UUID) -> Optiona
 async def search_students(
     db: AsyncSession,
     query: str,
-    exclude_id: uuid.UUID,
+    exclude_id: uuid.UUID | None = None,
     limit: int = 20,
 ) -> list[Student]:
-    """Search active students by portal_login or phone (case-insensitive partial match)."""
+    """Search active students by name, portal_login or phone (case-insensitive partial match)."""
     q = f"%{query.strip()}%"
+    conditions = [
+        Student.status == StudentStatus.active,
+        or_(
+            Student.portal_login.ilike(q),
+            Student.phone.ilike(q),
+            Student.first_name.ilike(q),
+            Student.last_name.ilike(q),
+            func.concat(Student.first_name, ' ', Student.last_name).ilike(q),
+        ),
+    ]
+    if exclude_id:
+        conditions.append(Student.id != exclude_id)
     result = await db.execute(
         select(Student)
-        .where(
-            and_(
-                Student.status == StudentStatus.active,
-                Student.id != exclude_id,
-                or_(
-                    Student.portal_login.ilike(q),
-                    Student.phone.ilike(q),
-                )
-            )
-        )
+        .where(and_(*conditions))
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def search_employees(
+    db: AsyncSession,
+    query: str,
+    exclude_id: uuid.UUID | None = None,
+    limit: int = 20,
+) -> list[Employee]:
+    """Search active employees by name or email."""
+    q = f"%{query.strip()}%"
+    conditions = [
+        Employee.is_active == True,
+        or_(
+            Employee.first_name.ilike(q),
+            Employee.last_name.ilike(q),
+            func.concat(Employee.first_name, ' ', Employee.last_name).ilike(q),
+            Employee.email.ilike(q),
+        ),
+    ]
+    if exclude_id:
+        conditions.append(Employee.id != exclude_id)
+    result = await db.execute(
+        select(Employee)
+        .where(and_(*conditions))
         .limit(limit)
     )
     return list(result.scalars().all())

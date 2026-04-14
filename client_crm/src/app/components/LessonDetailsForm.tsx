@@ -136,7 +136,7 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
   const handleLateMinutesChange = (studentId: string, minutes: string) => {
     setStudents((prev) =>
       prev.map((s) =>
-        s.id === studentId ? { ...s, lateMinutes: parseInt(minutes) || 0 } : s
+        s.id === studentId ? { ...s, lateMinutes: minutes === "" ? "" : (parseInt(minutes) || 0) } : s
       )
     );
   };
@@ -177,7 +177,7 @@ export function LessonDetailsForm({ lesson, onClose }: LessonDetailsFormProps) {
       for (const student of students) {
         const attendanceData = {
           attendance: student.status,
-          late_minutes: student.status === "late" ? student.lateMinutes : undefined,
+          late_minutes: student.status === "late" ? (student.lateMinutes || 0) : undefined,
           lesson_grade: student.lessonGrade || undefined,
           homework_grade: student.homeworkGrade || undefined,
           comment: student.comment || undefined,

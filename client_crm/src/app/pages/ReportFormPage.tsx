@@ -67,19 +67,19 @@ export function ReportFormPage() {
   const [financesTabSaved, setFinancesTabSaved] = useState(false);
 
   // Operations tab form
-  const [leadCalls, setLeadCalls] = useState(0);
-  const [leadSocial, setLeadSocial] = useState(0);
-  const [leadWebsite, setLeadWebsite] = useState(0);
-  const [trialScheduled, setTrialScheduled] = useState(0);
-  const [trialAttended, setTrialAttended] = useState(0);
+  const [leadCalls, setLeadCalls] = useState<number | "">(0);
+  const [leadSocial, setLeadSocial] = useState<number | "">(0);
+  const [leadWebsite, setLeadWebsite] = useState<number | "">(0);
+  const [trialScheduled, setTrialScheduled] = useState<number | "">(0);
+  const [trialAttended, setTrialAttended] = useState<number | "">(0);
   const [cancellations, setCancellations] = useState("");
   const [churnStudents, setChurnStudents] = useState<ChurnStudentForm[]>([]);
   const [notifiedStudents, setNotifiedStudents] = useState<NotifiedStudentForm[]>([]);
 
   // Finances tab form
-  const [cashIncome, setCashIncome] = useState(0);
-  const [cashlessIncome, setCashlessIncome] = useState(0);
-  const [waterBalance, setWaterBalance] = useState(0);
+  const [cashIncome, setCashIncome] = useState<number | "">(0);
+  const [cashlessIncome, setCashlessIncome] = useState<number | "">(0);
+  const [waterBalance, setWaterBalance] = useState<number | "">(0);
   const [shoppingList, setShoppingList] = useState("");
   const [dayComment, setDayComment] = useState("");
 
@@ -243,11 +243,11 @@ export function ReportFormPage() {
       setSavingOperations(true);
 
       const updateData: DailyReportUpdate = {
-        lead_calls: leadCalls,
-        lead_social: leadSocial,
-        lead_website: leadWebsite,
-        trial_scheduled: trialScheduled,
-        trial_attended: trialAttended,
+        lead_calls: leadCalls || 0,
+        lead_social: leadSocial || 0,
+        lead_website: leadWebsite || 0,
+        trial_scheduled: trialScheduled || 0,
+        trial_attended: trialAttended || 0,
         cancellations: cancellations || undefined,
       };
 
@@ -269,9 +269,9 @@ export function ReportFormPage() {
       setSavingFinances(true);
 
       const updateData: DailyReportUpdate = {
-        cash_income: cashIncome,
-        cashless_income: cashlessIncome,
-        water_balance: waterBalance,
+        cash_income: cashIncome || 0,
+        cashless_income: cashlessIncome || 0,
+        water_balance: waterBalance || 0,
         shopping_list: shoppingList || undefined,
         day_comment: dayComment || undefined,
       };
@@ -807,7 +807,7 @@ export function ReportFormPage() {
                         type="number"
                         value={leadCalls}
                         onChange={(e) => {
-                          setLeadCalls(Number(e.target.value));
+                          setLeadCalls(e.target.value === "" ? "" : Number(e.target.value));
                           setOperationsTabSaved(false);
                         }}
                         min="0"
@@ -820,7 +820,7 @@ export function ReportFormPage() {
                         type="number"
                         value={leadSocial}
                         onChange={(e) => {
-                          setLeadSocial(Number(e.target.value));
+                          setLeadSocial(e.target.value === "" ? "" : Number(e.target.value));
                           setOperationsTabSaved(false);
                         }}
                         min="0"
@@ -833,7 +833,7 @@ export function ReportFormPage() {
                         type="number"
                         value={leadWebsite}
                         onChange={(e) => {
-                          setLeadWebsite(Number(e.target.value));
+                          setLeadWebsite(e.target.value === "" ? "" : Number(e.target.value));
                           setOperationsTabSaved(false);
                         }}
                         min="0"
@@ -854,7 +854,7 @@ export function ReportFormPage() {
                         type="number"
                         value={trialScheduled}
                         onChange={(e) => {
-                          setTrialScheduled(Number(e.target.value));
+                          setTrialScheduled(e.target.value === "" ? "" : Number(e.target.value));
                           setOperationsTabSaved(false);
                         }}
                         min="0"
@@ -867,7 +867,7 @@ export function ReportFormPage() {
                         type="number"
                         value={trialAttended}
                         onChange={(e) => {
-                          setTrialAttended(Number(e.target.value));
+                          setTrialAttended(e.target.value === "" ? "" : Number(e.target.value));
                           setOperationsTabSaved(false);
                         }}
                         min="0"
@@ -1014,7 +1014,7 @@ export function ReportFormPage() {
                         type="number"
                         value={cashIncome}
                         onChange={(e) => {
-                          setCashIncome(Number(e.target.value));
+                          setCashIncome(e.target.value === "" ? "" : Number(e.target.value));
                           setFinancesTabSaved(false);
                         }}
                         min="0"
@@ -1028,7 +1028,7 @@ export function ReportFormPage() {
                         type="number"
                         value={cashlessIncome}
                         onChange={(e) => {
-                          setCashlessIncome(Number(e.target.value));
+                          setCashlessIncome(e.target.value === "" ? "" : Number(e.target.value));
                           setFinancesTabSaved(false);
                         }}
                         min="0"
@@ -1049,7 +1049,7 @@ export function ReportFormPage() {
                         variant="outline"
                         size="icon"
                         onClick={() => {
-                          setWaterBalance(Math.max(0, waterBalance - 1));
+                          setWaterBalance(Math.max(0, (waterBalance || 0) - 1));
                           setFinancesTabSaved(false);
                         }}
                       >
@@ -1065,7 +1065,7 @@ export function ReportFormPage() {
                         variant="outline"
                         size="icon"
                         onClick={() => {
-                          setWaterBalance(waterBalance + 1);
+                          setWaterBalance((waterBalance || 0) + 1);
                           setFinancesTabSaved(false);
                         }}
                       >

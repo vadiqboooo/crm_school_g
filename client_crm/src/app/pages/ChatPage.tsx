@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MessageCircle, Send, Plus, ChevronLeft, Users, Trash2, Loader2, AlertTriangle } from "lucide-react";
+import { MessageCircle, Send, Plus, ChevronLeft, Users, Trash2, Loader2, AlertTriangle, Paperclip, FileText, Download, X, Search } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
-import type { ChatRoom, ChatMessage, ChatGroupStudent } from "../types/api";
+import { useHeaderActions } from "../contexts/HeaderActionsContext";
+import type { ChatRoom, ChatMessage, ChatGroupStudent, ChatSearchResult } from "../types/api";
 import { useChatWebSocket, type ChatWsEvent } from "../hooks/useChatWebSocket";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -19,16 +20,46 @@ const AVATAR_COLORS = [
   "bg-violet-500", "bg-indigo-500", "bg-emerald-500",
   "bg-rose-500", "bg-amber-500", "bg-sky-500",
 ];
+const AVATAR_TEXT_COLORS = [
+  "text-violet-600", "text-indigo-600", "text-emerald-600",
+  "text-rose-600", "text-amber-600", "text-sky-600",
+];
 
-function avatarColor(name: string) {
+function nameHash(name: string) {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xfffff;
-  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+  return h;
+}
+function avatarColor(name: string) {
+  return AVATAR_COLORS[nameHash(name) % AVATAR_COLORS.length];
+}
+function avatarTextColor(name: string) {
+  return AVATAR_TEXT_COLORS[nameHash(name) % AVATAR_TEXT_COLORS.length];
 }
 
 function formatTime(iso: string) {
   const d = new Date(iso);
   return d.toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatLastMsgTime(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return "Вчера";
+  const diffDays = Math.floor((+now - +d) / (1000 * 60 * 60 * 24));
+  if (diffDays < 7) return d.toLocaleDateString("ru", { weekday: "short" });
+  return d.toLocaleDateString("ru", { day: "2-digit", month: "2-digit" });
+}
+
+function lastMsgPreview(lm: { content_encrypted: string; sender_type: string }, isMe: boolean): string {
+  const prefix = isMe ? "Вы: " : "";
+  const text = lm.content_encrypted || "";
+  return prefix + text;
 }
 
 function formatDay(iso: string) {
@@ -44,6 +75,79 @@ function formatDay(iso: string) {
 function decryptMsg(msg: ChatMessage): string {
   if (msg.is_deleted) return "Сообщение удалено";
   return msg.content_encrypted;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
+const ACCEPT_TYPES = "image/jpeg,image/png,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,application/rtf,application/vnd.oasis.opendocument.text,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,application/vnd.oasis.opendocument.spreadsheet";
+
+function isImageUrl(url: string): boolean {
+  return /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(url);
+}
+
+function getFileUrl(fileKey: string): string {
+  // If already a full URL (legacy), return as-is; otherwise build backend proxy URL
+  if (fileKey.startsWith("http")) return fileKey;
+  const base = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const token = localStorage.getItem("access_token") || "";
+  return `${base}/chat/files/${fileKey}?token=${encodeURIComponent(token)}`;
+}
+
+function isImageMessage(msg: ChatMessage): boolean {
+  return !!(msg.file_url && (msg.message_type === "image" || isImageUrl(msg.file_url)));
+}
+function isFileOnlyMessage(msg: ChatMessage): boolean {
+  return !!(msg.file_url && (!msg.text || msg.text === msg.file_name));
+}
+
+function FileAttachment({ msg, isMe, onImageClick }: { msg: ChatMessage; isMe: boolean; onImageClick?: (url: string) => void }) {
+  if (!msg.file_url) return null;
+  const url = getFileUrl(msg.file_url);
+
+  if (msg.message_type === "image" || isImageUrl(msg.file_url)) {
+    return (
+      <button
+        onClick={() => onImageClick?.(url)}
+        className="block cursor-zoom-in"
+      >
+        <img
+          src={url}
+          alt={msg.file_name || "Изображение"}
+          className="max-w-full rounded-2xl object-cover"
+          style={{ maxHeight: 240 }}
+          loading="lazy"
+        />
+      </button>
+    );
+  }
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-colors ${
+        isMe
+          ? "bg-blue-400/20 hover:bg-blue-400/30"
+          : "bg-slate-100 hover:bg-slate-200"
+      }`}
+    >
+      <FileText className="w-8 h-8 flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium break-all line-clamp-2">{msg.file_name || "Файл"}</div>
+        {msg.file_size && (
+          <div className={`text-xs ${isMe ? "text-blue-200" : "text-slate-400"}`}>
+            {formatFileSize(msg.file_size)}
+          </div>
+        )}
+      </div>
+      <Download className="w-5 h-5 flex-shrink-0 opacity-60" />
+    </a>
+  );
 }
 
 // ── CreateRoomModal ──────────────────────────────────────────────────────────
@@ -177,14 +281,45 @@ export function ChatPage() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [loadingRooms, setLoadingRooms] = useState(true);
+  const [sendingIds, setSendingIds] = useState<Set<string>>(new Set());
+  const [peerReadAt, setPeerReadAt] = useState<Record<string, string | null>>({});
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [typingInfo, setTypingInfo] = useState<{ name: string; at: number } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingFilePreview, setPendingFilePreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<ChatSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [filterTab, setFilterTab] = useState<"all" | "unread">("all");
+  const { setHeaderActions, setMobileHeaderHidden } = useHeaderActions();
+
+  useEffect(() => {
+    setHeaderActions(
+      <button
+        onClick={() => setShowCreateModal(true)}
+        className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 transition-colors"
+        title="Новый чат группы"
+      >
+        <Plus className="w-4 h-4 text-slate-600" />
+      </button>
+    );
+    return () => setHeaderActions(null);
+  }, [setHeaderActions]);
+
+  useEffect(() => {
+    setMobileHeaderHidden(!!activeRoom);
+    return () => setMobileHeaderHidden(false);
+  }, [activeRoom, setMobileHeaderHidden]);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeRoomRef = useRef<ChatRoom | null>(null);
   activeRoomRef.current = activeRoom;
 
@@ -193,16 +328,58 @@ export function ChatPage() {
     try {
       const data = await api.getChatRooms();
       setRooms(data);
+      // Init peerReadAt from room member data
+      const readMap: Record<string, string | null> = {};
+      data.forEach((room) => {
+        const other = room.members.find((m) => !(m.member_id === myId && m.member_type === "employee"));
+        if (other) readMap[room.id] = other.last_read_at ?? null;
+      });
+      setPeerReadAt(readMap);
     } catch {
       // ignore
     } finally {
       setLoadingRooms(false);
     }
-  }, []);
+  }, [myId]);
 
   useEffect(() => {
     loadRooms();
   }, [loadRooms]);
+
+  // ── Search ──────────────────────────────────────────────────────────────
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (value.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        const results = await api.searchChatUsers(value.trim());
+        setSearchResults(results);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 400);
+  };
+
+  const handleOpenDirectChat = async (result: ChatSearchResult) => {
+    setSearchQuery("");
+    setSearchResults([]);
+    try {
+      const room = await api.getOrCreateDirectRoom(result.id, result.member_type);
+      const updated = await api.getChatRooms();
+      setRooms(updated);
+      const freshRoom = updated.find((r) => r.id === room.id) ?? room;
+      openRoom(freshRoom);
+    } catch {
+      // ignore
+    }
+  };
 
   // Load messages when room changes
   useEffect(() => {
@@ -241,7 +418,10 @@ export function ChatPage() {
         )
       );
       if (msg.room_id === activeRoomRef.current?.id) {
-        setMessages((prev) => [...prev, msg]);
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
         api.markChatRoomRead(msg.room_id).catch(() => {});
       }
     } else if (event.type === "typing") {
@@ -251,6 +431,8 @@ export function ChatPage() {
       ) {
         setTypingInfo({ name: event.sender_name, at: Date.now() });
       }
+    } else if (event.type === "read_receipt") {
+      setPeerReadAt((prev) => ({ ...prev, [event.room_id]: event.read_at }));
     } else if (event.type === "message_deleted") {
       setMessages((prev) =>
         prev.map((m) =>
@@ -282,18 +464,60 @@ export function ChatPage() {
     openRoom(room);
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Файл слишком большой (макс. 10 МБ)");
+      return;
+    }
+    setPendingFile(file);
+    if (file.type.startsWith("image/")) {
+      setPendingFilePreview(URL.createObjectURL(file));
+    } else {
+      setPendingFilePreview(null);
+    }
+    // Reset input so same file can be re-selected
+    e.target.value = "";
+  };
+
+  const clearPendingFile = () => {
+    if (pendingFilePreview) URL.revokeObjectURL(pendingFilePreview);
+    setPendingFile(null);
+    setPendingFilePreview(null);
+  };
+
   const sendMessage = async () => {
-    if (!input.trim() || !activeRoom || sending) return;
-    const text = input.trim();
+    if ((!input.trim() && !pendingFile) || !activeRoom || sending || uploading) return;
+    const text = input.trim() || (pendingFile ? pendingFile.name : "");
+    const fileToSend = pendingFile;
     setInput("");
+    clearPendingFile();
     setSending(true);
     try {
-      await api.sendChatMessage(activeRoom.id, text);
-      // Message will arrive via WebSocket
+      let opts: { message_type?: string; file_url?: string; file_name?: string; file_size?: number } | undefined;
+      if (fileToSend) {
+        setUploading(true);
+        const uploaded = await api.uploadChatFile(fileToSend);
+        setUploading(false);
+        opts = {
+          message_type: uploaded.message_type,
+          file_url: uploaded.file_url,
+          file_name: uploaded.file_name,
+          file_size: uploaded.file_size,
+        };
+      }
+      const sent = await api.sendChatMessage(activeRoom.id, text, opts);
+      // Add message from REST response immediately (WS handler has dedup)
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === sent.id)) return prev;
+        return [...prev, sent];
+      });
     } catch {
-      setInput(text); // restore on error
+      if (!fileToSend) setInput(text);
     } finally {
       setSending(false);
+      setUploading(false);
     }
     inputRef.current?.focus();
   };
@@ -350,7 +574,7 @@ export function ChatPage() {
   const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden">
+    <div className={`flex bg-slate-50 overflow-hidden ${activeRoom ? "h-screen" : "h-[calc(100vh-3.5rem)] lg:h-screen"}`}>
       {/* ── Room list ─────────────────────────────────────────── */}
       <div
         className={`flex flex-col border-r border-slate-200 bg-white transition-all duration-200
@@ -358,20 +582,95 @@ export function ChatPage() {
         `}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-200">
-          <div className="flex items-center gap-2">
-            <MessageCircle className="w-5 h-5 text-blue-600" />
-            <h1 className="font-semibold text-slate-900">Мессенджер</h1>
+        <div className="px-5 pt-3 md:pt-5 pb-3">
+          <div className="hidden md:flex items-center justify-between mb-4">
+            <h1 className="text-2xl font-bold text-slate-900">Чат</h1>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 transition-colors"
+              title="Новый чат группы"
+            >
+              <Plus className="w-4 h-4 text-slate-600" />
+            </button>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 gap-1.5"
-            onClick={() => setShowCreateModal(true)}
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Чат группы
-          </Button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setFilterTab("all")}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                filterTab === "all"
+                  ? "bg-slate-900 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              Все чаты
+            </button>
+            <button
+              onClick={() => setFilterTab("unread")}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                filterTab === "unread"
+                  ? "bg-slate-900 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              Непрочитанные
+            </button>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="px-3 py-2 border-b border-slate-100">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Поиск по имени..."
+              value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              className="w-full pl-8 pr-8 py-2 rounded-lg bg-slate-50 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => { setSearchQuery(""); setSearchResults([]); }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Search results */}
+          {searchQuery.trim().length >= 2 && (
+            <div className="mt-1 max-h-64 overflow-y-auto">
+              {searching ? (
+                <div className="flex items-center gap-2 px-2 py-3 text-sm text-slate-400">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Поиск...
+                </div>
+              ) : searchResults.length === 0 ? (
+                <div className="px-2 py-3 text-sm text-slate-400">Никого не найдено</div>
+              ) : (
+                searchResults.map((r) => (
+                  <button
+                    key={`${r.member_type}-${r.id}`}
+                    onClick={() => handleOpenDirectChat(r)}
+                    className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-slate-50 transition-colors text-left"
+                  >
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0 ${avatarColor(r.name)}`}>
+                      {getInitials(r.name)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-slate-900 truncate">{r.name}</div>
+                      <div className="text-xs text-slate-400 truncate">
+                        {r.member_type === "employee" ? "Сотрудник" : r.member_type === "app_user" ? "Родитель" : "Ученик"}
+                        {r.portal_login && <span className="ml-1">· {r.portal_login}</span>}
+                      </div>
+                    </div>
+                    <MessageCircle className="w-4 h-4 text-slate-300 flex-shrink-0" />
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </div>
 
         {/* Rooms */}
@@ -387,44 +686,84 @@ export function ChatPage() {
               <p className="text-xs text-slate-400 mt-1">Создайте чат для группы</p>
             </div>
           ) : (
-            rooms.map((room) => {
-              const isActive = activeRoom?.id === room.id;
-              const otherMembers = room.members.filter(
-                (m) => !(m.member_id === myId && m.member_type === "employee")
-              );
-              const displayName = room.name ?? otherMembers.map((m) => m.name).join(", ");
-              const initials = getInitials(displayName);
-              const color = avatarColor(displayName);
+            rooms
+              .filter((r) => filterTab === "all" || r.unread_count > 0)
+              .map((room) => {
+                const isActive = activeRoom?.id === room.id;
+                const otherMembers = room.members.filter(
+                  (m) => !(m.member_id === myId && m.member_type === "employee")
+                );
+                const displayName = room.name ?? otherMembers.map((m) => m.name).join(", ");
+                const initials = getInitials(displayName);
+                const color = avatarColor(displayName);
+                const lm = room.last_message;
+                const lmIsMe = !!lm && lm.sender_type === "employee";
+                const fallbackLabel = room.room_type === "direct"
+                  ? otherMembers[0]?.member_type === "employee" ? "Сотрудник" : otherMembers[0]?.member_type === "app_user" ? "Родитель" : "Ученик"
+                  : `${room.members.length} участников`;
+                const isOnline = room.room_type === "direct" && !!otherMembers[0]?.is_online;
 
-              return (
-                <button
-                  key={room.id}
-                  onClick={() => openRoom(room)}
-                  className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors border-b border-slate-100 last:border-0 ${
-                    isActive ? "bg-blue-50" : "hover:bg-slate-50"
-                  }`}
-                >
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 ${color}`}>
-                    {room.room_type === "group" ? <Users className="w-5 h-5" /> : initials}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className={`text-sm font-medium truncate ${isActive ? "text-blue-700" : "text-slate-900"}`}>
-                        {displayName}
-                      </span>
-                      {room.unread_count > 0 && (
-                        <span className="ml-2 bg-blue-600 text-white text-xs rounded-full px-1.5 py-0.5 font-medium min-w-[20px] text-center flex-shrink-0">
-                          {room.unread_count > 99 ? "99+" : room.unread_count}
-                        </span>
+                return (
+                  <button
+                    key={room.id}
+                    onClick={() => openRoom(room)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-all ${
+                      isActive
+                        ? "bg-gradient-to-r from-blue-600 to-blue-500 shadow-lg shadow-blue-500/30"
+                        : "hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="relative flex-shrink-0">
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white text-sm font-semibold ${
+                        isActive ? "bg-white/20 ring-2 ring-white/40" : color
+                      }`}>
+                        {room.room_type === "group" ? <Users className="w-5 h-5" /> : initials}
+                      </div>
+                      {isOnline && (
+                        <span className={`absolute bottom-0 right-0 w-3 h-3 bg-emerald-400 rounded-full border-2 ${
+                          isActive ? "border-blue-500" : "border-white"
+                        }`} />
                       )}
                     </div>
-                    <p className="text-xs text-slate-400 truncate mt-0.5">
-                      {room.members.length} участников
-                    </p>
-                  </div>
-                </button>
-              );
-            })
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`text-sm font-semibold truncate ${isActive ? "text-white" : "text-slate-900"}`}>
+                          {displayName}
+                        </span>
+                        {lm && (
+                          <span className={`text-[11px] flex-shrink-0 ${
+                            isActive
+                              ? "text-white/80"
+                              : room.unread_count > 0
+                              ? "text-blue-600 font-medium"
+                              : "text-slate-400"
+                          }`}>
+                            {formatLastMsgTime(lm.created_at)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between gap-2 mt-0.5">
+                        <p className={`text-xs truncate ${
+                          isActive
+                            ? "text-white/85"
+                            : room.unread_count > 0
+                            ? "text-slate-700"
+                            : "text-slate-400"
+                        }`}>
+                          {lm ? lastMsgPreview(lm, lmIsMe) : fallbackLabel}
+                        </p>
+                        {room.unread_count > 0 && (
+                          <span className={`text-[11px] rounded-full px-1.5 py-0.5 font-medium min-w-[20px] text-center flex-shrink-0 ${
+                            isActive ? "bg-white text-blue-600" : "bg-blue-600 text-white"
+                          }`}>
+                            {room.unread_count > 99 ? "99+" : room.unread_count}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })
           )}
         </div>
       </div>
@@ -447,18 +786,32 @@ export function ChatPage() {
               >
                 <ChevronLeft className="w-5 h-5 text-slate-600" />
               </button>
-              <button
-                className="flex items-center gap-3 flex-1 min-w-0 text-left hover:bg-slate-50 -mx-1 px-1 py-1 rounded-lg transition-colors"
-                onClick={() => setShowMembers((v) => !v)}
-              >
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 ${avatarColor(activeRoom.name ?? "G")}`}>
-                  <Users className="w-4 h-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h2 className="font-semibold text-slate-900 text-sm">{activeRoom.name}</h2>
-                  <p className="text-xs text-slate-400">{activeRoom.members.length} участников</p>
-                </div>
-              </button>
+              {(() => {
+                const otherMember = activeRoom.room_type === "direct"
+                  ? activeRoom.members.find((m) => !(m.member_id === myId && m.member_type === "employee"))
+                  : null;
+                const headerName = activeRoom.room_type === "direct"
+                  ? otherMember?.name ?? "Личный чат"
+                  : activeRoom.name ?? "Групповой чат";
+                return (
+                  <button
+                    className="flex items-center gap-3 flex-1 min-w-0 text-left hover:bg-slate-50 -mx-1 px-1 py-1 rounded-lg transition-colors"
+                    onClick={() => setShowMembers((v) => !v)}
+                  >
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 ${avatarColor(headerName)}`}>
+                      {activeRoom.room_type === "group" ? <Users className="w-4 h-4" /> : getInitials(headerName)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h2 className="font-semibold text-slate-900 text-sm">{headerName}</h2>
+                      <p className="text-xs text-slate-400">
+                        {activeRoom.room_type === "direct"
+                          ? (otherMember?.is_online ? "онлайн" : "оффлайн")
+                          : `${activeRoom.members.length} участников`}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })()}
               <button
                 onClick={() => setDeleteConfirm(true)}
                 className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
@@ -498,7 +851,8 @@ export function ChatPage() {
             )}
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+            <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col bg-[#dfe6ed]">
+              <div className="mt-auto space-y-4">
               {loadingMessages ? (
                 <div className="flex justify-center py-8">
                   <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
@@ -512,46 +866,103 @@ export function ChatPage() {
                 groupedMessages.map(({ day, msgs }) => (
                   <div key={day}>
                     {/* Day separator */}
-                    <div className="flex items-center gap-3 my-3">
-                      <div className="flex-1 h-px bg-slate-200" />
-                      <span className="text-xs text-slate-400 whitespace-nowrap">{day}</span>
-                      <div className="flex-1 h-px bg-slate-200" />
+                    <div className="flex justify-center my-3">
+                      <span className="text-xs text-white bg-[#8fa4b8] rounded-full px-3 py-1 font-medium shadow-sm">{day}</span>
                     </div>
 
-                    <div className="space-y-1">
-                      {msgs.map((msg) => {
+                    <div>
+                      {msgs.map((msg, idx) => {
                         const isMe = msg.sender_id === myId && msg.sender_type === "employee";
                         const text = decryptMsg(msg);
+                        const prev = msgs[idx - 1];
+                        const next = msgs[idx + 1];
+                        const sameSenderPrev = prev && prev.sender_id === msg.sender_id && prev.sender_type === msg.sender_type;
+                        const sameSenderNext = next && next.sender_id === msg.sender_id && next.sender_type === msg.sender_type;
+                        const isFirst = !sameSenderPrev;
+                        const isLast = !sameSenderNext;
+                        const imgOnly = !msg.is_deleted && isImageMessage(msg) && isFileOnlyMessage(msg);
+
+                        const timeBlock = (
+                          <span className={`inline-flex items-center gap-0.5 text-[11px] ml-2 whitespace-nowrap align-bottom ${
+                            imgOnly ? "text-white/80" : isMe ? "text-blue-200" : "text-slate-400"
+                          }`}>
+                            {formatTime(msg.created_at)}
+                            {isMe && !msg.is_deleted && (() => {
+                              const isSending = sendingIds.has(msg.id);
+                              const peerRead = peerReadAt[msg.room_id];
+                              const isRead = peerRead != null && new Date(msg.created_at) <= new Date(peerRead);
+                              if (isSending) return (
+                                <span className="ml-0.5 w-3 h-3 border border-current border-t-transparent rounded-full animate-spin inline-block" />
+                              );
+                              if (isRead) return <span className="ml-0.5">✓✓</span>;
+                              return <span className="ml-0.5">✓</span>;
+                            })()}
+                          </span>
+                        );
 
                         return (
-                          <div key={msg.id} className={`flex gap-2 ${isMe ? "flex-row-reverse" : "flex-row"}`}>
+                          <div
+                            key={msg.id}
+                            className={`flex ${isMe ? "justify-end" : "justify-start"} ${isFirst && idx > 0 ? "mt-3" : "mt-0.5"}`}
+                          >
+                            {/* Avatar spacer / avatar */}
                             {!isMe && (
-                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0 self-end ${avatarColor(msg.sender_name)}`}>
-                                {getInitials(msg.sender_name)}
+                              <div className="w-8 flex-shrink-0 flex items-end justify-center">
+                                {isLast && (
+                                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold ${avatarColor(msg.sender_name)}`}>
+                                    {getInitials(msg.sender_name)}
+                                  </div>
+                                )}
                               </div>
                             )}
-                            <div className={`group max-w-[70%] ${isMe ? "items-end" : "items-start"} flex flex-col`}>
-                              {!isMe && (
-                                <span className="text-xs text-slate-400 mb-0.5 ml-0.5">{msg.sender_name}</span>
-                              )}
-                              <div className={`relative px-3 py-2 rounded-2xl text-sm leading-relaxed ${
+
+                            <div className={`group relative max-w-[70%]`}>
+                              <div className={`relative text-sm leading-relaxed ${
+                                imgOnly ? "overflow-hidden rounded-2xl" : "px-3 py-1.5"
+                              } ${
+                                imgOnly ? "" :
+                                isMe
+                                  ? `rounded-2xl ${isLast ? "rounded-br-sm" : ""}`
+                                  : `rounded-2xl ${isLast ? "rounded-bl-sm" : ""}`
+                              } ${
                                 msg.is_deleted
-                                  ? "bg-slate-100 text-slate-400 italic"
+                                  ? "bg-slate-200 text-slate-400 italic"
                                   : isMe
-                                  ? "bg-blue-600 text-white"
-                                  : "bg-white border border-slate-200 text-slate-900"
+                                  ? "bg-[#3b82c4] text-white"
+                                  : "bg-white text-slate-900"
                               }`}>
-                                {text}
+                                {/* Sender name (group chats, first message in group) */}
+                                {!isMe && isFirst && !msg.is_deleted && (
+                                  <div className={`text-xs font-semibold mb-0.5 ${avatarTextColor(msg.sender_name)}`}>
+                                    {msg.sender_name}
+                                  </div>
+                                )}
+
+                                {!msg.is_deleted && msg.file_url && (
+                                  <FileAttachment msg={msg} isMe={isMe} onImageClick={setLightboxUrl} />
+                                )}
+
+                                {msg.is_deleted ? (
+                                  <span className="text-xs">Сообщение удалено {timeBlock}</span>
+                                ) : imgOnly ? (
+                                  <div className="absolute bottom-2 right-2 bg-black/50 rounded-full px-2 py-0.5">{timeBlock}</div>
+                                ) : (
+                                  <span>
+                                    {text && (!msg.file_url || text !== msg.file_name) ? text : null}
+                                    {timeBlock}
+                                  </span>
+                                )}
+
+                                {/* Delete button */}
                                 {isMe && !msg.is_deleted && (
                                   <button
                                     onClick={() => deleteMessage(msg.id)}
-                                    className="absolute -left-7 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-slate-100"
+                                    className="absolute -left-7 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-slate-200"
                                   >
                                     <Trash2 className="w-3.5 h-3.5 text-slate-400" />
                                   </button>
                                 )}
                               </div>
-                              <span className="text-xs text-slate-400 mt-0.5 mx-1">{formatTime(msg.created_at)}</span>
                             </div>
                           </div>
                         );
@@ -563,7 +974,7 @@ export function ChatPage() {
 
               {typingInfo && (
                 <div className="flex items-center gap-2">
-                  <div className="flex gap-1 px-3 py-2 bg-white border border-slate-200 rounded-2xl">
+                  <div className="flex gap-1 px-3 py-2 bg-white rounded-2xl shadow-sm">
                     <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
                     <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
                     <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
@@ -573,28 +984,61 @@ export function ChatPage() {
               )}
 
               <div ref={bottomRef} />
+              </div>
             </div>
 
             {/* Input */}
             <div className="border-t border-slate-200 bg-white px-4 py-3">
+              {/* Pending file preview */}
+              {pendingFile && (
+                <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200">
+                  {pendingFilePreview ? (
+                    <img src={pendingFilePreview} alt="" className="w-10 h-10 rounded object-cover" />
+                  ) : (
+                    <FileText className="w-5 h-5 text-slate-500 flex-shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-slate-700 truncate">{pendingFile.name}</div>
+                    <div className="text-xs text-slate-400">{formatFileSize(pendingFile.size)}</div>
+                  </div>
+                  <button onClick={clearPendingFile} className="p-1 rounded hover:bg-slate-200 transition-colors">
+                    <X className="w-4 h-4 text-slate-400" />
+                  </button>
+                </div>
+              )}
               <div className="flex items-end gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={ACCEPT_TYPES}
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="h-[42px] w-[42px] flex items-center justify-center rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors flex-shrink-0"
+                  title="Прикрепить файл"
+                >
+                  <Paperclip className="w-4 h-4 text-slate-500" />
+                </button>
                 <textarea
                   ref={inputRef}
                   value={input}
                   onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
-                  placeholder="Написать сообщение... (Enter — отправить)"
+                  placeholder="Сообщение..."
                   rows={1}
                   className="flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent max-h-28 overflow-y-auto"
                   style={{ minHeight: "42px" }}
                 />
                 <Button
                   onClick={sendMessage}
-                  disabled={!input.trim() || sending}
+                  disabled={(!input.trim() && !pendingFile) || sending || uploading}
                   size="sm"
                   className="h-[42px] w-[42px] p-0 rounded-xl flex-shrink-0"
                 >
-                  {sending ? (
+                  {sending || uploading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <Send className="w-4 h-4" />
@@ -641,6 +1085,27 @@ export function ChatPage() {
           onCreated={handleRoomCreated}
           onClose={() => setShowCreateModal(false)}
         />
+      )}
+
+      {/* Image lightbox */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 cursor-zoom-out"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <button
+            className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors"
+            onClick={() => setLightboxUrl(null)}
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <img
+            src={lightboxUrl}
+            alt=""
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
       )}
     </div>
   );
