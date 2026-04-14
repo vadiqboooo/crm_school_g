@@ -237,6 +237,7 @@ async def search_students(
             Student.first_name.ilike(q),
             Student.last_name.ilike(q),
             func.concat(Student.first_name, ' ', Student.last_name).ilike(q),
+            func.concat(Student.last_name, ' ', Student.first_name).ilike(q),
         ),
     ]
     if exclude_id:
@@ -258,11 +259,12 @@ async def search_employees(
     """Search active employees by name or email."""
     q = f"%{query.strip()}%"
     conditions = [
-        Employee.is_active == True,
+        or_(Employee.is_active == True, Employee.is_active.is_(None)),
         or_(
             Employee.first_name.ilike(q),
             Employee.last_name.ilike(q),
             func.concat(Employee.first_name, ' ', Employee.last_name).ilike(q),
+            func.concat(Employee.last_name, ' ', Employee.first_name).ilike(q),
             Employee.email.ilike(q),
         ),
     ]
