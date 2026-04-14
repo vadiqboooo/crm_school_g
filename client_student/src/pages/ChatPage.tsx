@@ -105,7 +105,7 @@ function isImageMessage(msg: ChatMessage): boolean {
   return !!(msg.file_url && (msg.message_type === "image" || isImageUrl(msg.file_url)));
 }
 function isFileOnlyMessage(msg: ChatMessage): boolean {
-  return !!(msg.file_url && (!msg.text || msg.text === msg.file_name));
+  return !!(msg.file_url && (!msg.content_encrypted || msg.content_encrypted === msg.file_name));
 }
 
 function FileAttachment({ msg, isMe, onImageClick }: { msg: ChatMessage; isMe: boolean; onImageClick?: (url: string) => void }) {
@@ -959,13 +959,11 @@ export default function ChatPage() {
 
                         {msg.is_deleted ? (
                           <span className="text-xs">Сообщение удалено {timeBlock}</span>
-                        ) : msg.text === null ? (
-                          <span className="italic opacity-60 text-xs">Не удалось расшифровать {timeBlock}</span>
                         ) : imgOnly ? (
                           <div className="absolute bottom-2 right-2 bg-black/50 rounded-full px-2 py-0.5">{timeBlock}</div>
                         ) : (
                           <span>
-                            {msg.text && (!msg.file_url || msg.text !== msg.file_name) ? msg.text : null}
+                            {msg.content_encrypted && (!msg.file_url || msg.content_encrypted !== msg.file_name) ? msg.content_encrypted : null}
                             {timeBlock}
                           </span>
                         )}
