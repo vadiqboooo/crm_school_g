@@ -1093,6 +1093,20 @@ class ApiClient {
     await this.request<void>(`/chat/messages/${messageId}`, { method: "DELETE" });
   }
 
+  async editChatMessage(messageId: string, contentEncrypted: string): Promise<ChatMessage> {
+    return this.request<ChatMessage>(`/chat/messages/${messageId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ content_encrypted: contentEncrypted }),
+    });
+  }
+
+  async forwardChatMessages(messageIds: string[], targetRoomId: string): Promise<ChatMessage[]> {
+    return this.request<ChatMessage[]>(`/chat/messages/forward`, {
+      method: "POST",
+      body: JSON.stringify({ message_ids: messageIds, target_room_id: targetRoomId }),
+    });
+  }
+
   async deleteChatRoom(roomId: string): Promise<void> {
     await this.request<void>(`/chat/rooms/${roomId}/full`, { method: "DELETE" });
   }

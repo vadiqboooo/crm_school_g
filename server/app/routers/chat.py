@@ -36,6 +36,8 @@ from app.schemas.chat import (
     ChatMessageSchema,
     UpdatePublicKeyRequest,
     RoomKeyUpdate,
+    EditMessageRequest,
+    ForwardMessageRequest,
 )
 from app.websocket_manager import manager
 
@@ -116,6 +118,8 @@ async def _serialize_message(msg, db: AsyncSession) -> dict:
         "file_size": msg.file_size,
         "reply_to_id": str(msg.reply_to_id) if msg.reply_to_id else None,
         "is_deleted": msg.is_deleted,
+        "edited_at": msg.edited_at.isoformat() if msg.edited_at else None,
+        "forwarded_from_sender_name": msg.forwarded_from_sender_name,
         "created_at": msg.created_at.isoformat(),
     }
 
@@ -666,6 +670,89 @@ async def delete_message(
             key = f"{_mt(member.member_type)}:{member.member_id}"
             await manager.send_to_user(key, payload)
     return {"ok": True}
+
+
+@router.patch("/messages/{message_id}")
+async def edit_message(
+    message_id: uuid.UUID,
+    body: EditMessageRequest,
+    me: ChatIdentity = Depends(get_chat_identity),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models.chat import ChatMessage as ChatMessageModel
+    res = await db.execute(select(ChatMessageModel).where(ChatMessageModel.id == message_id))
+    msg = res.scalar_one_or_none()
+    if not msg or msg.is_deleted:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+    if msg.sender_id != me.member_id or _mt(msg.sender_type) != me.member_type:
+        raise HTTPException(status_code=403, detail="Можно редактировать только свои сообщения")
+    if msg.file_url:
+        raise HTTPException(status_code=400, detail="Нельзя редактировать сообщение с файлом")
+    msg.content_encrypted = body.content_encrypted
+    msg.edited_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(msg)
+    payload = await _serialize_message(msg, db)
+    payload_out = {"type": "message_edited", "message": payload}
+    room = await crud.get_room_by_id(db, msg.room_id)
+    if room:
+        for m in room.members:
+            key = f"{_mt(m.member_type)}:{m.member_id}"
+            await manager.send_to_user(key, payload_out)
+    return payload
+
+
+@router.post("/messages/forward")
+async def forward_messages(
+    body: ForwardMessageRequest,
+    me: ChatIdentity = Depends(get_chat_identity),
+    db: AsyncSession = Depends(get_db),
+):
+    target_room_id = uuid.UUID(body.target_room_id)
+    if not await crud.is_member(db, target_room_id, me.member_id, me.member_type):
+        raise HTTPException(status_code=403, detail="Вы не состоите в целевом чате")
+    from app.models.chat import ChatMessage as ChatMessageModel
+    out: list[dict] = []
+    for mid_str in body.message_ids:
+        try:
+            mid = uuid.UUID(mid_str)
+        except ValueError:
+            continue
+        res = await db.execute(select(ChatMessageModel).where(ChatMessageModel.id == mid))
+        src = res.scalar_one_or_none()
+        if not src or src.is_deleted:
+            continue
+        # Check sender can access source room
+        if not await crud.is_member(db, src.room_id, me.member_id, me.member_type):
+            continue
+        original_sender_name = (
+            src.forwarded_from_sender_name
+            or await crud.get_member_name(db, src.sender_id, _mt(src.sender_type))
+        )
+        new_msg = ChatMessageModel(
+            room_id=target_room_id,
+            sender_id=me.member_id,
+            sender_type=me.member_type,
+            content_encrypted=src.content_encrypted,
+            message_type=src.message_type,
+            file_url=src.file_url,
+            file_name=src.file_name,
+            file_size=src.file_size,
+            forwarded_from_sender_name=original_sender_name,
+        )
+        db.add(new_msg)
+        await db.flush()
+        await db.refresh(new_msg)
+        payload = await _serialize_message(new_msg, db)
+        out.append(payload)
+        # Broadcast to target room members
+        target_room = await crud.get_room_by_id(db, target_room_id)
+        if target_room:
+            for m in target_room.members:
+                key = f"{_mt(m.member_type)}:{m.member_id}"
+                await manager.send_to_user(key, {"type": "new_message", "message": payload})
+    await db.commit()
+    return out
 
 
 @router.delete("/rooms/{room_id}/full")

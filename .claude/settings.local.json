@@ -43,7 +43,8 @@
       "Bash(sed -i 's/container mx-auto px-6 py-4 min-h-\\\\[88px\\\\]/container mx-auto px-4 sm:px-6 py-3 sm:py-4 min-h-[72px] sm:min-h-[88px]/g' HomePage.tsx GroupPage.tsx)",
       "Bash(sed -i 's/container mx-auto px-6 py-8/container mx-auto px-4 sm:px-6 py-4 sm:py-8/g' HomePage.tsx)",
       "Bash(find /c/Users/vadiq/OneDrive/Desktop/DEV_MODE/crm_school_g/client_student/src -type f \\\\\\(-name *.tsx -o -name *.ts \\\\\\))",
-      "Bash(xargs cat:*)"
+      "Bash(xargs cat:*)",
+      "Bash(wc -l client_student/src/pages/*.tsx client_student/src/hooks/*.ts client_student/src/lib/*.ts client_student/src/components/*.tsx client_student/src/contexts/*.tsx)"
     ]
   }
 }

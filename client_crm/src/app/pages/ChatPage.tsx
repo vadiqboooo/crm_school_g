@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MessageCircle, Send, Plus, ChevronLeft, Users, Trash2, Loader2, AlertTriangle, Paperclip, FileText, Download, X, Search } from "lucide-react";
+import { MessageCircle, Send, Plus, ChevronLeft, Users, Trash2, Loader2, AlertTriangle, Paperclip, FileText, Download, X, Search, Edit2, Forward, CornerUpRight, Check } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
@@ -101,7 +101,7 @@ function isImageMessage(msg: ChatMessage): boolean {
   return !!(msg.file_url && (msg.message_type === "image" || isImageUrl(msg.file_url)));
 }
 function isFileOnlyMessage(msg: ChatMessage): boolean {
-  return !!(msg.file_url && (!msg.text || msg.text === msg.file_name));
+  return !!(msg.file_url && (!msg.content_encrypted || msg.content_encrypted === msg.file_name));
 }
 
 function FileAttachment({ msg, isMe, onImageClick }: { msg: ChatMessage; isMe: boolean; onImageClick?: (url: string) => void }) {
@@ -296,6 +296,11 @@ export function ChatPage() {
   const [searchResults, setSearchResults] = useState<ChatSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [filterTab, setFilterTab] = useState<"all" | "unread">("all");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ msg: ChatMessage; x: number; y: number } | null>(null);
+  const [forwardModal, setForwardModal] = useState<{ ids: string[] } | null>(null);
+  const [deleteMsgConfirm, setDeleteMsgConfirm] = useState<string[] | null>(null);
   const { setHeaderActions, setMobileHeaderHidden } = useHeaderActions();
 
   useEffect(() => {
@@ -432,12 +437,19 @@ export function ChatPage() {
         setTypingInfo({ name: event.sender_name, at: Date.now() });
       }
     } else if (event.type === "read_receipt") {
-      setPeerReadAt((prev) => ({ ...prev, [event.room_id]: event.read_at }));
+      // Ignore our own read receipts — we're the sender, not the peer
+      if (event.reader_id !== myId) {
+        setPeerReadAt((prev) => ({ ...prev, [event.room_id]: event.read_at }));
+      }
     } else if (event.type === "message_deleted") {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === event.message_id ? { ...m, is_deleted: true, content_encrypted: "" } : m
         )
+      );
+    } else if (event.type === "message_edited") {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === event.message.id ? event.message : m))
       );
     }
   }, [myId]);
@@ -490,6 +502,23 @@ export function ChatPage() {
   const sendMessage = async () => {
     if ((!input.trim() && !pendingFile) || !activeRoom || sending || uploading) return;
     const text = input.trim() || (pendingFile ? pendingFile.name : "");
+    if (editingId) {
+      const id = editingId;
+      setEditingId(null);
+      setInput("");
+      setSending(true);
+      try {
+        const updated = await api.editChatMessage(id, text);
+        setMessages((prev) => prev.map((m) => (m.id === id ? updated : m)));
+      } catch {
+        setInput(text);
+        setEditingId(id);
+      } finally {
+        setSending(false);
+      }
+      inputRef.current?.focus();
+      return;
+    }
     const fileToSend = pendingFile;
     setInput("");
     clearPendingFile();
@@ -508,7 +537,6 @@ export function ChatPage() {
         };
       }
       const sent = await api.sendChatMessage(activeRoom.id, text, opts);
-      // Add message from REST response immediately (WS handler has dedup)
       setMessages((prev) => {
         if (prev.some((m) => m.id === sent.id)) return prev;
         return [...prev, sent];
@@ -521,6 +549,82 @@ export function ChatPage() {
     }
     inputRef.current?.focus();
   };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const confirmDeleteSelected = () => {
+    setDeleteMsgConfirm(Array.from(selectedIds));
+  };
+
+  const performDelete = async () => {
+    if (!deleteMsgConfirm) return;
+    const ids = deleteMsgConfirm;
+    setDeleteMsgConfirm(null);
+    clearSelection();
+    for (const id of ids) {
+      try {
+        await api.deleteChatMessage(id);
+        setMessages((prev) =>
+          prev.map((m) => (m.id === id ? { ...m, is_deleted: true } : m))
+        );
+      } catch { /* ignore */ }
+    }
+  };
+
+  const startEditing = (msg: ChatMessage) => {
+    if (msg.sender_id !== myId || msg.sender_type !== "employee" || msg.is_deleted || msg.file_url) return;
+    setEditingId(msg.id);
+    setInput(msg.content_encrypted);
+    clearPendingFile();
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setInput("");
+  };
+
+  const doForward = async (targetRoomId: string) => {
+    if (!forwardModal) return;
+    const ids = forwardModal.ids;
+    setForwardModal(null);
+    clearSelection();
+    try {
+      await api.forwardChatMessages(ids, targetRoomId);
+    } catch {
+      alert("Ошибка пересылки");
+    }
+  };
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [contextMenu]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (editingId) cancelEditing();
+        else if (selectedIds.size > 0) clearSelection();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editingId, selectedIds.size]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -548,19 +652,8 @@ export function ChatPage() {
     }
   };
 
-  const deleteMessage = async (msgId: string) => {
-    try {
-      await api.deleteChatMessage(msgId);
-      setMessages((prev) =>
-        prev.map((m) => (m.id === msgId ? { ...m, is_deleted: true } : m))
-      );
-    } catch {
-      // ignore
-    }
-  };
-
-  // Group messages by day
-  const groupedMessages = messages.reduce<{ day: string; msgs: ChatMessage[] }[]>((acc, msg) => {
+  // Group messages by day (hide deleted)
+  const groupedMessages = messages.filter((m) => !m.is_deleted).reduce<{ day: string; msgs: ChatMessage[] }[]>((acc, msg) => {
     const day = formatDay(msg.created_at);
     const last = acc[acc.length - 1];
     if (last?.day === day) {
@@ -850,6 +943,38 @@ export function ChatPage() {
               </div>
             )}
 
+            {/* Selection action bar */}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 border-b border-blue-100">
+                <button
+                  onClick={clearSelection}
+                  className="p-1.5 rounded-lg hover:bg-blue-100 text-slate-600 transition-colors"
+                  title="Отмена"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <span className="text-sm font-medium text-slate-700 flex-1">
+                  Выбрано: {selectedIds.size}
+                </span>
+                <button
+                  onClick={() => setForwardModal({ ids: Array.from(selectedIds) })}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-sm text-slate-700 transition-colors"
+                  title="Переслать"
+                >
+                  <Forward className="w-4 h-4" />
+                  <span className="hidden sm:inline">Переслать</span>
+                </button>
+                <button
+                  onClick={confirmDeleteSelected}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-red-200 hover:bg-red-50 text-sm text-red-600 transition-colors"
+                  title="Удалить"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span className="hidden sm:inline">Удалить</span>
+                </button>
+              </div>
+            )}
+
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col bg-[#dfe6ed]">
               <div className="mt-auto space-y-4">
@@ -882,10 +1007,14 @@ export function ChatPage() {
                         const isLast = !sameSenderNext;
                         const imgOnly = !msg.is_deleted && isImageMessage(msg) && isFileOnlyMessage(msg);
 
+                        const isSelected = selectedIds.has(msg.id);
+                        const inSelectionMode = selectedIds.size > 0;
+
                         const timeBlock = (
                           <span className={`inline-flex items-center gap-0.5 text-[11px] ml-2 whitespace-nowrap align-bottom ${
                             imgOnly ? "text-white/80" : isMe ? "text-blue-200" : "text-slate-400"
                           }`}>
+                            {msg.edited_at && <span className="italic mr-0.5">изменено</span>}
                             {formatTime(msg.created_at)}
                             {isMe && !msg.is_deleted && (() => {
                               const isSending = sendingIds.has(msg.id);
@@ -894,17 +1023,49 @@ export function ChatPage() {
                               if (isSending) return (
                                 <span className="ml-0.5 w-3 h-3 border border-current border-t-transparent rounded-full animate-spin inline-block" />
                               );
-                              if (isRead) return <span className="ml-0.5">✓✓</span>;
-                              return <span className="ml-0.5">✓</span>;
+                              if (isRead) return (
+                                <svg viewBox="0 0 16 16" className="ml-0.5 w-3.5 h-3.5 inline-block" fill="currentColor">
+                                  <path d="m7.734666666666667 9.173266666666667 0.9413333333333332 0.9413333333333332 5.643666666666666 -5.6437333333333335 0.9428666666666665 0.9428066666666666 -6.586533333333333 6.586526666666666 -4.242666666666667 -4.242666666666667 0.9428066666666666 -0.9427999999999999 1.4165266666666665 1.4165333333333332 0.9423333333333332 0.9416666666666667 -0.0003333333333333333 0.0003333333333333333Zm0.0011333333333333332 -1.8851333333333333 3.3017333333333334 -3.3018066666666663 0.9402 0.9401866666666666 -3.3017333333333334 3.301753333333333 -0.9402 -0.9401333333333333Zm-1.88448 3.7700666666666667 -0.9420133333333333 0.942L0.6666666666666666 7.757533333333333l0.9428066666666666 -0.9427999999999999 0.9420133333333333 0.9420666666666666 -0.0007933333333333334 0.0007333333333333333 3.3006266666666666 3.3006666666666664Z" />
+                                </svg>
+                              );
+                              return (
+                                <svg viewBox="0 0 16 16" className="ml-0.5 w-3.5 h-3.5 inline-block" fill="currentColor">
+                                  <path d="m6.6664666666666665 10.113933333333332 6.128266666666666 -6.128253333333333 0.9427999999999999 0.9428066666666666L6.6664666666666665 11.999533333333334l-4.24264 -4.2425999999999995 0.9428133333333333 -0.9427999999999999 3.2998266666666667 3.2998Z" />
+                                </svg>
+                              );
                             })()}
                           </span>
                         );
 
+                        const handleMsgClick = (e: React.MouseEvent) => {
+                          if (inSelectionMode) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!msg.is_deleted) toggleSelect(msg.id);
+                          }
+                        };
+                        const handleMsgContextMenu = (e: React.MouseEvent) => {
+                          if (msg.is_deleted) return;
+                          e.preventDefault();
+                          setContextMenu({ msg, x: e.clientX, y: e.clientY });
+                        };
+
                         return (
                           <div
                             key={msg.id}
-                            className={`flex ${isMe ? "justify-end" : "justify-start"} ${isFirst && idx > 0 ? "mt-3" : "mt-0.5"}`}
+                            onClick={handleMsgClick}
+                            onContextMenu={handleMsgContextMenu}
+                            className={`flex items-center ${isMe ? "justify-end" : "justify-start"} ${isFirst && idx > 0 ? "mt-3" : "mt-0.5"} ${
+                              isSelected ? "bg-blue-200/40 -mx-4 px-4" : ""
+                            } ${inSelectionMode && !msg.is_deleted ? "cursor-pointer" : ""}`}
                           >
+                            {inSelectionMode && !msg.is_deleted && (
+                              <div className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center mr-2 ${
+                                isSelected ? "bg-blue-600 border-blue-600" : "bg-white/80 border-slate-300"
+                              }`}>
+                                {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+                              </div>
+                            )}
                             {/* Avatar spacer / avatar */}
                             {!isMe && (
                               <div className="w-8 flex-shrink-0 flex items-end justify-center">
@@ -938,6 +1099,16 @@ export function ChatPage() {
                                   </div>
                                 )}
 
+                                {/* Forwarded-from chip */}
+                                {!msg.is_deleted && msg.forwarded_from_sender_name && (
+                                  <div className={`flex items-center gap-1 text-xs mb-0.5 italic ${
+                                    isMe ? "text-blue-100" : "text-slate-500"
+                                  }`}>
+                                    <CornerUpRight className="w-3 h-3" />
+                                    <span>Переслано от {msg.forwarded_from_sender_name}</span>
+                                  </div>
+                                )}
+
                                 {!msg.is_deleted && msg.file_url && (
                                   <FileAttachment msg={msg} isMe={isMe} onImageClick={setLightboxUrl} />
                                 )}
@@ -954,9 +1125,9 @@ export function ChatPage() {
                                 )}
 
                                 {/* Delete button */}
-                                {isMe && !msg.is_deleted && (
+                                {isMe && !msg.is_deleted && !inSelectionMode && (
                                   <button
-                                    onClick={() => deleteMessage(msg.id)}
+                                    onClick={(e) => { e.stopPropagation(); setDeleteMsgConfirm([msg.id]); }}
                                     className="absolute -left-7 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-slate-200"
                                   >
                                     <Trash2 className="w-3.5 h-3.5 text-slate-400" />
@@ -989,6 +1160,21 @@ export function ChatPage() {
 
             {/* Input */}
             <div className="border-t border-slate-200 bg-white px-4 py-3">
+              {/* Editing banner */}
+              {editingId && (
+                <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-blue-50 rounded-lg border border-blue-100">
+                  <Edit2 className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium text-blue-700">Редактирование</div>
+                    <div className="text-xs text-slate-500 truncate">
+                      {messages.find((m) => m.id === editingId)?.content_encrypted ?? ""}
+                    </div>
+                  </div>
+                  <button onClick={cancelEditing} className="p-1 rounded hover:bg-blue-100 transition-colors">
+                    <X className="w-4 h-4 text-blue-600" />
+                  </button>
+                </div>
+              )}
               {/* Pending file preview */}
               {pendingFile && (
                 <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200">
@@ -1085,6 +1271,135 @@ export function ChatPage() {
           onCreated={handleRoomCreated}
           onClose={() => setShowCreateModal(false)}
         />
+      )}
+
+      {/* Context menu */}
+      {contextMenu && (() => {
+        const m = contextMenu.msg;
+        const canEdit = m.sender_id === myId && m.sender_type === "employee" && !m.is_deleted && !m.file_url;
+        const canDelete = m.sender_id === myId && m.sender_type === "employee" && !m.is_deleted;
+        const maxX = typeof window !== "undefined" ? window.innerWidth - 200 : contextMenu.x;
+        const maxY = typeof window !== "undefined" ? window.innerHeight - 160 : contextMenu.y;
+        const x = Math.min(contextMenu.x, maxX);
+        const y = Math.min(contextMenu.y, maxY);
+        return (
+          <div
+            className="fixed z-50 min-w-[180px] bg-white rounded-lg shadow-xl border border-slate-200 py-1"
+            style={{ left: x, top: y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => { toggleSelect(m.id); setContextMenu(null); }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              <Check className="w-4 h-4" />
+              Выбрать
+            </button>
+            <button
+              onClick={() => { setForwardModal({ ids: [m.id] }); setContextMenu(null); }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              <Forward className="w-4 h-4" />
+              Переслать
+            </button>
+            {canEdit && (
+              <button
+                onClick={() => { startEditing(m); setContextMenu(null); }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <Edit2 className="w-4 h-4" />
+                Изменить
+              </button>
+            )}
+            {canDelete && (
+              <button
+                onClick={() => { setDeleteMsgConfirm([m.id]); setContextMenu(null); }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                Удалить
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Forward modal */}
+      {forwardModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setForwardModal(null)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md flex flex-col max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Переслать</h2>
+                <p className="text-xs text-slate-500">Сообщений: {forwardModal.ids.length}</p>
+              </div>
+              <button onClick={() => setForwardModal(null)} className="p-1 rounded hover:bg-slate-100">
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2">
+              {rooms.length === 0 ? (
+                <p className="text-center text-sm text-slate-400 py-8">Нет доступных чатов</p>
+              ) : (
+                rooms.map((room) => {
+                  const otherMembers = room.members.filter(
+                    (mm) => !(mm.member_id === myId && mm.member_type === "employee")
+                  );
+                  const displayName = room.name ?? otherMembers.map((mm) => mm.name).join(", ");
+                  const color = avatarColor(displayName);
+                  return (
+                    <button
+                      key={room.id}
+                      onClick={() => doForward(room.id)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 text-left transition-colors"
+                    >
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 ${color}`}>
+                        {room.room_type === "group" ? <Users className="w-4 h-4" /> : getInitials(displayName)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-slate-900 truncate">{displayName}</div>
+                        <div className="text-xs text-slate-400">
+                          {room.room_type === "group" ? `${room.members.length} участников` : "Личный чат"}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete messages confirm */}
+      {deleteMsgConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-900">
+                  {deleteMsgConfirm.length > 1 ? `Удалить сообщения (${deleteMsgConfirm.length})?` : "Удалить сообщение?"}
+                </h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  Это действие нельзя отменить.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" size="sm" onClick={() => setDeleteMsgConfirm(null)}>Отмена</Button>
+              <Button
+                size="sm"
+                className="bg-red-600 hover:bg-red-700 text-white"
+                onClick={performDelete}
+              >
+                Удалить
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Image lightbox */}

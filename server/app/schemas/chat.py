@@ -42,10 +42,21 @@ class ChatMessageSchema(BaseModel):
     file_size: Optional[int] = None
     reply_to_id: Optional[str] = None
     is_deleted: bool
+    edited_at: Optional[datetime] = None
+    forwarded_from_sender_name: Optional[str] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class EditMessageRequest(BaseModel):
+    content_encrypted: str
+
+
+class ForwardMessageRequest(BaseModel):
+    message_ids: list[str]
+    target_room_id: str
 
 
 class SendMessageRequest(BaseModel):

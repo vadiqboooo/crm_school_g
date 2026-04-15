@@ -67,9 +67,14 @@ export default function BottomNav({ chatUnread: chatUnreadProp }: BottomNavProps
             className="flex-1 flex items-center justify-center transition-all duration-200"
           >
             {active ? (
-              <div className="flex items-center gap-2 bg-brand-700 text-white px-5 py-2.5 rounded-full transition-all duration-200">
+              <div className="relative flex items-center gap-2 bg-brand-700 text-white px-5 py-2.5 rounded-full transition-all duration-200">
                 <Icon className="text-white" />
                 <span className="text-xs font-bold tracking-wide">{label}</span>
+                {badge > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 leading-none ring-2 ring-white dark:ring-gray-900">
+                    {badge > 99 ? "99+" : badge}
+                  </span>
+                )}
               </div>
             ) : (
               <div className="flex flex-col items-center gap-0.5 transition-all duration-200">

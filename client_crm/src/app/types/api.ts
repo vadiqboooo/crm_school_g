@@ -1045,6 +1045,8 @@ export interface ChatMessage {
   file_size: number | null;
   reply_to_id: string | null;
   is_deleted: boolean;
+  edited_at?: string | null;
+  forwarded_from_sender_name?: string | null;
   created_at: string;
 }
 

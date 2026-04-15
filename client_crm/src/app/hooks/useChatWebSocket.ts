@@ -22,6 +22,10 @@ export interface WsMessageDeleted {
   message_id: string;
   room_id: string;
 }
+export interface WsMessageEdited {
+  type: "message_edited";
+  message: ChatMessage;
+}
 export interface WsPong {
   type: "pong";
 }
@@ -30,7 +34,7 @@ export interface WsKeyDistributionNeeded {
   room_id: string;
 }
 
-export type ChatWsEvent = WsNewMessage | WsTyping | WsReadReceipt | WsMessageDeleted | WsPong | WsKeyDistributionNeeded;
+export type ChatWsEvent = WsNewMessage | WsTyping | WsReadReceipt | WsMessageDeleted | WsMessageEdited | WsPong | WsKeyDistributionNeeded;
 
 interface UseChatWebSocketOptions {
   wsUrl: string;

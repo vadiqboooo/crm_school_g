@@ -199,6 +199,13 @@ export default function ChatPage() {
   const [pendingFilePreview, setPendingFilePreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [actionSheet, setActionSheet] = useState<ChatMessage | null>(null);
+  const [forwardModal, setForwardModal] = useState<{ ids: string[] } | null>(null);
+  const [deleteMsgConfirm, setDeleteMsgConfirm] = useState<string[] | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressFiredRef = useRef(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -368,8 +375,18 @@ export default function ChatPage() {
             )
           );
         }
+        if (msg.type === "message_edited") {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === msg.message.id ? { ...msg.message, text: decryptMsg(msg.message) } : m
+            )
+          );
+        }
         if (msg.type === "read_receipt") {
-          setPeerReadAt((prev) => ({ ...prev, [msg.room_id]: msg.read_at }));
+          // Ignore our own read receipts — we're the sender, not the peer
+          if (msg.reader_id !== myId) {
+            setPeerReadAt((prev) => ({ ...prev, [msg.room_id]: msg.read_at }));
+          }
         }
         if (msg.type === "typing") {
           setTyping((prev) => ({ ...prev, [msg.room_id]: { name: msg.sender_name, at: Date.now() } }));
@@ -422,6 +439,25 @@ export default function ChatPage() {
   const handleSend = async () => {
     if ((!inputText.trim() && !pendingFile) || !selectedRoom || sending || uploading) return;
     const text = inputText.trim() || (pendingFile ? pendingFile.name : "");
+    if (editingId) {
+      const id = editingId;
+      setEditingId(null);
+      setInputText("");
+      setSending(true);
+      try {
+        const updated = await api.editMessage(id, text);
+        setMessages((prev) =>
+          prev.map((m) => (m.id === id ? { ...updated, text: decryptMsg(updated) } : m))
+        );
+      } catch (e: any) {
+        setSendError(e?.message ?? "Не удалось изменить сообщение");
+        setInputText(text);
+        setEditingId(id);
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
     const fileToSend = pendingFile;
     const tempId = `sending-${Date.now()}`;
     setSendError(null);
@@ -458,18 +494,76 @@ export default function ChatPage() {
     }
   };
 
-  const handleDeleteMessage = async (msgId: string) => {
+  const handleDeleteMessage = (msgId: string) => {
     setCtxMsgId(null);
+    setDeleteMsgConfirm([msgId]);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+  const confirmDeleteSelected = () => {
+    setDeleteMsgConfirm(Array.from(selectedIds));
+  };
+  const performDelete = async () => {
+    if (!deleteMsgConfirm) return;
+    const ids = deleteMsgConfirm;
+    setDeleteMsgConfirm(null);
+    clearSelection();
+    for (const id of ids) {
+      try {
+        await api.deleteMessage(id);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === id
+              ? { ...m, is_deleted: true, text: "Сообщение удалено", content_encrypted: "" }
+              : m
+          )
+        );
+      } catch { /* ignore */ }
+    }
+  };
+  const startEditing = (msg: ChatMessage) => {
+    if (msg.sender_id !== myId || msg.sender_type !== myMemberType || msg.is_deleted || msg.file_url) return;
+    setEditingId(msg.id);
+    setInputText(msg.content_encrypted);
+    clearPendingFile();
+  };
+  const cancelEditing = () => {
+    setEditingId(null);
+    setInputText("");
+  };
+  const doForward = async (targetRoomId: string) => {
+    if (!forwardModal) return;
+    const ids = forwardModal.ids;
+    setForwardModal(null);
+    clearSelection();
     try {
-      await api.deleteMessage(msgId);
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === msgId
-            ? { ...m, is_deleted: true, text: "Сообщение удалено", content_encrypted: "" }
-            : m
-        )
-      );
-    } catch { /* ignore */ }
+      await api.forwardMessages(ids, targetRoomId);
+    } catch {
+      setSendError("Ошибка пересылки");
+    }
+  };
+
+  const handleMsgPointerDown = (msg: ChatMessage) => {
+    if (msg.is_deleted) return;
+    longPressFiredRef.current = false;
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      longPressFiredRef.current = true;
+      setActionSheet(msg);
+    }, 450);
+  };
+  const handleMsgPointerUp = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
   };
 
   const handleDeleteRoom = async (roomId: string) => {
@@ -752,7 +846,7 @@ export default function ChatPage() {
 
   // ── Message view ─────────────────────────────────────────────────────────
 
-  const groups = groupByDate(messages);
+  const groups = groupByDate(messages.filter((m) => !m.is_deleted));
   const roomName = getRoomDisplayName(selectedRoom);
   const typingInfo = typing[selectedRoom.id];
 
@@ -806,6 +900,28 @@ export default function ChatPage() {
           </div>
           </button>
         </div>
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-brand-50 dark:bg-brand-900/30 border-t border-brand-100 dark:border-brand-900/40">
+            <button onClick={clearSelection} className="p-1.5 rounded-full hover:bg-brand-100 dark:hover:bg-brand-900/50">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" strokeWidth={2}>
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+            <span className="text-sm font-medium text-gray-800 dark:text-gray-100 flex-1">Выбрано: {selectedIds.size}</span>
+            <button
+              onClick={() => setForwardModal({ ids: Array.from(selectedIds) })}
+              className="px-3 py-1.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-700 dark:text-gray-200"
+            >
+              Переслать
+            </button>
+            <button
+              onClick={confirmDeleteSelected}
+              className="px-3 py-1.5 rounded-lg bg-white dark:bg-gray-800 border border-red-200 dark:border-red-900/50 text-xs font-medium text-red-600"
+            >
+              Удалить
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Members bottom sheet */}
@@ -888,11 +1004,14 @@ export default function ChatPage() {
                 const isFirst = !sameSenderPrev;
                 const isLast = !sameSenderNext;
                 const imgOnly = !msg.is_deleted && isImageMessage(msg) && isFileOnlyMessage(msg);
+                const isSelected = selectedIds.has(msg.id);
+                const inSelectionMode = selectedIds.size > 0;
 
                 const timeBlock = (
                   <span className={`inline-flex items-center gap-0.5 text-[10px] ml-2 whitespace-nowrap align-bottom ${
                     imgOnly ? "text-white/80" : isMe ? "text-brand-300" : "text-gray-400 dark:text-gray-500"
                   }`}>
+                    {msg.edited_at && <span className="italic mr-0.5">изменено</span>}
                     {formatTime(msg.created_at)}
                     {isMe && !msg.is_deleted && (() => {
                       const isSending = sendingIds.has(msg.id);
@@ -901,8 +1020,16 @@ export default function ChatPage() {
                       if (isSending) return (
                         <span className="ml-0.5 w-3 h-3 border border-current border-t-transparent rounded-full animate-spin inline-block" />
                       );
-                      if (isRead) return <span className="ml-0.5 text-brand-300">✓✓</span>;
-                      return <span className="ml-0.5">✓</span>;
+                      if (isRead) return (
+                        <svg viewBox="0 0 16 16" className="ml-0.5 w-3.5 h-3.5 inline-block text-brand-300" fill="currentColor">
+                          <path d="m7.734666666666667 9.173266666666667 0.9413333333333332 0.9413333333333332 5.643666666666666 -5.6437333333333335 0.9428666666666665 0.9428066666666666 -6.586533333333333 6.586526666666666 -4.242666666666667 -4.242666666666667 0.9428066666666666 -0.9427999999999999 1.4165266666666665 1.4165333333333332 0.9423333333333332 0.9416666666666667 -0.0003333333333333333 0.0003333333333333333Zm0.0011333333333333332 -1.8851333333333333 3.3017333333333334 -3.3018066666666663 0.9402 0.9401866666666666 -3.3017333333333334 3.301753333333333 -0.9402 -0.9401333333333333Zm-1.88448 3.7700666666666667 -0.9420133333333333 0.942L0.6666666666666666 7.757533333333333l0.9428066666666666 -0.9427999999999999 0.9420133333333333 0.9420666666666666 -0.0007933333333333334 0.0007333333333333333 3.3006266666666666 3.3006666666666664Z" />
+                        </svg>
+                      );
+                      return (
+                        <svg viewBox="0 0 16 16" className="ml-0.5 w-3.5 h-3.5 inline-block" fill="currentColor">
+                          <path d="m6.6664666666666665 10.113933333333332 6.128266666666666 -6.128253333333333 0.9427999999999999 0.9428066666666666L6.6664666666666665 11.999533333333334l-4.24264 -4.2425999999999995 0.9428133333333333 -0.9427999999999999 3.2998266666666667 3.2998Z" />
+                        </svg>
+                      );
                     })()}
                   </span>
                 );
@@ -910,8 +1037,21 @@ export default function ChatPage() {
                 return (
                   <div
                     key={msg.id}
-                    className={`flex ${isMe ? "justify-end" : "justify-start"} ${isFirst && idx > 0 ? "mt-3" : "mt-0.5"}`}
+                    className={`flex items-center ${isMe ? "justify-end" : "justify-start"} ${isFirst && idx > 0 ? "mt-3" : "mt-0.5"} ${
+                      isSelected ? "bg-brand-100/50 dark:bg-brand-900/20 -mx-4 px-4" : ""
+                    }`}
                   >
+                    {inSelectionMode && !msg.is_deleted && (
+                      <div className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center mr-2 ${
+                        isSelected ? "bg-brand-700 border-brand-700" : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600"
+                      }`}>
+                        {isSelected && (
+                          <svg viewBox="0 0 24 24" className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth={3}>
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </div>
+                    )}
                     {/* Avatar spacer / avatar */}
                     {!isMe && (
                       <div className="w-8 flex-shrink-0 flex items-end justify-center">
@@ -927,9 +1067,26 @@ export default function ChatPage() {
 
                     <div
                       className="relative max-w-[75%]"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (longPressFiredRef.current) { longPressFiredRef.current = false; return; }
+                        if (inSelectionMode) {
+                          if (!msg.is_deleted) toggleSelect(msg.id);
+                          return;
+                        }
                         if (isMe && !msg.is_deleted) setCtxMsgId(isCtx ? null : msg.id);
                         else setCtxMsgId(null);
+                      }}
+                      onTouchStart={() => handleMsgPointerDown(msg)}
+                      onTouchEnd={handleMsgPointerUp}
+                      onTouchMove={handleMsgPointerUp}
+                      onMouseDown={() => handleMsgPointerDown(msg)}
+                      onMouseUp={handleMsgPointerUp}
+                      onMouseLeave={handleMsgPointerUp}
+                      onContextMenu={(e) => {
+                        if (msg.is_deleted) return;
+                        e.preventDefault();
+                        setActionSheet(msg);
                       }}
                     >
                       <div className={`relative text-sm leading-relaxed select-none ${
@@ -953,6 +1110,19 @@ export default function ChatPage() {
                           </div>
                         )}
 
+                        {/* Forwarded chip */}
+                        {!msg.is_deleted && msg.forwarded_from_sender_name && (
+                          <div className={`flex items-center gap-1 text-[11px] mb-0.5 italic ${
+                            isMe ? "text-white/80" : "text-gray-500 dark:text-gray-400"
+                          }`}>
+                            <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2}>
+                              <polyline points="15 14 20 9 15 4" />
+                              <path d="M4 20v-7a4 4 0 0 1 4-4h12" />
+                            </svg>
+                            <span>Переслано от {msg.forwarded_from_sender_name}</span>
+                          </div>
+                        )}
+
                         {!msg.is_deleted && msg.file_url && (
                           <FileAttachment msg={msg} isMe={isMe} onImageClick={setLightboxUrl} />
                         )}
@@ -970,9 +1140,9 @@ export default function ChatPage() {
                       </div>
 
                       {/* Delete button for own messages */}
-                      {isCtx && isMe && !msg.is_deleted && (
+                      {isCtx && isMe && !msg.is_deleted && !inSelectionMode && (
                         <button
-                          onClick={() => handleDeleteMessage(msg.id)}
+                          onClick={(e) => { e.stopPropagation(); handleDeleteMessage(msg.id); }}
                           className="absolute -top-1 -left-2 text-xs text-red-500 bg-white dark:bg-gray-800 border border-red-100 dark:border-red-900/40 rounded-xl px-3 py-1 shadow-sm hover:bg-red-50 dark:hover:bg-red-900/20 transition z-10"
                         >
                           Удалить
@@ -991,6 +1161,24 @@ export default function ChatPage() {
 
       {/* Input bar */}
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 px-3 py-3 z-30">
+        {editingId && (
+          <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-brand-50 dark:bg-brand-900/30 rounded-xl border border-brand-100 dark:border-brand-900/40">
+            <svg viewBox="0 0 24 24" className="w-4 h-4 text-brand-600 dark:text-brand-400 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
+            </svg>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium text-brand-700 dark:text-brand-300">Редактирование</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                {messages.find((m) => m.id === editingId)?.content_encrypted ?? ""}
+              </div>
+            </div>
+            <button onClick={cancelEditing} className="p-1 rounded-full hover:bg-brand-100 dark:hover:bg-brand-900/50">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" strokeWidth={2}>
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        )}
         {sendError && (
           <div className="flex items-start gap-2 mb-2 px-1 py-2 bg-red-50 dark:bg-red-900/30 rounded-xl text-xs text-red-600 dark:text-red-400">
             <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 flex-shrink-0 mt-px" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -1065,6 +1253,140 @@ export default function ChatPage() {
           </button>
         </div>
       </div>
+
+      {/* Action sheet (long-press) */}
+      {actionSheet && (() => {
+        const m = actionSheet;
+        const mine = m.sender_id === myId && m.sender_type === myMemberType;
+        const canEdit = mine && !m.is_deleted && !m.file_url;
+        const canDelete = mine && !m.is_deleted;
+        return (
+          <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={() => setActionSheet(null)}>
+            <div className="absolute inset-0 bg-black/40" />
+            <div
+              className="relative bg-white dark:bg-gray-800 rounded-t-2xl pb-4 pt-2"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center py-1">
+                <div className="w-10 h-1 bg-gray-300 dark:bg-gray-600 rounded-full" />
+              </div>
+              <button
+                onClick={() => { toggleSelect(m.id); setActionSheet(null); }}
+                className="w-full flex items-center gap-3 px-5 py-3 text-left text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                <span>Выбрать</span>
+              </button>
+              <button
+                onClick={() => { setForwardModal({ ids: [m.id] }); setActionSheet(null); }}
+                className="w-full flex items-center gap-3 px-5 py-3 text-left text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <polyline points="15 14 20 9 15 4" />
+                  <path d="M4 20v-7a4 4 0 0 1 4-4h12" />
+                </svg>
+                <span>Переслать</span>
+              </button>
+              {canEdit && (
+                <button
+                  onClick={() => { startEditing(m); setActionSheet(null); }}
+                  className="w-full flex items-center gap-3 px-5 py-3 text-left text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
+                  </svg>
+                  <span>Изменить</span>
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  onClick={() => { handleDeleteMessage(m.id); setActionSheet(null); }}
+                  className="w-full flex items-center gap-3 px-5 py-3 text-left text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                >
+                  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" />
+                  </svg>
+                  <span>Удалить</span>
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Forward modal */}
+      {forwardModal && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={() => setForwardModal(null)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="relative bg-white dark:bg-gray-800 rounded-t-2xl max-h-[75vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b border-gray-100 dark:border-gray-700">
+              <div>
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100">Переслать</h3>
+                <p className="text-xs text-gray-400 dark:text-gray-500">Сообщений: {forwardModal.ids.length}</p>
+              </div>
+              <button onClick={() => setForwardModal(null)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+                <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <div className="overflow-y-auto">
+              {rooms.length === 0 ? (
+                <p className="text-center text-sm text-gray-400 py-8">Нет доступных чатов</p>
+              ) : (
+                rooms.map((room) => {
+                  const name = getRoomDisplayName(room);
+                  return (
+                    <button
+                      key={room.id}
+                      onClick={() => doForward(room.id)}
+                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 text-left"
+                    >
+                      <div className={`w-10 h-10 rounded-full ${avatarColor(name)} flex items-center justify-center flex-shrink-0`}>
+                        <span className="text-white font-bold text-xs">{getInitials(name)}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{name}</div>
+                        <div className="text-xs text-gray-400 dark:text-gray-500">
+                          {room.room_type === "group" ? `${room.members.length} участников` : "Личный чат"}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete messages confirm */}
+      {deleteMsgConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-xl">
+            <h3 className="font-bold text-gray-900 dark:text-gray-100 text-base mb-2">
+              {deleteMsgConfirm.length > 1 ? `Удалить сообщения (${deleteMsgConfirm.length})?` : "Удалить сообщение?"}
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Это действие нельзя отменить.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteMsgConfirm(null)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={performDelete}
+                className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition"
+              >
+                Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Image lightbox */}
       {lightboxUrl && (
