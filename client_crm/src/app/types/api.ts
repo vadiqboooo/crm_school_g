@@ -527,6 +527,146 @@ export interface SchoolLocationUpdate {
   manager_id?: string;
 }
 
+export interface HomeBannerFormField {
+  id: string;
+  field_type: "text" | "phone" | "email" | "textarea" | "select" | "number";
+  key: string;
+  label: string;
+  placeholder?: string | null;
+  required: boolean;
+  options?: string[] | null;
+  sort_order: number;
+}
+
+export interface HomeBannerFormFieldCreate {
+  field_type: "text" | "phone" | "email" | "textarea" | "select" | "number";
+  key: string;
+  label: string;
+  placeholder?: string | null;
+  required?: boolean;
+  options?: string[] | null;
+  sort_order?: number;
+}
+
+export interface HomeBanner {
+  id: string;
+  title: string;
+  subtitle?: string | null;
+  badge_text?: string | null;
+  badge_color?: string | null;
+  price_text?: string | null;
+  footer_tags?: string | null;
+  icon?: string | null;
+  gradient_from: string;
+  gradient_to: string;
+  background_image_url?: string | null;
+  action_url?: string | null;
+  signup_enabled: boolean;
+  signup_button_text?: string | null;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  form_fields: HomeBannerFormField[];
+}
+
+export interface HomeBannerCreate {
+  title: string;
+  subtitle?: string | null;
+  badge_text?: string | null;
+  badge_color?: string | null;
+  price_text?: string | null;
+  footer_tags?: string | null;
+  icon?: string | null;
+  gradient_from?: string;
+  gradient_to?: string;
+  background_image_url?: string | null;
+  action_url?: string | null;
+  signup_enabled?: boolean;
+  signup_button_text?: string | null;
+  sort_order?: number;
+  is_active?: boolean;
+  form_fields?: HomeBannerFormFieldCreate[];
+}
+
+export type HomeBannerUpdate = Partial<HomeBannerCreate>;
+
+export interface HomeBannerSignup {
+  id: string;
+  banner_id: string;
+  student_id: string | null;
+  student_name: string | null;
+  student_phone: string | null;
+  student_email: string | null;
+  form_data: Record<string, any>;
+  status: string;
+  created_at: string;
+}
+
+export interface SchoolNotification {
+  id: string;
+  title: string;
+  body: string;
+  icon: string | null;
+  color: string | null;
+  action_url: string | null;
+  is_published: boolean;
+  created_at: string;
+}
+
+export interface SchoolNotificationCreate {
+  title: string;
+  body: string;
+  icon?: string | null;
+  color?: string | null;
+  action_url?: string | null;
+  is_published?: boolean;
+}
+
+export type SchoolNotificationUpdate = Partial<SchoolNotificationCreate>;
+
+// Home info card (mobile home screen)
+export interface HomeInfoStat {
+  value: string;
+  label: string;
+}
+
+export interface HomeInfoTag {
+  icon?: string | null;
+  text: string;
+}
+
+export interface HomeInfoFormat {
+  icon?: string | null;
+  title: string;
+  subtitle?: string | null;
+  bg_color?: string | null;
+}
+
+export interface HomeInfoCard {
+  id: string;
+  center_name: string;
+  center_subtitle: string;
+  logo_emoji: string;
+  logo_bg_color: string;
+  heading_line1: string;
+  heading_line2: string | null;
+  heading_accent_color: string;
+  subheading: string | null;
+  gradient_from: string;
+  gradient_to: string;
+  stats: HomeInfoStat[];
+  tags: HomeInfoTag[];
+  formats: HomeInfoFormat[];
+  trial_button_enabled: boolean;
+  trial_button_text: string;
+  tariffs_button_enabled: boolean;
+  tariffs_button_text: string;
+  is_visible: boolean;
+  updated_at: string;
+}
+
+export type HomeInfoCardUpdate = Partial<Omit<HomeInfoCard, "id" | "updated_at">>;
+
 // Exam types
 export interface Exam {
   id: string;

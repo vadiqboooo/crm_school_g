@@ -5,7 +5,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
-import { Plus, BookOpen, Users as UsersIcon, Edit, Trash2, MoreVertical, Loader2, Save, CreditCard, ToggleLeft, ToggleRight, KeyRound } from "lucide-react";
+import { Plus, BookOpen, Users as UsersIcon, Edit, Trash2, MoreVertical, Loader2, Save, CreditCard, ToggleLeft, ToggleRight, KeyRound, ChevronUp, ChevronDown } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import {
   Table,
@@ -37,7 +37,7 @@ import {
   DialogTitle,
 } from "../components/ui/dialog";
 import { api } from "../lib/api";
-import type { Subject, User, Settings, SettingsUpdate, SchoolLocation, SchoolLocationCreate, Exam, ExamCreate, SubscriptionPlan, SubscriptionPlanCreate, ExamPortalSession, ExamTimeSlotCreate, PortalCredential } from "../types/api";
+import type { Subject, User, Settings, SettingsUpdate, SchoolLocation, SchoolLocationCreate, Exam, ExamCreate, SubscriptionPlan, SubscriptionPlanCreate, ExamPortalSession, ExamTimeSlotCreate, PortalCredential, HomeBanner, HomeBannerCreate, HomeBannerFormFieldCreate, HomeBannerSignup, SchoolNotification, SchoolNotificationCreate, HomeInfoCard } from "../types/api";
 import { useAuth } from "../contexts/AuthContext";
 import { SubjectEditDialog } from "../components/SubjectEditDialog";
 import { PrintCredentialsModal } from "../components/PrintCredentialsModal";
@@ -160,6 +160,55 @@ export function SchoolPage() {
     student_fee: undefined,
   });
 
+  // Home banners
+  const [banners, setBanners] = useState<HomeBanner[]>([]);
+  const [bannerDialogOpen, setBannerDialogOpen] = useState(false);
+  const [editingBanner, setEditingBanner] = useState<HomeBanner | null>(null);
+  const [savingBanner, setSavingBanner] = useState(false);
+  const defaultBannerForm: HomeBannerCreate = {
+    title: "",
+    subtitle: "",
+    badge_text: "",
+    badge_color: "#f59e0b",
+    price_text: "",
+    footer_tags: "",
+    icon: "",
+    gradient_from: "#4f46e5",
+    gradient_to: "#7c3aed",
+    background_image_url: "",
+    action_url: "",
+    signup_enabled: false,
+    signup_button_text: "",
+    sort_order: 0,
+    is_active: true,
+    form_fields: [],
+  };
+  const [uploadingBannerImage, setUploadingBannerImage] = useState(false);
+  const [bannerForm, setBannerForm] = useState<HomeBannerCreate>(defaultBannerForm);
+  const [signupsDialogOpen, setSignupsDialogOpen] = useState(false);
+  const [signupsBanner, setSignupsBanner] = useState<HomeBanner | null>(null);
+  const [signups, setSignups] = useState<HomeBannerSignup[]>([]);
+  const [loadingSignups, setLoadingSignups] = useState(false);
+
+  // School notifications
+  const [notifications, setNotifications] = useState<SchoolNotification[]>([]);
+
+  // Home info card
+  const [infoCard, setInfoCard] = useState<HomeInfoCard | null>(null);
+  const [savingInfoCard, setSavingInfoCard] = useState(false);
+  const [notifDialogOpen, setNotifDialogOpen] = useState(false);
+  const [editingNotif, setEditingNotif] = useState<SchoolNotification | null>(null);
+  const [savingNotif, setSavingNotif] = useState(false);
+  const defaultNotifForm: SchoolNotificationCreate = {
+    title: "",
+    body: "",
+    icon: "",
+    color: "#4f46e5",
+    action_url: "",
+    is_published: true,
+  };
+  const [notifForm, setNotifForm] = useState<SchoolNotificationCreate>(defaultNotifForm);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -167,7 +216,7 @@ export function SchoolPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [subjectsData, teachersData, settingsData, locationsData, templatesData, plansData, sessionsData] = await Promise.all([
+      const [subjectsData, teachersData, settingsData, locationsData, templatesData, plansData, sessionsData, bannersData, notificationsData, infoCardData] = await Promise.all([
         api.getSubjects(),
         api.getEmployees(),
         api.getSettings(),
@@ -175,6 +224,9 @@ export function SchoolPage() {
         api.getExamTemplates(),
         api.getSubscriptionPlans(),
         api.getExamPortalSessions(),
+        api.getHomeBanners(),
+        api.getSchoolNotifications().catch(() => [] as SchoolNotification[]),
+        api.getHomeInfoCard().catch(() => null),
       ]);
 
       setSubjects(subjectsData);
@@ -184,6 +236,9 @@ export function SchoolPage() {
       setExamTemplates(templatesData);
       setSubscriptionPlans(plansData);
       setExamSessions(sessionsData);
+      setBanners(bannersData);
+      setNotifications(notificationsData);
+      setInfoCard(infoCardData);
       setSettingsForm({
         school_name: settingsData.school_name || "",
         description: settingsData.description || "",
@@ -311,6 +366,228 @@ export function SchoolPage() {
       alert("Ошибка при сохранении настроек");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleOpenBannerDialog = (banner?: HomeBanner) => {
+    if (banner) {
+      setEditingBanner(banner);
+      setBannerForm({
+        title: banner.title,
+        subtitle: banner.subtitle ?? "",
+        badge_text: banner.badge_text ?? "",
+        badge_color: banner.badge_color ?? "#f59e0b",
+        price_text: banner.price_text ?? "",
+        footer_tags: banner.footer_tags ?? "",
+        icon: banner.icon ?? "",
+        gradient_from: banner.gradient_from,
+        gradient_to: banner.gradient_to,
+        background_image_url: banner.background_image_url ?? "",
+        action_url: banner.action_url ?? "",
+        signup_enabled: banner.signup_enabled,
+        signup_button_text: banner.signup_button_text ?? "",
+        sort_order: banner.sort_order,
+        is_active: banner.is_active,
+        form_fields: (banner.form_fields ?? []).map((f) => ({
+          field_type: f.field_type,
+          key: f.key,
+          label: f.label,
+          placeholder: f.placeholder ?? "",
+          required: f.required,
+          options: f.options ?? null,
+          sort_order: f.sort_order,
+        })),
+      });
+    } else {
+      setEditingBanner(null);
+      setBannerForm({ ...defaultBannerForm, sort_order: banners.length, form_fields: [] });
+    }
+    setBannerDialogOpen(true);
+  };
+
+  const addFormField = () => {
+    const fields = bannerForm.form_fields ?? [];
+    setBannerForm({
+      ...bannerForm,
+      form_fields: [
+        ...fields,
+        {
+          field_type: "text",
+          key: `field_${fields.length + 1}`,
+          label: "Поле",
+          placeholder: "",
+          required: false,
+          options: null,
+          sort_order: fields.length,
+        },
+      ],
+    });
+  };
+
+  const updateFormField = (idx: number, patch: Partial<HomeBannerFormFieldCreate>) => {
+    const fields = [...(bannerForm.form_fields ?? [])];
+    fields[idx] = { ...fields[idx], ...patch };
+    setBannerForm({ ...bannerForm, form_fields: fields });
+  };
+
+  const removeFormField = (idx: number) => {
+    const fields = [...(bannerForm.form_fields ?? [])];
+    fields.splice(idx, 1);
+    setBannerForm({ ...bannerForm, form_fields: fields.map((f, i) => ({ ...f, sort_order: i })) });
+  };
+
+  const moveFormField = (idx: number, dir: -1 | 1) => {
+    const fields = [...(bannerForm.form_fields ?? [])];
+    const target = idx + dir;
+    if (target < 0 || target >= fields.length) return;
+    [fields[idx], fields[target]] = [fields[target], fields[idx]];
+    setBannerForm({ ...bannerForm, form_fields: fields.map((f, i) => ({ ...f, sort_order: i })) });
+  };
+
+  const handleOpenSignups = async (banner: HomeBanner) => {
+    setSignupsBanner(banner);
+    setSignupsDialogOpen(true);
+    setLoadingSignups(true);
+    try {
+      const list = await api.getBannerSignups(banner.id);
+      setSignups(list);
+    } catch (e) {
+      console.error("Failed to load signups:", e);
+    } finally {
+      setLoadingSignups(false);
+    }
+  };
+
+  const handleUpdateSignupStatus = async (id: string, status: string) => {
+    try {
+      const updated = await api.updateBannerSignup(id, { status });
+      setSignups((prev) => prev.map((s) => (s.id === id ? updated : s)));
+    } catch (e) {
+      console.error("Failed to update signup:", e);
+    }
+  };
+
+  const handleDeleteSignup = async (id: string) => {
+    if (!confirm("Удалить заявку?")) return;
+    try {
+      await api.deleteBannerSignup(id);
+      setSignups((prev) => prev.filter((s) => s.id !== id));
+    } catch (e) {
+      console.error("Failed to delete signup:", e);
+    }
+  };
+
+  const handleOpenNotifDialog = (notif?: SchoolNotification) => {
+    if (notif) {
+      setEditingNotif(notif);
+      setNotifForm({
+        title: notif.title,
+        body: notif.body,
+        icon: notif.icon ?? "",
+        color: notif.color ?? "#4f46e5",
+        action_url: notif.action_url ?? "",
+        is_published: notif.is_published,
+      });
+    } else {
+      setEditingNotif(null);
+      setNotifForm(defaultNotifForm);
+    }
+    setNotifDialogOpen(true);
+  };
+
+  const handleSaveNotif = async () => {
+    if (!notifForm.title.trim() || !notifForm.body.trim()) return;
+    try {
+      setSavingNotif(true);
+      if (editingNotif) {
+        const updated = await api.updateSchoolNotification(editingNotif.id, notifForm);
+        setNotifications((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+      } else {
+        const created = await api.createSchoolNotification(notifForm);
+        setNotifications((prev) => [created, ...prev]);
+      }
+      setNotifDialogOpen(false);
+      setEditingNotif(null);
+    } catch (e) {
+      console.error("Failed to save notification:", e);
+    } finally {
+      setSavingNotif(false);
+    }
+  };
+
+  const handleDeleteNotif = async (id: string) => {
+    if (!confirm("Удалить уведомление?")) return;
+    try {
+      await api.deleteSchoolNotification(id);
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+    } catch (e) {
+      console.error("Failed to delete notification:", e);
+    }
+  };
+
+  const handleToggleNotifPublished = async (notif: SchoolNotification) => {
+    try {
+      const updated = await api.updateSchoolNotification(notif.id, { is_published: !notif.is_published });
+      setNotifications((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+    } catch (e) {
+      console.error("Failed to toggle notification:", e);
+    }
+  };
+
+  const handleSaveBanner = async () => {
+    if (!bannerForm.title.trim()) {
+      alert("Укажите заголовок");
+      return;
+    }
+    try {
+      setSavingBanner(true);
+      if (editingBanner) {
+        const updated = await api.updateHomeBanner(editingBanner.id, bannerForm);
+        setBanners((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+      } else {
+        const created = await api.createHomeBanner(bannerForm);
+        setBanners((prev) => [...prev, created]);
+      }
+      setBannerDialogOpen(false);
+      setEditingBanner(null);
+    } catch (error) {
+      console.error("Failed to save banner:", error);
+      alert("Ошибка при сохранении баннера");
+    } finally {
+      setSavingBanner(false);
+    }
+  };
+
+  const handleDeleteBanner = async (id: string) => {
+    if (!confirm("Удалить баннер?")) return;
+    try {
+      await api.deleteHomeBanner(id);
+      setBanners((prev) => prev.filter((b) => b.id !== id));
+    } catch (error) {
+      console.error("Failed to delete banner:", error);
+      alert("Ошибка при удалении");
+    }
+  };
+
+  const handleUploadBannerImage = async (file: File) => {
+    try {
+      setUploadingBannerImage(true);
+      const { url } = await api.uploadBannerImage(file);
+      setBannerForm((prev) => ({ ...prev, background_image_url: url }));
+    } catch (e) {
+      console.error("Failed to upload image:", e);
+      alert((e as Error).message || "Не удалось загрузить изображение");
+    } finally {
+      setUploadingBannerImage(false);
+    }
+  };
+
+  const handleToggleBannerActive = async (banner: HomeBanner) => {
+    try {
+      const updated = await api.updateHomeBanner(banner.id, { is_active: !banner.is_active });
+      setBanners((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+    } catch (error) {
+      console.error("Failed to toggle banner:", error);
     }
   };
 
@@ -640,6 +917,8 @@ export function SchoolPage() {
           <TabsTrigger value="locations">Филиалы</TabsTrigger>
           <TabsTrigger value="exams">Экзамены</TabsTrigger>
           <TabsTrigger value="subscriptions">Абонементы</TabsTrigger>
+          <TabsTrigger value="notifications">Уведомления</TabsTrigger>
+          <TabsTrigger value="home-info">Инфо на главной</TabsTrigger>
           <TabsTrigger value="settings">Настройки</TabsTrigger>
         </TabsList>
 
@@ -1229,6 +1508,96 @@ export function SchoolPage() {
               </div>
             </CardContent>
           </Card>
+
+          <Card className="mt-6">
+            <CardHeader className="flex-row items-start justify-between space-y-0">
+              <div>
+                <CardTitle>Баннеры на главной</CardTitle>
+                <CardDescription>
+                  Показываются в мобильном приложении ученикам без активных групп
+                </CardDescription>
+              </div>
+              {isAdmin && (
+                <Button onClick={() => handleOpenBannerDialog()} className="gap-2">
+                  <Plus className="w-4 h-4" />
+                  Добавить баннер
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent className="p-0">
+              {banners.length === 0 ? (
+                <div className="text-center py-10 text-slate-500">Баннеры не добавлены</div>
+              ) : (
+                <div className="divide-y">
+                  {[...banners].sort((a, b) => a.sort_order - b.sort_order).map((banner) => (
+                    <div key={banner.id} className="flex items-center gap-4 p-4">
+                      <div
+                        className="w-32 h-16 rounded-xl flex items-center px-3 flex-shrink-0"
+                        style={{
+                          background: `linear-gradient(135deg, ${banner.gradient_from}, ${banner.gradient_to})`,
+                        }}
+                      >
+                        <span className="text-white font-bold text-sm truncate">
+                          {banner.icon ? `${banner.icon} ` : ""}{banner.title}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-slate-900">{banner.title}</span>
+                          {banner.badge_text && (
+                            <Badge style={{ backgroundColor: banner.badge_color ?? "#f59e0b", color: "#fff" }}>
+                              {banner.badge_text}
+                            </Badge>
+                          )}
+                          {!banner.is_active && (
+                            <Badge variant="secondary">Выключен</Badge>
+                          )}
+                        </div>
+                        {banner.subtitle && (
+                          <div className="text-sm text-slate-500 mt-0.5 truncate">{banner.subtitle}</div>
+                        )}
+                        <div className="text-xs text-slate-400 mt-1">
+                          Порядок: {banner.sort_order}
+                          {banner.action_url ? ` · ${banner.action_url}` : ""}
+                        </div>
+                      </div>
+                      {isAdmin && (
+                        <div className="flex items-center gap-1">
+                          {banner.signup_enabled && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOpenSignups(banner)}
+                            >
+                              Заявки
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={banner.is_active ? "Выключить" : "Включить"}
+                            onClick={() => handleToggleBannerActive(banner)}
+                          >
+                            {banner.is_active ? (
+                              <ToggleRight className="w-5 h-5 text-green-600" />
+                            ) : (
+                              <ToggleLeft className="w-5 h-5 text-slate-400" />
+                            )}
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleOpenBannerDialog(banner)}>
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDeleteBanner(banner.id)}>
+                            <Trash2 className="w-4 h-4 text-red-600" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Subscriptions Tab */}
@@ -1327,6 +1696,330 @@ export function SchoolPage() {
               </Table>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Notifications Tab */}
+        <TabsContent value="notifications">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Школьные уведомления</h2>
+            {isAdmin && (
+              <Button onClick={() => handleOpenNotifDialog()} className="gap-2">
+                <Plus className="w-4 h-4" />
+                Новое уведомление
+              </Button>
+            )}
+          </div>
+          <Card>
+            <CardContent className="p-0">
+              {notifications.length === 0 ? (
+                <div className="p-8 text-center text-sm text-slate-500">Пока нет уведомлений</div>
+              ) : (
+                <div className="divide-y">
+                  {notifications.map((n) => (
+                    <div key={n.id} className="flex items-center gap-4 p-4">
+                      <div
+                        className="w-12 h-12 rounded-xl flex items-center justify-center text-xl"
+                        style={{ backgroundColor: (n.color ?? "#4f46e5") + "22" }}
+                      >
+                        {n.icon || "🔔"}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-slate-900">{n.title}</span>
+                          {!n.is_published && (
+                            <Badge variant="secondary">Черновик</Badge>
+                          )}
+                        </div>
+                        <div className="text-sm text-slate-500 mt-0.5 line-clamp-2">{n.body}</div>
+                        <div className="text-xs text-slate-400 mt-1">
+                          {new Date(n.created_at).toLocaleString("ru-RU")}
+                          {n.action_url ? ` · ${n.action_url}` : ""}
+                        </div>
+                      </div>
+                      {isAdmin && (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={n.is_published ? "Снять с публикации" : "Опубликовать"}
+                            onClick={() => handleToggleNotifPublished(n)}
+                          >
+                            {n.is_published ? (
+                              <ToggleRight className="w-5 h-5 text-green-600" />
+                            ) : (
+                              <ToggleLeft className="w-5 h-5 text-slate-400" />
+                            )}
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleOpenNotifDialog(n)}>
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDeleteNotif(n.id)}>
+                            <Trash2 className="w-4 h-4 text-red-600" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Home Info Card Tab */}
+        <TabsContent value="home-info">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Инфо-карточка на главной (мобильное приложение)</h2>
+            {isAdmin && infoCard && (
+              <Button
+                className="gap-2"
+                disabled={savingInfoCard}
+                onClick={async () => {
+                  try {
+                    setSavingInfoCard(true);
+                    const updated = await api.updateHomeInfoCard(infoCard);
+                    setInfoCard(updated);
+                    alert("Сохранено");
+                  } catch (e) {
+                    alert("Ошибка сохранения: " + (e as Error).message);
+                  } finally {
+                    setSavingInfoCard(false);
+                  }
+                }}
+              >
+                {savingInfoCard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Сохранить
+              </Button>
+            )}
+          </div>
+
+          {!infoCard ? (
+            <div className="p-8 text-center text-sm text-slate-500">Загрузка...</div>
+          ) : (
+            <div className="grid gap-4">
+              {/* Preview */}
+              <div
+                className="rounded-2xl p-5 text-white"
+                style={{ background: `linear-gradient(135deg, ${infoCard.gradient_from}, ${infoCard.gradient_to})` }}
+              >
+                <div className="flex items-center gap-3 mb-4">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+                    style={{ backgroundColor: infoCard.logo_bg_color }}
+                  >
+                    {infoCard.logo_emoji}
+                  </div>
+                  <div>
+                    <div className="font-bold text-sm">{infoCard.center_name}</div>
+                    <div className="text-xs opacity-80">{infoCard.center_subtitle}</div>
+                  </div>
+                </div>
+                <div className="text-lg font-bold mb-1">
+                  {infoCard.heading_line1}{" "}
+                  {infoCard.heading_line2 && (
+                    <span style={{ color: infoCard.heading_accent_color }}>{infoCard.heading_line2}</span>
+                  )}
+                </div>
+                {infoCard.subheading && <div className="text-sm opacity-90 mb-3">{infoCard.subheading}</div>}
+                <div className="grid grid-cols-4 gap-2 mb-3">
+                  {infoCard.stats.map((s, i) => (
+                    <div key={i} className="bg-white/10 rounded-lg p-2 text-center">
+                      <div className="font-bold">{s.value}</div>
+                      <div className="text-[10px] opacity-80">{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {infoCard.tags.map((t, i) => (
+                    <span key={i} className="bg-white/20 px-2 py-1 rounded-full text-xs">
+                      {t.icon} {t.text}
+                    </span>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {infoCard.formats.map((f, i) => (
+                    <div
+                      key={i}
+                      className="rounded-lg p-3"
+                      style={{ backgroundColor: f.bg_color ?? "rgba(255,255,255,0.15)" }}
+                    >
+                      <div className="font-bold text-sm">
+                        {f.icon} {f.title}
+                      </div>
+                      {f.subtitle && <div className="text-xs opacity-90">{f.subtitle}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <Card>
+                <CardContent className="p-4 space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Название центра</Label>
+                      <Input value={infoCard.center_name} onChange={(e) => setInfoCard({ ...infoCard, center_name: e.target.value })} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Подпись под названием</Label>
+                      <Input value={infoCard.center_subtitle} onChange={(e) => setInfoCard({ ...infoCard, center_subtitle: e.target.value })} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Логотип (emoji)</Label>
+                      <Input value={infoCard.logo_emoji} onChange={(e) => setInfoCard({ ...infoCard, logo_emoji: e.target.value })} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Фон логотипа</Label>
+                      <Input type="color" value={infoCard.logo_bg_color} onChange={(e) => setInfoCard({ ...infoCard, logo_bg_color: e.target.value })} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Цвет акцента в заголовке</Label>
+                      <Input type="color" value={infoCard.heading_accent_color} onChange={(e) => setInfoCard({ ...infoCard, heading_accent_color: e.target.value })} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Градиент (от)</Label>
+                      <Input type="color" value={infoCard.gradient_from} onChange={(e) => setInfoCard({ ...infoCard, gradient_from: e.target.value })} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Градиент (до)</Label>
+                      <Input type="color" value={infoCard.gradient_to} onChange={(e) => setInfoCard({ ...infoCard, gradient_to: e.target.value })} />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Заголовок (первая строка)</Label>
+                    <Input value={infoCard.heading_line1} onChange={(e) => setInfoCard({ ...infoCard, heading_line1: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Акцент (вторая строка, выделенная цветом)</Label>
+                    <Input value={infoCard.heading_line2 ?? ""} onChange={(e) => setInfoCard({ ...infoCard, heading_line2: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Подпись под заголовком</Label>
+                    <Input value={infoCard.subheading ?? ""} onChange={(e) => setInfoCard({ ...infoCard, subheading: e.target.value })} />
+                  </div>
+
+                  {/* Stats editor */}
+                  <div className="space-y-2 border-t pt-4">
+                    <div className="flex items-center justify-between">
+                      <Label>Статистика (цифры)</Label>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setInfoCard({ ...infoCard, stats: [...infoCard.stats, { value: "", label: "" }] })}>
+                        <Plus className="w-3 h-3 mr-1" />Добавить
+                      </Button>
+                    </div>
+                    {infoCard.stats.map((s, idx) => (
+                      <div key={idx} className="grid grid-cols-[1fr_2fr_auto] gap-2 items-end">
+                        <Input placeholder="100" value={s.value} onChange={(e) => {
+                          const next = [...infoCard.stats];
+                          next[idx] = { ...s, value: e.target.value };
+                          setInfoCard({ ...infoCard, stats: next });
+                        }} />
+                        <Input placeholder="баллы каждый год" value={s.label} onChange={(e) => {
+                          const next = [...infoCard.stats];
+                          next[idx] = { ...s, label: e.target.value };
+                          setInfoCard({ ...infoCard, stats: next });
+                        }} />
+                        <Button type="button" variant="ghost" size="icon" onClick={() => setInfoCard({ ...infoCard, stats: infoCard.stats.filter((_, i) => i !== idx) })}>
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Tags editor */}
+                  <div className="space-y-2 border-t pt-4">
+                    <div className="flex items-center justify-between">
+                      <Label>Теги (преимущества)</Label>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setInfoCard({ ...infoCard, tags: [...infoCard.tags, { icon: "✅", text: "" }] })}>
+                        <Plus className="w-3 h-3 mr-1" />Добавить
+                      </Button>
+                    </div>
+                    {infoCard.tags.map((t, idx) => (
+                      <div key={idx} className="grid grid-cols-[80px_1fr_auto] gap-2 items-end">
+                        <Input placeholder="✅" value={t.icon ?? ""} onChange={(e) => {
+                          const next = [...infoCard.tags];
+                          next[idx] = { ...t, icon: e.target.value };
+                          setInfoCard({ ...infoCard, tags: next });
+                        }} />
+                        <Input placeholder="Преподаватели 100 баллов" value={t.text} onChange={(e) => {
+                          const next = [...infoCard.tags];
+                          next[idx] = { ...t, text: e.target.value };
+                          setInfoCard({ ...infoCard, tags: next });
+                        }} />
+                        <Button type="button" variant="ghost" size="icon" onClick={() => setInfoCard({ ...infoCard, tags: infoCard.tags.filter((_, i) => i !== idx) })}>
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Formats editor */}
+                  <div className="space-y-2 border-t pt-4">
+                    <div className="flex items-center justify-between">
+                      <Label>Форматы обучения</Label>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setInfoCard({ ...infoCard, formats: [...infoCard.formats, { icon: "🏠", title: "", subtitle: "", bg_color: "#fb923c" }] })}>
+                        <Plus className="w-3 h-3 mr-1" />Добавить
+                      </Button>
+                    </div>
+                    {infoCard.formats.map((f, idx) => (
+                      <div key={idx} className="border rounded-lg p-3 space-y-2">
+                        <div className="grid grid-cols-[60px_1fr_60px_auto] gap-2 items-end">
+                          <Input placeholder="🏠" value={f.icon ?? ""} onChange={(e) => {
+                            const next = [...infoCard.formats];
+                            next[idx] = { ...f, icon: e.target.value };
+                            setInfoCard({ ...infoCard, formats: next });
+                          }} />
+                          <Input placeholder="Офлайн" value={f.title} onChange={(e) => {
+                            const next = [...infoCard.formats];
+                            next[idx] = { ...f, title: e.target.value };
+                            setInfoCard({ ...infoCard, formats: next });
+                          }} />
+                          <Input type="color" value={f.bg_color ?? "#fb923c"} onChange={(e) => {
+                            const next = [...infoCard.formats];
+                            next[idx] = { ...f, bg_color: e.target.value };
+                            setInfoCard({ ...infoCard, formats: next });
+                          }} />
+                          <Button type="button" variant="ghost" size="icon" onClick={() => setInfoCard({ ...infoCard, formats: infoCard.formats.filter((_, i) => i !== idx) })}>
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </Button>
+                        </div>
+                        <Input placeholder="до 10 человек" value={f.subtitle ?? ""} onChange={(e) => {
+                          const next = [...infoCard.formats];
+                          next[idx] = { ...f, subtitle: e.target.value };
+                          setInfoCard({ ...infoCard, formats: next });
+                        }} />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Buttons */}
+                  <div className="space-y-3 border-t pt-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={infoCard.trial_button_enabled} onChange={(e) => setInfoCard({ ...infoCard, trial_button_enabled: e.target.checked })} />
+                      <span className="text-sm font-medium">Показывать кнопку «Пробный урок»</span>
+                    </label>
+                    {infoCard.trial_button_enabled && (
+                      <Input placeholder="Текст кнопки" value={infoCard.trial_button_text} onChange={(e) => setInfoCard({ ...infoCard, trial_button_text: e.target.value })} />
+                    )}
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={infoCard.tariffs_button_enabled} onChange={(e) => setInfoCard({ ...infoCard, tariffs_button_enabled: e.target.checked })} />
+                      <span className="text-sm font-medium">Показывать кнопку «Тарифы»</span>
+                    </label>
+                    {infoCard.tariffs_button_enabled && (
+                      <Input placeholder="Текст кнопки" value={infoCard.tariffs_button_text} onChange={(e) => setInfoCard({ ...infoCard, tariffs_button_text: e.target.value })} />
+                    )}
+                  </div>
+
+                  <label className="flex items-center gap-2 cursor-pointer border-t pt-4">
+                    <input type="checkbox" checked={infoCard.is_visible} onChange={(e) => setInfoCard({ ...infoCard, is_visible: e.target.checked })} />
+                    <span className="text-sm">Показывать карточку на главной</span>
+                  </label>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 
@@ -2010,6 +2703,512 @@ export function SchoolPage() {
               </TabsContent>
             )}
           </Tabs>
+        </DialogContent>
+      </Dialog>
+
+      {/* Home Banner Dialog */}
+      <Dialog open={bannerDialogOpen} onOpenChange={setBannerDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingBanner ? "Редактировать баннер" : "Новый баннер"}</DialogTitle>
+            <DialogDescription>
+              Баннер показывается в мобильном приложении на главной ученикам без групп
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="rounded-2xl p-5 text-white relative overflow-hidden"
+              style={{
+                background: bannerForm.background_image_url
+                  ? `linear-gradient(135deg, rgba(0,0,0,0.35), rgba(0,0,0,0.55)), url(${bannerForm.background_image_url}) center/cover no-repeat`
+                  : `linear-gradient(135deg, ${bannerForm.gradient_from}, ${bannerForm.gradient_to})`,
+              }}>
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                {bannerForm.badge_text && (
+                  <span className="px-2 py-1 rounded-full text-xs font-semibold"
+                    style={{ backgroundColor: bannerForm.badge_color ?? "#f59e0b" }}>
+                    {bannerForm.badge_text}
+                  </span>
+                )}
+                {bannerForm.price_text && (
+                  <span className="px-2 py-1 rounded-full text-xs font-semibold bg-white/20">
+                    {bannerForm.price_text}
+                  </span>
+                )}
+              </div>
+              <div className="text-xl font-bold mb-1">
+                {bannerForm.icon ? `${bannerForm.icon} ` : ""}{bannerForm.title || "Заголовок"}
+              </div>
+              {bannerForm.subtitle && <div className="text-sm opacity-90 mb-2">{bannerForm.subtitle}</div>}
+              {bannerForm.footer_tags && <div className="text-xs opacity-75">{bannerForm.footer_tags}</div>}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Заголовок</Label>
+                <Input
+                  value={bannerForm.title}
+                  onChange={(e) => setBannerForm({ ...bannerForm, title: e.target.value })}
+                  placeholder="Летний курс"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Иконка (emoji)</Label>
+                <Input
+                  value={bannerForm.icon ?? ""}
+                  onChange={(e) => setBannerForm({ ...bannerForm, icon: e.target.value })}
+                  placeholder="☀️"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Описание</Label>
+              <Textarea
+                value={bannerForm.subtitle ?? ""}
+                onChange={(e) => setBannerForm({ ...bannerForm, subtitle: e.target.value })}
+                placeholder="Интенсивная подготовка к ЕГЭ/ОГЭ"
+                rows={2}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Badge (верхний бейдж)</Label>
+                <Input
+                  value={bannerForm.badge_text ?? ""}
+                  onChange={(e) => setBannerForm({ ...bannerForm, badge_text: e.target.value })}
+                  placeholder="ЛЕТО 2025"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Цена / правый бейдж</Label>
+                <Input
+                  value={bannerForm.price_text ?? ""}
+                  onChange={(e) => setBannerForm({ ...bannerForm, price_text: e.target.value })}
+                  placeholder="от 990 ₽"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Теги внизу (через · или запятую)</Label>
+              <Input
+                value={bannerForm.footer_tags ?? ""}
+                onChange={(e) => setBannerForm({ ...bannerForm, footer_tags: e.target.value })}
+                placeholder="Видео · Задачи · ДЗ"
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Цвет градиента (от)</Label>
+                <Input
+                  type="color"
+                  value={bannerForm.gradient_from ?? "#4f46e5"}
+                  onChange={(e) => setBannerForm({ ...bannerForm, gradient_from: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Цвет градиента (до)</Label>
+                <Input
+                  type="color"
+                  value={bannerForm.gradient_to ?? "#7c3aed"}
+                  onChange={(e) => setBannerForm({ ...bannerForm, gradient_to: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Цвет badge</Label>
+                <Input
+                  type="color"
+                  value={bannerForm.badge_color ?? "#f59e0b"}
+                  onChange={(e) => setBannerForm({ ...bannerForm, badge_color: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2 border-t pt-4">
+              <Label>Фоновое изображение (заменяет градиент)</Label>
+              <div className="flex items-start gap-3">
+                {bannerForm.background_image_url ? (
+                  <div className="relative w-32 h-20 rounded-lg overflow-hidden border shrink-0">
+                    <img
+                      src={bannerForm.background_image_url}
+                      alt="background"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-32 h-20 rounded-lg border border-dashed flex items-center justify-center text-xs text-muted-foreground shrink-0">
+                    Нет фото
+                  </div>
+                )}
+                <div className="flex-1 space-y-2">
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    disabled={uploadingBannerImage}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleUploadBannerImage(file);
+                      e.target.value = "";
+                    }}
+                  />
+                  <Input
+                    placeholder="или вставьте URL"
+                    value={bannerForm.background_image_url ?? ""}
+                    onChange={(e) => setBannerForm({ ...bannerForm, background_image_url: e.target.value })}
+                  />
+                  <div className="flex items-center gap-2">
+                    {uploadingBannerImage && (
+                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Загрузка...
+                      </span>
+                    )}
+                    {bannerForm.background_image_url && !uploadingBannerImage && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setBannerForm({ ...bannerForm, background_image_url: "" })}
+                      >
+                        <Trash2 className="w-3 h-3 mr-1" />
+                        Удалить фото
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Ссылка при нажатии</Label>
+                <Input
+                  value={bannerForm.action_url ?? ""}
+                  onChange={(e) => setBannerForm({ ...bannerForm, action_url: e.target.value })}
+                  placeholder="https://..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Порядок сортировки</Label>
+                <Input
+                  type="number"
+                  value={bannerForm.sort_order ?? 0}
+                  onChange={(e) => setBannerForm({ ...bannerForm, sort_order: parseInt(e.target.value) || 0 })}
+                />
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={bannerForm.is_active ?? true}
+                onChange={(e) => setBannerForm({ ...bannerForm, is_active: e.target.checked })}
+              />
+              <span className="text-sm">Показывать в приложении</span>
+            </label>
+
+            <div className="border-t pt-4 mt-2">
+              <label className="flex items-center gap-2 cursor-pointer mb-3">
+                <input
+                  type="checkbox"
+                  checked={bannerForm.signup_enabled ?? false}
+                  onChange={(e) => setBannerForm({ ...bannerForm, signup_enabled: e.target.checked })}
+                />
+                <span className="text-sm font-medium">Включить форму записи</span>
+              </label>
+
+              {bannerForm.signup_enabled && (
+                <div className="space-y-3 pl-6">
+                  <div className="space-y-2">
+                    <Label>Текст кнопки</Label>
+                    <Input
+                      value={bannerForm.signup_button_text ?? ""}
+                      onChange={(e) => setBannerForm({ ...bannerForm, signup_button_text: e.target.value })}
+                      placeholder="Записаться"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Поля формы</Label>
+                      <Button type="button" variant="outline" size="sm" onClick={addFormField} className="gap-1">
+                        <Plus className="w-3 h-3" />
+                        Добавить поле
+                      </Button>
+                    </div>
+
+                    {(bannerForm.form_fields ?? []).length === 0 && (
+                      <div className="text-xs text-slate-500 py-2">
+                        Нет полей. Имя, телефон и email ученика отправляются автоматически — добавьте дополнительные поля, если нужно.
+                      </div>
+                    )}
+
+                    {(bannerForm.form_fields ?? []).map((f, idx) => (
+                      <div key={idx} className="border rounded-lg p-3 space-y-2 bg-slate-50">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500">#{idx + 1}</span>
+                          <div className="flex-1" />
+                          <Button type="button" variant="ghost" size="icon" onClick={() => moveFormField(idx, -1)} disabled={idx === 0}>
+                            <ChevronUp className="w-4 h-4" />
+                          </Button>
+                          <Button type="button" variant="ghost" size="icon" onClick={() => moveFormField(idx, 1)} disabled={idx === (bannerForm.form_fields?.length ?? 0) - 1}>
+                            <ChevronDown className="w-4 h-4" />
+                          </Button>
+                          <Button type="button" variant="ghost" size="icon" onClick={() => removeFormField(idx)}>
+                            <Trash2 className="w-4 h-4 text-red-600" />
+                          </Button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Тип</Label>
+                            <select
+                              className="w-full h-9 px-3 rounded-md border border-input bg-white text-sm"
+                              value={f.field_type}
+                              onChange={(e) => updateFormField(idx, { field_type: e.target.value as any })}
+                            >
+                              <option value="text">Текст</option>
+                              <option value="textarea">Многострочный</option>
+                              <option value="phone">Телефон</option>
+                              <option value="email">Email</option>
+                              <option value="number">Число</option>
+                              <option value="select">Выпадающий список</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Ключ (латиница)</Label>
+                            <Input
+                              value={f.key}
+                              onChange={(e) => updateFormField(idx, { key: e.target.value })}
+                              placeholder="class_number"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Подпись</Label>
+                          <Input
+                            value={f.label}
+                            onChange={(e) => updateFormField(idx, { label: e.target.value })}
+                            placeholder="Класс"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Placeholder</Label>
+                          <Input
+                            value={f.placeholder ?? ""}
+                            onChange={(e) => updateFormField(idx, { placeholder: e.target.value })}
+                            placeholder="Введите значение..."
+                          />
+                        </div>
+                        {f.field_type === "select" && (
+                          <div className="space-y-1">
+                            <Label className="text-xs">Варианты (через запятую)</Label>
+                            <Input
+                              value={(f.options ?? []).join(", ")}
+                              onChange={(e) =>
+                                updateFormField(idx, {
+                                  options: e.target.value
+                                    .split(",")
+                                    .map((s) => s.trim())
+                                    .filter(Boolean),
+                                })
+                              }
+                              placeholder="9, 10, 11"
+                            />
+                          </div>
+                        )}
+                        <label className="flex items-center gap-2 cursor-pointer text-xs">
+                          <input
+                            type="checkbox"
+                            checked={f.required ?? false}
+                            onChange={(e) => updateFormField(idx, { required: e.target.checked })}
+                          />
+                          <span>Обязательное</span>
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBannerDialogOpen(false)} disabled={savingBanner}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSaveBanner}
+              disabled={savingBanner || !bannerForm.title.trim()}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {savingBanner ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Сохранение...</> : "Сохранить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Banner Signups Dialog */}
+      <Dialog open={signupsDialogOpen} onOpenChange={setSignupsDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Заявки: {signupsBanner?.title}</DialogTitle>
+            <DialogDescription>
+              Список учеников, подавших заявку через этот баннер
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            {loadingSignups ? (
+              <div className="text-center py-8 text-slate-500">
+                <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                Загрузка...
+              </div>
+            ) : signups.length === 0 ? (
+              <div className="text-center py-8 text-slate-500 text-sm">Заявок пока нет</div>
+            ) : (
+              <div className="space-y-2">
+                {signups.map((s) => (
+                  <div key={s.id} className="border rounded-lg p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium">{s.student_name || "—"}</div>
+                        <div className="text-xs text-slate-500">
+                          {s.student_phone || "—"} · {s.student_email || "—"}
+                        </div>
+                        <div className="text-xs text-slate-400 mt-0.5">
+                          {new Date(s.created_at).toLocaleString("ru-RU")}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <select
+                          className="h-8 px-2 rounded-md border border-input bg-white text-xs"
+                          value={s.status}
+                          onChange={(e) => handleUpdateSignupStatus(s.id, e.target.value)}
+                        >
+                          <option value="new">Новая</option>
+                          <option value="contacted">Связались</option>
+                          <option value="converted">Зачислен</option>
+                          <option value="rejected">Отклонена</option>
+                        </select>
+                        <Button variant="ghost" size="icon" onClick={() => handleDeleteSignup(s.id)}>
+                          <Trash2 className="w-4 h-4 text-red-600" />
+                        </Button>
+                      </div>
+                    </div>
+                    {Object.keys(s.form_data ?? {}).length > 0 && (
+                      <div className="border-t pt-2 text-xs space-y-0.5">
+                        {Object.entries(s.form_data).map(([k, v]) => (
+                          <div key={k}>
+                            <span className="text-slate-500">{k}:</span>{" "}
+                            <span>{String(v)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSignupsDialogOpen(false)}>
+              Закрыть
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Notification Dialog */}
+      <Dialog open={notifDialogOpen} onOpenChange={setNotifDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingNotif ? "Редактировать уведомление" : "Новое уведомление"}</DialogTitle>
+            <DialogDescription>
+              Будет показано в мобильном приложении всем ученикам
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="rounded-xl p-4 flex items-start gap-3 bg-slate-50 border">
+              <div
+                className="w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0"
+                style={{ backgroundColor: (notifForm.color ?? "#4f46e5") + "22" }}
+              >
+                {notifForm.icon || "🔔"}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-sm text-slate-900">{notifForm.title || "Заголовок"}</div>
+                <div className="text-xs text-slate-600 mt-0.5">{notifForm.body || "Текст уведомления"}</div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Заголовок</Label>
+              <Input
+                value={notifForm.title}
+                onChange={(e) => setNotifForm({ ...notifForm, title: e.target.value })}
+                placeholder="Летние каникулы"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Текст</Label>
+              <Textarea
+                value={notifForm.body}
+                onChange={(e) => setNotifForm({ ...notifForm, body: e.target.value })}
+                placeholder="С 1 июля по 15 августа занятия не проводятся..."
+                rows={4}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Иконка (emoji)</Label>
+                <Input
+                  value={notifForm.icon ?? ""}
+                  onChange={(e) => setNotifForm({ ...notifForm, icon: e.target.value })}
+                  placeholder="📢"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Акцентный цвет</Label>
+                <Input
+                  type="color"
+                  value={notifForm.color ?? "#4f46e5"}
+                  onChange={(e) => setNotifForm({ ...notifForm, color: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Ссылка (необязательно)</Label>
+              <Input
+                value={notifForm.action_url ?? ""}
+                onChange={(e) => setNotifForm({ ...notifForm, action_url: e.target.value })}
+                placeholder="https://..."
+              />
+            </div>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notifForm.is_published ?? true}
+                onChange={(e) => setNotifForm({ ...notifForm, is_published: e.target.checked })}
+              />
+              <span className="text-sm">Опубликовать сразу</span>
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNotifDialogOpen(false)} disabled={savingNotif}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSaveNotif}
+              disabled={savingNotif || !notifForm.title.trim() || !notifForm.body.trim()}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {savingNotif ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Сохранение...</> : "Сохранить"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

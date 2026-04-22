@@ -20,6 +20,15 @@ import type {
   SchoolLocation,
   SchoolLocationCreate,
   SchoolLocationUpdate,
+  HomeBanner,
+  HomeBannerCreate,
+  HomeBannerUpdate,
+  HomeBannerSignup,
+  SchoolNotification,
+  SchoolNotificationCreate,
+  SchoolNotificationUpdate,
+  HomeInfoCard,
+  HomeInfoCardUpdate,
   Exam,
   ExamCreate,
   ExamUpdate,
@@ -634,6 +643,100 @@ class ApiClient {
   async deleteSchoolLocation(id: string): Promise<void> {
     return this.request<void>(`/school-locations/${id}`, {
       method: "DELETE",
+    });
+  }
+
+  // Home banners
+  async getHomeBanners(): Promise<HomeBanner[]> {
+    return this.request<HomeBanner[]>("/home-banners");
+  }
+
+  async createHomeBanner(data: HomeBannerCreate): Promise<HomeBanner> {
+    return this.request<HomeBanner>("/home-banners", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateHomeBanner(id: string, data: HomeBannerUpdate): Promise<HomeBanner> {
+    return this.request<HomeBanner>(`/home-banners/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteHomeBanner(id: string): Promise<void> {
+    return this.request<void>(`/home-banners/${id}`, {
+      method: "DELETE",
+    });
+  }
+
+  async getBannerSignups(bannerId: string): Promise<HomeBannerSignup[]> {
+    return this.request<HomeBannerSignup[]>(`/home-banners/${bannerId}/signups`);
+  }
+
+  async updateBannerSignup(signupId: string, data: { status?: string }): Promise<HomeBannerSignup> {
+    return this.request<HomeBannerSignup>(`/home-banners/signups/${signupId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteBannerSignup(signupId: string): Promise<void> {
+    return this.request<void>(`/home-banners/signups/${signupId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async uploadBannerImage(file: File): Promise<{ url: string; key: string }> {
+    const form = new FormData();
+    form.append("file", file);
+    const response = await fetch(`${this.baseURL}/home-banners/upload-image`, {
+      method: "POST",
+      headers: { ...this.getAuthHeader() },
+      body: form,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || "Не удалось загрузить изображение");
+    }
+    return response.json();
+  }
+
+  // School notifications
+  async getSchoolNotifications(): Promise<SchoolNotification[]> {
+    return this.request<SchoolNotification[]>("/notifications");
+  }
+
+  async createSchoolNotification(data: SchoolNotificationCreate): Promise<SchoolNotification> {
+    return this.request<SchoolNotification>("/notifications", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSchoolNotification(id: string, data: SchoolNotificationUpdate): Promise<SchoolNotification> {
+    return this.request<SchoolNotification>(`/notifications/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSchoolNotification(id: string): Promise<void> {
+    return this.request<void>(`/notifications/${id}`, {
+      method: "DELETE",
+    });
+  }
+
+  // Home info card
+  async getHomeInfoCard(): Promise<HomeInfoCard> {
+    return this.request<HomeInfoCard>("/home-info");
+  }
+
+  async updateHomeInfoCard(data: HomeInfoCardUpdate): Promise<HomeInfoCard> {
+    return this.request<HomeInfoCard>("/home-info", {
+      method: "PATCH",
+      body: JSON.stringify(data),
     });
   }
 

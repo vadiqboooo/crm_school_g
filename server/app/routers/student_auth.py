@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.security import hash_password, verify_password, create_access_token, create_refresh_token, decode_token
 from app.database import get_db
 from app.models.student import Student
+from app.models.app_user import AppUser
 
 router = APIRouter(prefix="/student-auth", tags=["student-auth"])
 
@@ -166,3 +167,49 @@ async def get_current_student_dep(
     if not student or student.status != "active":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Студент не найден")
     return student
+
+
+class PortalIdentity:
+    """Авторизованный пользователь портала: либо Student, либо AppUser (ещё не привязанный)."""
+
+    def __init__(self, student: Student | None, app_user: AppUser | None):
+        self.student = student
+        self.app_user = app_user
+
+    @property
+    def student_id(self) -> uuid.UUID | None:
+        return self.student.id if self.student else None
+
+
+async def get_portal_identity_dep(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+    db: AsyncSession = Depends(get_db),
+) -> PortalIdentity:
+    """Мягкая версия get_current_student_dep: не падает 403 для app_user без student_id."""
+    payload = decode_token(credentials.credentials)
+    if not payload:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный токен")
+
+    role = payload.get("role")
+    if role == "student":
+        student_res = await db.execute(
+            select(Student).where(Student.id == uuid.UUID(payload["sub"]))
+        )
+        student = student_res.scalar_one_or_none()
+        if not student or student.status != "active":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Студент не найден")
+        return PortalIdentity(student=student, app_user=None)
+
+    if role == "app_user":
+        app_user = await db.get(AppUser, uuid.UUID(payload["sub"]))
+        if not app_user or not app_user.is_active:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Пользователь не найден")
+        student = None
+        if app_user.student_id:
+            st_res = await db.execute(select(Student).where(Student.id == app_user.student_id))
+            st = st_res.scalar_one_or_none()
+            if st and st.status == "active":
+                student = st
+        return PortalIdentity(student=student, app_user=app_user)
+
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный токен")

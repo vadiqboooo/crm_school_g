@@ -12,3 +12,7 @@ from app.models.schedule import Schedule
 from app.models.school_location import SchoolLocation
 from app.models.chat import ChatRoom, ChatRoomMember, ChatMessage
 from app.models.app_user import AppUser
+from app.models.home_banner import HomeBanner
+from app.models.notification import Notification, NotificationRead
+from app.models.home_info_card import HomeInfoCard
+from app.models.email_verification_code import EmailVerificationCode

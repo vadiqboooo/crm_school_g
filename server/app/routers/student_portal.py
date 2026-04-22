@@ -29,9 +29,14 @@ from app.models.lesson import Lesson, LessonAttendance
 from app.models.schedule import Schedule
 from app.models.student import Student
 from app.models.subject import Subject
+from app.models.home_banner import HomeBanner, HomeBannerSignup
+from app.models.notification import Notification, NotificationRead
+from app.models.home_info_card import HomeInfoCard
+from app.models.finance import SubscriptionPlan
+from app.models.lead import Lead, LeadStatus
 from app.auth.security import decode_token, verify_password
 from app.models.app_user import AppUser
-from app.routers.student_auth import get_current_student_dep
+from app.routers.student_auth import get_current_student_dep, get_portal_identity_dep, PortalIdentity
 
 _bearer = HTTPBearer()
 
@@ -156,16 +161,32 @@ def _calc_end_time(start: str, duration_minutes: int) -> str:
 
 @router.get("/me", response_model=StudentProfileResponse)
 async def get_my_profile(
-    student: Student = Depends(get_current_student_dep),
+    identity: PortalIdentity = Depends(get_portal_identity_dep),
     db: AsyncSession = Depends(get_db),
 ):
+    # Email-зарегистрированный AppUser без привязанного студента — отдаём базовый профиль
+    if identity.student is None:
+        u = identity.app_user
+        return StudentProfileResponse(
+            id=str(u.id),
+            first_name=u.first_name or u.display_name,
+            last_name=u.last_name or "",
+            portal_login=None,
+            class_number=None,
+            balance=0.0,
+            phone=None,
+            email=u.email,
+            chat_display_name=None,
+            groups=[],
+        )
+
     result = await db.execute(
         select(Student)
         .options(
             selectinload(Student.groups).selectinload(GroupStudent.group).selectinload(Group.subject),
             selectinload(Student.groups).selectinload(GroupStudent.group).selectinload(Group.schedules),
         )
-        .where(Student.id == student.id)
+        .where(Student.id == identity.student.id)
     )
     s = result.scalar_one()
 
@@ -631,3 +652,364 @@ async def get_exam_results(
         )
         for r in results
     ]
+
+
+class HomeBannerFormFieldPublic(BaseModel):
+    id: str
+    field_type: str
+    key: str
+    label: str
+    placeholder: str | None
+    required: bool
+    options: list | None
+    sort_order: int
+
+
+class HomeBannerPublicResponse(BaseModel):
+    id: str
+    title: str
+    subtitle: str | None
+    badge_text: str | None
+    badge_color: str | None
+    price_text: str | None
+    footer_tags: str | None
+    icon: str | None
+    gradient_from: str
+    gradient_to: str
+    background_image_url: str | None
+    action_url: str | None
+    signup_enabled: bool
+    signup_button_text: str | None
+    form_fields: list[HomeBannerFormFieldPublic]
+
+
+class BannerSignupRequest(BaseModel):
+    form_data: dict
+
+
+@router.get("/banners", response_model=list[HomeBannerPublicResponse])
+async def list_home_banners(
+    _: PortalIdentity = Depends(get_portal_identity_dep),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(HomeBanner)
+        .options(selectinload(HomeBanner.form_fields))
+        .where(HomeBanner.is_active.is_(True))
+        .order_by(HomeBanner.sort_order, HomeBanner.created_at)
+    )
+    banners = result.scalars().all()
+    return [
+        HomeBannerPublicResponse(
+            id=str(b.id),
+            title=b.title,
+            subtitle=b.subtitle,
+            badge_text=b.badge_text,
+            badge_color=b.badge_color,
+            price_text=b.price_text,
+            footer_tags=b.footer_tags,
+            icon=b.icon,
+            gradient_from=b.gradient_from,
+            gradient_to=b.gradient_to,
+            background_image_url=b.background_image_url,
+            action_url=b.action_url,
+            signup_enabled=b.signup_enabled,
+            signup_button_text=b.signup_button_text,
+            form_fields=[
+                HomeBannerFormFieldPublic(
+                    id=str(f.id),
+                    field_type=f.field_type,
+                    key=f.key,
+                    label=f.label,
+                    placeholder=f.placeholder,
+                    required=f.required,
+                    options=f.options,
+                    sort_order=f.sort_order,
+                )
+                for f in b.form_fields
+            ],
+        )
+        for b in banners
+    ]
+
+
+@router.post("/banners/{banner_id}/signup", status_code=201)
+async def submit_banner_signup(
+    banner_id: uuid.UUID,
+    body: BannerSignupRequest,
+    student: Student = Depends(get_current_student_dep),
+    db: AsyncSession = Depends(get_db),
+):
+    banner_result = await db.execute(
+        select(HomeBanner).where(HomeBanner.id == banner_id, HomeBanner.is_active.is_(True))
+    )
+    banner = banner_result.scalar_one_or_none()
+    if not banner:
+        raise HTTPException(status_code=404, detail="Баннер не найден")
+    if not banner.signup_enabled:
+        raise HTTPException(status_code=400, detail="Запись на этот баннер закрыта")
+
+    signup = HomeBannerSignup(
+        banner_id=banner.id,
+        student_id=student.id,
+        student_name=f"{student.first_name} {student.last_name}".strip(),
+        student_phone=student.phone,
+        student_email=student.email,
+        form_data=body.form_data or {},
+        status="new",
+    )
+    db.add(signup)
+    await db.commit()
+    return {"message": "Заявка отправлена", "signup_id": str(signup.id)}
+
+
+# ── Notifications ──────────────────────────────────────────────────────────────
+
+class NotificationItem(BaseModel):
+    id: str
+    title: str
+    body: str
+    icon: str | None
+    color: str | None
+    action_url: str | None
+    created_at: str
+    is_read: bool
+
+
+@router.get("/notifications", response_model=list[NotificationItem])
+async def list_student_notifications(
+    identity: PortalIdentity = Depends(get_portal_identity_dep),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Notification)
+        .where(Notification.is_published.is_(True))
+        .order_by(Notification.created_at.desc())
+    )
+    notifs = result.scalars().all()
+
+    read_ids: set = set()
+    if identity.student is not None:
+        reads_result = await db.execute(
+            select(NotificationRead.notification_id).where(
+                NotificationRead.student_id == identity.student.id
+            )
+        )
+        read_ids = {nid for nid in reads_result.scalars().all()}
+
+    return [
+        NotificationItem(
+            id=str(n.id),
+            title=n.title,
+            body=n.body,
+            icon=n.icon,
+            color=n.color,
+            action_url=n.action_url,
+            created_at=n.created_at.isoformat(),
+            is_read=n.id in read_ids,
+        )
+        for n in notifs
+    ]
+
+
+@router.get("/notifications/unread-count")
+async def student_unread_count(
+    identity: PortalIdentity = Depends(get_portal_identity_dep),
+    db: AsyncSession = Depends(get_db),
+):
+    if identity.student is None:
+        return {"count": 0}
+
+    pub_result = await db.execute(
+        select(Notification.id).where(Notification.is_published.is_(True))
+    )
+    published_ids = {nid for nid in pub_result.scalars().all()}
+    if not published_ids:
+        return {"count": 0}
+
+    reads_result = await db.execute(
+        select(NotificationRead.notification_id).where(
+            NotificationRead.student_id == identity.student.id
+        )
+    )
+    read_ids = {nid for nid in reads_result.scalars().all()}
+    return {"count": len(published_ids - read_ids)}
+
+
+@router.post("/notifications/{notification_id}/read", status_code=204)
+async def mark_notification_read(
+    notification_id: uuid.UUID,
+    student: Student = Depends(get_current_student_dep),
+    db: AsyncSession = Depends(get_db),
+):
+    n_result = await db.execute(
+        select(Notification).where(
+            Notification.id == notification_id, Notification.is_published.is_(True)
+        )
+    )
+    if not n_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Уведомление не найдено")
+
+    existing = await db.execute(
+        select(NotificationRead).where(
+            NotificationRead.notification_id == notification_id,
+            NotificationRead.student_id == student.id,
+        )
+    )
+    if existing.scalar_one_or_none():
+        return
+
+    db.add(NotificationRead(notification_id=notification_id, student_id=student.id))
+    await db.commit()
+
+
+@router.post("/notifications/read-all", status_code=204)
+async def mark_all_notifications_read(
+    student: Student = Depends(get_current_student_dep),
+    db: AsyncSession = Depends(get_db),
+):
+    pub_result = await db.execute(
+        select(Notification.id).where(Notification.is_published.is_(True))
+    )
+    published_ids = set(pub_result.scalars().all())
+
+    reads_result = await db.execute(
+        select(NotificationRead.notification_id).where(NotificationRead.student_id == student.id)
+    )
+    already_read = set(reads_result.scalars().all())
+
+    for nid in published_ids - already_read:
+        db.add(NotificationRead(notification_id=nid, student_id=student.id))
+
+    await db.commit()
+
+
+# ── Home info card ────────────────────────────────────────────────────────────
+
+class InfoStatPublic(BaseModel):
+    value: str
+    label: str
+
+
+class InfoTagPublic(BaseModel):
+    icon: str | None = None
+    text: str
+
+
+class InfoFormatPublic(BaseModel):
+    icon: str | None = None
+    title: str
+    subtitle: str | None = None
+    bg_color: str | None = None
+
+
+class HomeInfoCardPublic(BaseModel):
+    center_name: str
+    center_subtitle: str
+    logo_emoji: str
+    logo_bg_color: str
+    heading_line1: str
+    heading_line2: str | None
+    heading_accent_color: str
+    subheading: str | None
+    gradient_from: str
+    gradient_to: str
+    stats: list[InfoStatPublic]
+    tags: list[InfoTagPublic]
+    formats: list[InfoFormatPublic]
+    trial_button_enabled: bool
+    trial_button_text: str
+    tariffs_button_enabled: bool
+    tariffs_button_text: str
+    is_visible: bool
+
+
+@router.get("/home-info", response_model=HomeInfoCardPublic | None)
+async def get_home_info_card(
+    _: PortalIdentity = Depends(get_portal_identity_dep),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(HomeInfoCard).limit(1))
+    card = result.scalar_one_or_none()
+    if not card or not card.is_visible:
+        return None
+    return HomeInfoCardPublic(
+        center_name=card.center_name,
+        center_subtitle=card.center_subtitle,
+        logo_emoji=card.logo_emoji,
+        logo_bg_color=card.logo_bg_color,
+        heading_line1=card.heading_line1,
+        heading_line2=card.heading_line2,
+        heading_accent_color=card.heading_accent_color,
+        subheading=card.subheading,
+        gradient_from=card.gradient_from,
+        gradient_to=card.gradient_to,
+        stats=[InfoStatPublic(**s) for s in (card.stats or [])],
+        tags=[InfoTagPublic(**t) for t in (card.tags or [])],
+        formats=[InfoFormatPublic(**f) for f in (card.formats or [])],
+        trial_button_enabled=card.trial_button_enabled,
+        trial_button_text=card.trial_button_text,
+        tariffs_button_enabled=card.tariffs_button_enabled,
+        tariffs_button_text=card.tariffs_button_text,
+        is_visible=card.is_visible,
+    )
+
+
+class SubscriptionPlanPublic(BaseModel):
+    id: str
+    name: str
+    lessons_count: int
+    price: float
+
+
+@router.get("/subscription-plans", response_model=list[SubscriptionPlanPublic])
+async def list_subscription_plans(
+    _: PortalIdentity = Depends(get_portal_identity_dep),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(SubscriptionPlan)
+        .where(SubscriptionPlan.is_active.is_(True))
+        .order_by(SubscriptionPlan.lessons_count)
+    )
+    plans = result.scalars().all()
+    return [
+        SubscriptionPlanPublic(
+            id=str(p.id),
+            name=p.name,
+            lessons_count=p.lessons_count,
+            price=float(p.price),
+        )
+        for p in plans
+    ]
+
+
+class TrialSignupRequest(BaseModel):
+    student_name: str
+    phone: str
+    parent_name: str | None = None
+    class_number: int | None = None
+
+
+@router.post("/trial-signup", status_code=201)
+async def submit_trial_signup(
+    body: TrialSignupRequest,
+    _: PortalIdentity = Depends(get_portal_identity_dep),
+    db: AsyncSession = Depends(get_db),
+):
+    if not body.student_name.strip():
+        raise HTTPException(status_code=400, detail="Укажите имя ученика")
+    if not body.phone.strip():
+        raise HTTPException(status_code=400, detail="Укажите телефон")
+
+    lead = Lead(
+        contact_name=(body.parent_name or "").strip() or None,
+        student_name=body.student_name.strip(),
+        phone=body.phone.strip(),
+        class_number=body.class_number,
+        source="mobile_app",
+        status=LeadStatus.not_sorted,
+    )
+    db.add(lead)
+    await db.commit()
+    return {"message": "Заявка отправлена", "lead_id": str(lead.id)}

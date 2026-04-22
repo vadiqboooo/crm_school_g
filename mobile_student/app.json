@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Garry School",
+    "slug": "garry-school-student",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "garryschool",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "ru.garryschool.student"
+    },
+    "android": {
+      "package": "ru.garryschool.student",
+      "versionCode": 1,
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#4f46e5"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Приложение использует доступ к фото для отправки изображений в чате",
+          "cameraPermission": "Приложение использует камеру для отправки фото в чате"
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "extra": {
+      "apiUrl": "http://192.168.0.46:8000"
+    }
+  }
+}

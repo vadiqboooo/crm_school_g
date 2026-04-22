@@ -2,12 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from app.routers import auth, employees, subjects, groups, students, lessons, exams, exam_templates, finances, reports, settings, schedules, school_locations, leads, subscriptions
+from app.routers import auth, employees, subjects, groups, students, lessons, exams, exam_templates, finances, reports, settings, schedules, school_locations, leads, subscriptions, home_banners, notifications, home_info_card
 from app.routers.student_auth import router as student_auth_router
 from app.routers.student_portal import router as student_portal_router
 from app.routers.exam_sessions import router as exam_sessions_router, students_router as portal_creds_router
 from app.routers.chat import router as chat_router
 from app.routers.app_users import router as app_users_router, auth_router as app_auth_router
+from app.routers.app_auth_email import router as app_auth_email_router
 
 app = FastAPI(title="CRM School API", version="1.0.0")
 
@@ -42,6 +43,9 @@ app.include_router(settings.router)
 app.include_router(school_locations.router)
 app.include_router(leads.router)
 app.include_router(subscriptions.router)
+app.include_router(home_banners.router)
+app.include_router(notifications.router)
+app.include_router(home_info_card.router)
 app.include_router(student_auth_router)
 app.include_router(student_portal_router)
 app.include_router(exam_sessions_router)
@@ -49,6 +53,7 @@ app.include_router(portal_creds_router)
 app.include_router(chat_router)
 app.include_router(app_users_router)
 app.include_router(app_auth_router)
+app.include_router(app_auth_email_router)
 
 
 @app.get("/")

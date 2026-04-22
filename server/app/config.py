@@ -16,6 +16,15 @@ class Settings(BaseSettings):
     S3_BUCKET_NAME: str = "chat-files"
     S3_REGION: str = "ru-1"
 
+    # SMTP for email verification codes
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 465
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+    SMTP_FROM_NAME: str = "Школа Гарри"
+    SMTP_USE_SSL: bool = True
+
     class Config:
         env_file = ".env"
 
