@@ -16,7 +16,11 @@ class Settings(BaseSettings):
     S3_BUCKET_NAME: str = "chat-files"
     S3_REGION: str = "ru-1"
 
-    # SMTP for email verification codes
+    # Email verification codes — Resend HTTP API (preferred) + SMTP fallback
+    RESEND_API_KEY: str = ""
+    EMAIL_FROM: str = "Школа Гарри <onboarding@resend.dev>"
+
+    # Legacy SMTP (fallback if RESEND_API_KEY пуст)
     SMTP_HOST: str = ""
     SMTP_PORT: int = 465
     SMTP_USER: str = ""

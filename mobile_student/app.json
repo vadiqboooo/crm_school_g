@@ -16,10 +16,11 @@
       "versionCode": 1,
       "softwareKeyboardLayoutMode": "resize",
       "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "POST_NOTIFICATIONS"
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "plugins": [
@@ -39,7 +40,10 @@
       "expo-secure-store"
     ],
     "extra": {
-      "apiUrl": "http://192.168.0.46:8000"
+      "apiUrl": "http://192.168.0.46:8000",
+      "eas": {
+        "projectId": "26fb71c9-d949-4c45-8906-af28a2cfb4b7"
+      }
     }
   }
 }

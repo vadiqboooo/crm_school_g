@@ -45,7 +45,8 @@
       "Bash(find /c/Users/vadiq/OneDrive/Desktop/DEV_MODE/crm_school_g/client_student/src -type f \\\\\\(-name *.tsx -o -name *.ts \\\\\\))",
       "Bash(xargs cat:*)",
       "Bash(wc -l client_student/src/pages/*.tsx client_student/src/hooks/*.ts client_student/src/lib/*.ts client_student/src/components/*.tsx client_student/src/contexts/*.tsx)",
-      "Bash(git -C c:/Users/vadiq/OneDrive/Desktop/DEV_MODE/crm_school_g status --short)"
+      "Bash(git -C c:/Users/vadiq/OneDrive/Desktop/DEV_MODE/crm_school_g status --short)",
+      "WebFetch(domain:expo.dev)"
     ]
   }
 }

@@ -1,0 +1,41 @@
+# ===== Игнорируем всё, кроме mobile_student =====
+# EAS начинает упаковку с корня git, поэтому надо вручную вычеркнуть всё,
+# что не относится к мобильному приложению.
+
+# Соседние проекты в этом репозитории
+/client_crm/
+/client_student/
+/server/
+/nginx/
+/design/
+/.github/
+/.claude/
+/.vscode/
+
+# Файлы в корне репозитория
+/*.md
+/*.yml
+/*.yaml
+/*.db
+/*.sh
+/*.sql
+/*.env*
+/.gitattributes
+/.gitignore
+/docker-compose.yml
+/init-letsencrypt.sh
+
+# Локальные node_modules и кэши (даже в mobile_student)
+node_modules/
+.expo/
+dist/
+build/
+.cache/
+*.log
+*.apk
+*.aab
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
