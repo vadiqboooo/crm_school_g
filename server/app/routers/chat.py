@@ -40,6 +40,7 @@ from app.schemas.chat import (
     ForwardMessageRequest,
 )
 from app.websocket_manager import manager
+from app.services.push import send_push_to_users
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -102,6 +103,41 @@ async def get_chat_identity(
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+async def _push_new_message(
+    db: AsyncSession,
+    room,
+    msg,
+    sender_name: str,
+) -> None:
+    """Send push notification to all room members except the sender (only student/app_user)."""
+    recipients: list[tuple[uuid.UUID, str]] = []
+    for m in room.members:
+        mt = _mt(m.member_type)
+        if mt not in ("student", "app_user"):
+            continue
+        if m.member_id == msg.sender_id and mt == _mt(msg.sender_type):
+            continue
+        recipients.append((m.member_id, mt))
+
+    if not recipients:
+        return
+
+    if msg.message_type == "image":
+        body = "📷 Фото"
+    elif msg.file_url:
+        body = f"📎 {msg.file_name or 'Файл'}"
+    else:
+        text = (msg.content_encrypted or "").strip()
+        body = text if len(text) <= 120 else text[:117] + "…"
+
+    title = sender_name or "Новое сообщение"
+    data = {"type": "chat", "room_id": str(msg.room_id)}
+    try:
+        await send_push_to_users(db, recipients, title, body, data)
+    except Exception:
+        pass  # push errors should never break message sending
+
 
 async def _serialize_message(msg, db: AsyncSession) -> dict:
     sender_name = await crud.get_member_name(db, msg.sender_id, msg.sender_type)
@@ -419,6 +455,7 @@ async def send_message(
         for member in room.members:
             key = f"{_mt(member.member_type)}:{member.member_id}"
             await manager.send_to_user(key, payload_out)
+        await _push_new_message(db, room, msg, me.display_name)
 
     return msg_out
 
@@ -1138,6 +1175,8 @@ async def chat_websocket(
                     for m in room.members:
                         key = f"{_mt(m.member_type)}:{m.member_id}"
                         await manager.send_to_user(key, payload_out)
+                    sender_name = await crud.get_member_name(db, member_id, member_type)
+                    await _push_new_message(db, room, msg, sender_name)
 
             elif msg_type == "typing":
                 room_id_str = data.get("room_id")

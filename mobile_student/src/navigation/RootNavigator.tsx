@@ -3,11 +3,13 @@ import { ActivityIndicator, View } from "react-native";
 import { useAuth } from "../contexts/AuthContext";
 import { AuthStack } from "./AuthStack";
 import { MainTabs } from "./MainTabs";
+import { usePushNotifications } from "../hooks/usePushNotifications";
 
 const Stack = createNativeStackNavigator();
 
 export function RootNavigator() {
   const { ready, user } = useAuth();
+  usePushNotifications();
 
   if (!ready) {
     return (

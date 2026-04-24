@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.notification import Notification
+from app.models.push_token import PushToken
 from app.models.employee import Employee, EmployeeRole
 from app.auth.dependencies import require_role
+from app.services.push import send_push
 
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -75,6 +77,21 @@ async def create_notification(
     db.add(n)
     await db.commit()
     await db.refresh(n)
+
+    if n.is_published:
+        tokens_res = await db.execute(select(PushToken.token))
+        tokens = list(tokens_res.scalars().all())
+        if tokens:
+            try:
+                await send_push(
+                    tokens,
+                    title=n.title,
+                    body=n.body,
+                    data={"type": "notification", "notification_id": str(n.id)},
+                )
+            except Exception:
+                pass
+
     return _serialize(n)
 
 

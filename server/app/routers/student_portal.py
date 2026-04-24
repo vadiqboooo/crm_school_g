@@ -1137,3 +1137,63 @@ async def submit_trial_signup(
         "room_id": room_id,
         "admin_name": admin_name,
     }
+
+
+# ── Push tokens (Expo) ────────────────────────────────────────────────────────
+
+class PushTokenRequest(BaseModel):
+    token: str
+    platform: str | None = None  # "ios" | "android"
+
+
+@router.post("/push-token", status_code=204)
+async def register_push_token(
+    body: PushTokenRequest,
+    identity: PortalIdentity = Depends(get_portal_identity_dep),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models.push_token import PushToken
+
+    if not body.token or not body.token.startswith("ExponentPushToken["):
+        raise HTTPException(status_code=400, detail="Некорректный push-токен")
+
+    if identity.student:
+        owner_id, owner_type = identity.student.id, "student"
+    elif identity.app_user:
+        owner_id, owner_type = identity.app_user.id, "app_user"
+    else:
+        raise HTTPException(status_code=401, detail="Не авторизован")
+
+    now = datetime.now(timezone.utc)
+    existing_res = await db.execute(
+        select(PushToken).where(PushToken.token == body.token)
+    )
+    existing = existing_res.scalar_one_or_none()
+    if existing:
+        existing.owner_id = owner_id
+        existing.owner_type = owner_type
+        existing.platform = body.platform or existing.platform
+        existing.updated_at = now
+    else:
+        db.add(PushToken(
+            owner_id=owner_id,
+            owner_type=owner_type,
+            token=body.token,
+            platform=body.platform,
+            created_at=now,
+            updated_at=now,
+        ))
+    await db.commit()
+
+
+@router.delete("/push-token", status_code=204)
+async def unregister_push_token(
+    body: PushTokenRequest,
+    _: PortalIdentity = Depends(get_portal_identity_dep),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models.push_token import PushToken
+    from sqlalchemy import delete as sa_delete
+
+    await db.execute(sa_delete(PushToken).where(PushToken.token == body.token))
+    await db.commit()

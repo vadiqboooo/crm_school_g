@@ -16,3 +16,4 @@ from app.models.home_banner import HomeBanner
 from app.models.notification import Notification, NotificationRead
 from app.models.home_info_card import HomeInfoCard
 from app.models.email_verification_code import EmailVerificationCode
+from app.models.push_token import PushToken

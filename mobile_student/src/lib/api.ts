@@ -292,6 +292,21 @@ class StudentApiClient {
     });
   }
 
+  // ── Push tokens ────────────────────────────────────────────────────────
+  registerPushToken(token: string, platform: "ios" | "android" | null) {
+    return this.request<void>("/student-portal/push-token", {
+      method: "POST",
+      body: JSON.stringify({ token, platform }),
+    });
+  }
+
+  unregisterPushToken(token: string) {
+    return this.request<void>("/student-portal/push-token", {
+      method: "DELETE",
+      body: JSON.stringify({ token }),
+    });
+  }
+
   // ── Schedule ────────────────────────────────────────────────────────────
   getTodaySchedule() {
     return this.request<TodayLesson[]>("/student-portal/schedule/today");
