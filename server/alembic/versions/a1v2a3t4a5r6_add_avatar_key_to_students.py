@@ -1,7 +1,7 @@
 """add avatar_key to students
 
 Revision ID: a1v2a3t4a5r6
-Revises: v1a2l3i4d5
+Revises: e1m2a3i4l5a6
 Create Date: 2026-04-24
 
 """
@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "a1v2a3t4a5r6"
-down_revision = "v1a2l3i4d5"
+down_revision = "e1m2a3i4l5a6"
 branch_labels = None
 depends_on = None
 
