@@ -212,6 +212,71 @@ async def create_group_room(
     return result.scalar_one()
 
 
+async def create_custom_group_room(
+    db: AsyncSession,
+    name: str,
+    members: list[dict],  # [{"member_id": uuid, "member_type": str}]
+) -> ChatRoom:
+    """Create a free-form group chat (no school group_id). Any member type can create."""
+    room = ChatRoom(
+        id=uuid.uuid4(),
+        room_type=RoomType.group,
+        group_id=None,
+        name=name,
+    )
+    db.add(room)
+    await db.flush()
+
+    seen = set()
+    for m in members:
+        key = (m["member_id"], m["member_type"])
+        if key in seen:
+            continue
+        seen.add(key)
+        db.add(ChatRoomMember(
+            id=uuid.uuid4(),
+            room_id=room.id,
+            member_id=m["member_id"],
+            member_type=m["member_type"],
+            room_key_encrypted=None,
+        ))
+
+    await db.commit()
+    result = await db.execute(
+        select(ChatRoom).where(ChatRoom.id == room.id).options(selectinload(ChatRoom.members))
+    )
+    return result.scalar_one()
+
+
+async def add_member_to_room(
+    db: AsyncSession,
+    room_id: uuid.UUID,
+    member_id: uuid.UUID,
+    member_type: str,
+) -> bool:
+    """Add a member to an existing group room. Returns False if already a member."""
+    existing = await db.execute(
+        select(ChatRoomMember).where(
+            and_(
+                ChatRoomMember.room_id == room_id,
+                ChatRoomMember.member_id == member_id,
+                ChatRoomMember.member_type == member_type,
+            )
+        )
+    )
+    if existing.scalar_one_or_none():
+        return False
+    db.add(ChatRoomMember(
+        id=uuid.uuid4(),
+        room_id=room_id,
+        member_id=member_id,
+        member_type=member_type,
+        room_key_encrypted=None,
+    ))
+    await db.commit()
+    return True
+
+
 async def get_room_by_group_id(db: AsyncSession, group_id: uuid.UUID) -> Optional[ChatRoom]:
     result = await db.execute(
         select(ChatRoom)
@@ -387,6 +452,16 @@ async def leave_room(
     if not member:
         return False
     await db.delete(member)
+    await db.flush()
+
+    # Auto-delete custom group rooms (group_id IS NULL) when they become empty
+    room_res = await db.execute(
+        select(ChatRoom).options(selectinload(ChatRoom.members)).where(ChatRoom.id == room_id)
+    )
+    room = room_res.scalar_one_or_none()
+    if room and room.group_id is None and room.room_type == RoomType.group and not room.members:
+        await db.delete(room)
+
     await db.commit()
     return True
 

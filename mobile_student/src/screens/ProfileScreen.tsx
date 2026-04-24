@@ -1,26 +1,27 @@
 import { useEffect, useState } from "react";
-import { View, Text, Pressable, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LogOut, Settings, Bell, Shield, HelpCircle, ChevronRight, BookOpen, Star, Award } from "lucide-react-native";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import {
+  LogOut,
+  Settings,
+  Bell,
+  Shield,
+  HelpCircle,
+  ChevronRight,
+  BookOpen,
+  Star,
+  Award,
+  User,
+} from "lucide-react-native";
 import { api, StudentProfile } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
+import type { ProfileStackParamList } from "../navigation/types";
 
-interface MenuItem {
-  icon: typeof Bell;
-  label: string;
-  color: string;
-  bg: string;
-}
+type ProfileNav = NativeStackNavigationProp<ProfileStackParamList>;
 
-const menuSections: Array<{ section: string; items: MenuItem[] }> = [
-  {
-    section: "НАСТРОЙКИ",
-    items: [
-      { icon: Bell, label: "Уведомления", color: "#3b82f6", bg: "#eff6ff" },
-      { icon: Shield, label: "Конфиденциальность", color: "#10b981", bg: "#ecfdf5" },
-      { icon: Settings, label: "Настройки аккаунта", color: "#6b7280", bg: "#f3f4f6" },
-    ],
-  },
+const menuSections = [
   {
     section: "ПОДДЕРЖКА",
     items: [{ icon: HelpCircle, label: "Помощь и FAQ", color: "#f97316", bg: "#fff7ed" }],
@@ -29,6 +30,7 @@ const menuSections: Array<{ section: string; items: MenuItem[] }> = [
 
 export function ProfileScreen() {
   const { user, signOut } = useAuth();
+  const navigation = useNavigation<ProfileNav>();
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -56,15 +58,30 @@ export function ProfileScreen() {
         <View className="px-4 pt-2 pb-8 bg-brand-700">
           <View className="flex-row items-center justify-between mb-5">
             <Text className="text-white text-xl font-bold">Профиль</Text>
-            <Pressable className="w-8 h-8 bg-white/20 rounded-full items-center justify-center">
+            <Pressable
+              onPress={() => navigation.navigate("Settings")}
+              className="w-8 h-8 bg-white/20 rounded-full items-center justify-center"
+            >
               <Settings size={16} color="#fff" />
             </Pressable>
           </View>
 
           <View className="flex-row items-center gap-4">
-            <View className="w-20 h-20 bg-white rounded-full items-center justify-center shadow-lg">
-              <Text style={{ fontSize: 28 }}>🎓</Text>
-            </View>
+            {/* Avatar */}
+            <Pressable onPress={() => navigation.navigate("Settings")}>
+              <View className="w-20 h-20 bg-white rounded-full items-center justify-center shadow-lg overflow-hidden">
+                {profile?.avatar_url ? (
+                  <Image
+                    source={{ uri: profile.avatar_url }}
+                    style={{ width: 80, height: 80 }}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <User size={32} color="#6366f1" />
+                )}
+              </View>
+            </Pressable>
+
             <View className="flex-1">
               {loading ? (
                 <ActivityIndicator color="#fff" />
@@ -90,6 +107,7 @@ export function ProfileScreen() {
       </SafeAreaView>
 
       <ScrollView className="flex-1 -mt-4" contentContainerStyle={{ paddingBottom: 24 }}>
+        {/* Stats */}
         <View className="px-4 mb-5">
           <View className="bg-white rounded-2xl shadow-sm p-4 flex-row gap-3">
             {stats.map((stat) => (
@@ -101,6 +119,37 @@ export function ProfileScreen() {
                 <Text className="text-gray-500 text-[10px] text-center">{stat.label}</Text>
               </View>
             ))}
+          </View>
+        </View>
+
+        {/* Settings shortcut */}
+        <View className="px-4 mb-4">
+          <Text className="text-gray-500 text-xs font-semibold mb-2 px-1">АККАУНТ</Text>
+          <View className="bg-white rounded-2xl overflow-hidden shadow-sm">
+            <Pressable
+              onPress={() => navigation.navigate("Settings")}
+              className="flex-row items-center gap-3 px-4 py-4"
+            >
+              <View className="w-9 h-9 rounded-xl items-center justify-center bg-indigo-50">
+                <Settings size={18} color="#6366f1" />
+              </View>
+              <Text className="flex-1 text-gray-800 text-sm font-medium">Редактировать профиль</Text>
+              <ChevronRight size={16} color="#d1d5db" />
+            </Pressable>
+            <Pressable className="flex-row items-center gap-3 px-4 py-4 border-t border-gray-50">
+              <View className="w-9 h-9 rounded-xl items-center justify-center bg-blue-50">
+                <Bell size={18} color="#3b82f6" />
+              </View>
+              <Text className="flex-1 text-gray-800 text-sm font-medium">Уведомления</Text>
+              <ChevronRight size={16} color="#d1d5db" />
+            </Pressable>
+            <Pressable className="flex-row items-center gap-3 px-4 py-4 border-t border-gray-50">
+              <View className="w-9 h-9 rounded-xl items-center justify-center bg-green-50">
+                <Shield size={18} color="#10b981" />
+              </View>
+              <Text className="flex-1 text-gray-800 text-sm font-medium">Конфиденциальность</Text>
+              <ChevronRight size={16} color="#d1d5db" />
+            </Pressable>
           </View>
         </View>
 

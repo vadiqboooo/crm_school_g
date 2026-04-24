@@ -29,6 +29,7 @@ import {
   Copy,
   Forward,
   Check,
+  Info,
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
@@ -38,6 +39,8 @@ import { useChatWebSocket } from "../hooks/useChatWebSocket";
 import { useAuth } from "../contexts/AuthContext";
 import { refreshChatBadge } from "../lib/chatBadge";
 import type { ChatStackParamList } from "../navigation/types";
+
+type Nav = import("@react-navigation/native-stack").NativeStackNavigationProp<ChatStackParamList>;
 
 type Route = RouteProp<ChatStackParamList, "ChatRoom">;
 
@@ -116,7 +119,7 @@ type PendingAttachment = {
 };
 
 export function ChatRoomScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<Nav>();
   const { params } = useRoute<Route>();
   const { user } = useAuth();
   const myId = user?.id ?? "";
@@ -701,14 +704,25 @@ export function ChatRoomScreen() {
             <Pressable onPress={() => navigation.goBack()} hitSlop={10} className="p-1">
               <ArrowLeft size={22} color="#111827" />
             </Pressable>
-            <View className="flex-1">
+            <Pressable
+              className="flex-1"
+              onPress={() => navigation.navigate("ChatInfo", { roomId })}
+              hitSlop={4}
+            >
               <Text className="text-gray-900 text-base font-bold" numberOfLines={1}>
                 {params?.title ?? "Чат"}
               </Text>
               {!wsConnected && (
                 <Text className="text-[11px] text-gray-400">подключение…</Text>
               )}
-            </View>
+            </Pressable>
+            <Pressable
+              onPress={() => navigation.navigate("ChatInfo", { roomId })}
+              hitSlop={8}
+              className="p-1"
+            >
+              <Info size={20} color="#6b7280" />
+            </Pressable>
           </View>
         )}
       </SafeAreaView>

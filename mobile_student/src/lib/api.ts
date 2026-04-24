@@ -351,6 +351,43 @@ class StudentApiClient {
     });
   }
 
+  async uploadAvatar(file: { uri: string; name: string; type: string }): Promise<{ avatar_url: string }> {
+    if (!this.loaded) await this.load();
+    const formData = new FormData();
+    formData.append("file", file as unknown as Blob);
+    const url = `${API_URL}/student-portal/upload-avatar`;
+
+    const doUpload = async (token: string | null) =>
+      fetch(url, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+
+    let res = await doUpload(this.accessToken);
+
+    if (res.status === 401 && this.refreshToken) {
+      const role = (await storage.getItem(T_ROLE)) ?? "student";
+      const refreshEndpoint = role === "app_user" ? "/app-auth/refresh" : "/student-auth/refresh";
+      const refreshRes = await fetch(`${API_URL}${refreshEndpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: this.refreshToken }),
+      });
+      if (refreshRes.ok) {
+        const data = await refreshRes.json();
+        await this.setTokens(data.access_token, data.refresh_token);
+        res = await doUpload(this.accessToken);
+      }
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Ошибка загрузки" }));
+      throw new Error(err.detail ?? "Ошибка загрузки");
+    }
+    return res.json();
+  }
+
   // ── Chat ───────────────────────────────────────────────────────────────
 
   updatePublicKey(publicKey: string) {
@@ -504,6 +541,38 @@ class StudentApiClient {
     return this.request<{ ok: boolean }>(`/chat/rooms/${roomId}`, { method: "DELETE" });
   }
 
+  getRoom(roomId: string) {
+    return this.request<ChatRoom>(`/chat/rooms/${roomId}`);
+  }
+
+  createCustomGroupRoom(name: string, members: Array<{ id: string; type: string }>) {
+    return this.request<ChatRoom>("/chat/rooms/custom-group", {
+      method: "POST",
+      body: JSON.stringify({ name, members }),
+    });
+  }
+
+  addMemberToRoom(roomId: string, memberId: string, memberType: string) {
+    return this.request<{ added: boolean }>(`/chat/rooms/${roomId}/add-member`, {
+      method: "POST",
+      body: JSON.stringify({ member_id: memberId, member_type: memberType }),
+    });
+  }
+
+  removeMemberFromRoom(roomId: string, memberId: string, memberType: string) {
+    return this.request<{ removed: boolean }>(
+      `/chat/rooms/${roomId}/members/${memberId}?member_type=${memberType}`,
+      { method: "DELETE" }
+    );
+  }
+
+  renameRoom(roomId: string, name: string) {
+    return this.request<{ name: string }>(`/chat/rooms/${roomId}/name`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    });
+  }
+
   getWsUrl(): string {
     const base = API_URL.replace(/^http/, "ws");
     return `${base}/chat/ws?token=${this.accessToken ?? ""}`;
@@ -529,6 +598,7 @@ export interface StudentProfile {
   phone: string | null;
   email: string | null;
   chat_display_name: string | null;
+  avatar_url: string | null;
   groups: Array<{
     id: string;
     name: string;

@@ -10,7 +10,10 @@ import { ResultsScreen } from "../screens/ResultsScreen";
 import { NotificationsScreen } from "../screens/NotificationsScreen";
 import { ChatScreen } from "../screens/ChatScreen";
 import { ChatRoomScreen } from "../screens/ChatRoomScreen";
+import { CreateGroupScreen } from "../screens/CreateGroupScreen";
+import { ChatInfoScreen } from "../screens/ChatInfoScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
+import { SettingsScreen } from "../screens/SettingsScreen";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { useChatWebSocket } from "../hooks/useChatWebSocket";
@@ -44,6 +47,8 @@ function ChatStackNavigator() {
     <ChatStack.Navigator screenOptions={{ headerShown: false }}>
       <ChatStack.Screen name="ChatList" component={ChatScreen} />
       <ChatStack.Screen name="ChatRoom" component={ChatRoomScreen} />
+      <ChatStack.Screen name="CreateGroup" component={CreateGroupScreen} />
+      <ChatStack.Screen name="ChatInfo" component={ChatInfoScreen} />
     </ChatStack.Navigator>
   );
 }
@@ -52,6 +57,7 @@ function ProfileStackNavigator() {
   return (
     <ProfileStack.Navigator screenOptions={{ headerShown: false }}>
       <ProfileStack.Screen name="Profile" component={ProfileScreen} />
+      <ProfileStack.Screen name="Settings" component={SettingsScreen} />
     </ProfileStack.Navigator>
   );
 }

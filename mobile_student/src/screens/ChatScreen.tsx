@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, Pressable, FlatList, ActivityIndicator, RefreshControl, TextInput } from "react-native";
+import { View, Text, Pressable, FlatList, ActivityIndicator, RefreshControl, TextInput, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { Search, X, UserPlus } from "lucide-react-native";
+import { Search, X, UserPlus, Users } from "lucide-react-native";
 import { api, ChatRoom, ChatSearchResult } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { useChatWebSocket } from "../hooks/useChatWebSocket";
@@ -205,16 +205,25 @@ export function ChatScreen() {
       <SafeAreaView edges={["top"]} className="bg-white">
         <View className="px-4 pt-2 pb-2 flex-row items-center justify-between">
           <Text className="text-gray-900 text-[22px] font-bold tracking-tight">Сообщения</Text>
-          <Pressable
-            className="p-2 rounded-full"
-            hitSlop={8}
-            onPress={() => {
-              setSearchOpen((v) => !v);
-              if (searchOpen) setSearch("");
-            }}
-          >
-            {searchOpen ? <X size={22} color="#6b7280" /> : <Search size={22} color="#6b7280" />}
-          </Pressable>
+          <View className="flex-row items-center gap-1">
+            <Pressable
+              className="p-2 rounded-full"
+              hitSlop={8}
+              onPress={() => navigation.navigate("CreateGroup")}
+            >
+              <Users size={22} color="#6b7280" />
+            </Pressable>
+            <Pressable
+              className="p-2 rounded-full"
+              hitSlop={8}
+              onPress={() => {
+                setSearchOpen((v) => !v);
+                if (searchOpen) setSearch("");
+              }}
+            >
+              {searchOpen ? <X size={22} color="#6b7280" /> : <Search size={22} color="#6b7280" />}
+            </Pressable>
+          </View>
         </View>
 
         {searchOpen && (
@@ -326,9 +335,32 @@ export function ChatScreen() {
             const preview = roomLastMessagePreview(item);
             const ts = item.last_message?.created_at ?? item.created_at;
             const unread = item.unread_count > 0;
+
+            const handleLongPress = () => {
+              const isGroup = item.room_type === "group";
+              const leaveLabel = isGroup ? "Выйти из группы" : "Удалить чат";
+              Alert.alert(title, undefined, [
+                {
+                  text: leaveLabel,
+                  style: "destructive",
+                  onPress: async () => {
+                    try {
+                      await api.leaveRoom(item.id);
+                      setRooms((prev) => prev.filter((r) => r.id !== item.id));
+                    } catch (e: unknown) {
+                      Alert.alert("Ошибка", e instanceof Error ? e.message : "Не удалось");
+                    }
+                  },
+                },
+                { text: "Отмена", style: "cancel" },
+              ]);
+            };
+
             return (
               <Pressable
                 onPress={() => navigation.navigate("ChatRoom", { roomId: item.id, title })}
+                onLongPress={handleLongPress}
+                delayLongPress={400}
                 android_ripple={{ color: "rgba(0,0,0,0.04)" }}
                 className="flex-row items-center px-4 py-2.5 active:bg-gray-50"
               >

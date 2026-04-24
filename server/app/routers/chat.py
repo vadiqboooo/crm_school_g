@@ -258,6 +258,21 @@ async def get_rooms(
     return result
 
 
+@router.get("/rooms/{room_id}")
+async def get_room(
+    room_id: uuid.UUID,
+    me: ChatIdentity = Depends(get_chat_identity),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get single room info (members, type, name). Requester must be a member."""
+    if not await crud.is_member(db, room_id, me.member_id, me.member_type):
+        raise HTTPException(status_code=403, detail="Not a member")
+    room = await crud.get_room_by_id(db, room_id)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    return await _serialize_room(room, db, me.member_id, me.member_type)
+
+
 @router.get("/rooms/{room_id}/messages")
 async def get_messages(
     room_id: uuid.UUID,
@@ -493,6 +508,142 @@ async def get_or_create_direct_room(
         member_b_type=other_type,
     )
     return await _serialize_room(room, db, me.member_id, me.member_type)
+
+
+@router.post("/rooms/custom-group")
+async def create_custom_group_room(
+    body: dict,
+    me: ChatIdentity = Depends(get_chat_identity),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a free-form group chat room. Any authenticated user (student, app_user, employee) can create one.
+    body: { name: str, members: [{ id: str, type: str }] }
+    """
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="name required")
+    if len(name) > 100:
+        raise HTTPException(status_code=422, detail="Название не более 100 символов")
+
+    raw_members: list[dict] = body.get("members") or []
+    members: list[dict] = []
+    seen = set()
+
+    # Always include creator
+    seen.add((str(me.member_id), me.member_type))
+    members.append({"member_id": me.member_id, "member_type": me.member_type})
+
+    for m in raw_members:
+        mid_str = m.get("id") or m.get("member_id")
+        mtype = m.get("type") or m.get("member_type", "student")
+        if not mid_str:
+            continue
+        try:
+            mid = uuid.UUID(mid_str)
+        except Exception:
+            continue
+        key = (str(mid), mtype)
+        if key in seen:
+            continue
+        seen.add(key)
+        members.append({"member_id": mid, "member_type": mtype})
+
+    if len(members) < 2:
+        raise HTTPException(status_code=422, detail="Нужно выбрать хотя бы одного участника")
+
+    room = await crud.create_custom_group_room(db, name=name, members=members)
+    return await _serialize_room(room, db, me.member_id, me.member_type)
+
+
+@router.post("/rooms/{room_id}/add-member")
+async def add_member_to_room(
+    room_id: uuid.UUID,
+    body: dict,
+    me: ChatIdentity = Depends(get_chat_identity),
+    db: AsyncSession = Depends(get_db),
+):
+    """Add a new member to a group chat. Only existing members can add others."""
+    if not await crud.is_member(db, room_id, me.member_id, me.member_type):
+        raise HTTPException(status_code=403, detail="Вы не участник этого чата")
+
+    room = await crud.get_room_by_id(db, room_id)
+    if not room or room.room_type != "group":
+        raise HTTPException(status_code=400, detail="Не групповой чат")
+    if room.group_id is not None:
+        raise HTTPException(status_code=403, detail="Управление участниками школьных групп недоступно")
+
+    mid_str = body.get("member_id") or body.get("id")
+    mtype = body.get("member_type") or body.get("type", "student")
+    if not mid_str:
+        raise HTTPException(status_code=422, detail="member_id required")
+    try:
+        mid = uuid.UUID(mid_str)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid member_id")
+
+    added = await crud.add_member_to_room(db, room_id, mid, mtype)
+    return {"added": added}
+
+
+@router.delete("/rooms/{room_id}/members/{target_member_id}")
+async def remove_member_from_room(
+    room_id: uuid.UUID,
+    target_member_id: uuid.UUID,
+    member_type: str = "student",
+    me: ChatIdentity = Depends(get_chat_identity),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove a member from a custom group chat. Only members can remove others."""
+    if not await crud.is_member(db, room_id, me.member_id, me.member_type):
+        raise HTTPException(status_code=403, detail="Вы не участник этого чата")
+
+    room = await crud.get_room_by_id(db, room_id)
+    if not room or room.room_type != "group":
+        raise HTTPException(status_code=400, detail="Не групповой чат")
+    if room.group_id is not None:
+        raise HTTPException(status_code=403, detail="Нельзя управлять участниками школьного чата")
+    if target_member_id == me.member_id and member_type == me.member_type:
+        raise HTTPException(status_code=400, detail="Используйте выход из группы")
+
+    removed = await crud.leave_room(db, room_id, target_member_id, member_type)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Участник не найден")
+
+    # Auto-delete empty custom group rooms
+    room = await crud.get_room_by_id(db, room_id)
+    if room and not room.members:
+        await db.delete(room)
+        await db.commit()
+
+    return {"removed": True}
+
+
+@router.patch("/rooms/{room_id}/name")
+async def rename_room(
+    room_id: uuid.UUID,
+    body: dict,
+    me: ChatIdentity = Depends(get_chat_identity),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rename a custom group chat room. Only members can rename it."""
+    if not await crud.is_member(db, room_id, me.member_id, me.member_type):
+        raise HTTPException(status_code=403, detail="Вы не участник этого чата")
+
+    room = await crud.get_room_by_id(db, room_id)
+    if not room or room.room_type != "group":
+        raise HTTPException(status_code=400, detail="Не групповой чат")
+    if room.group_id is not None:
+        raise HTTPException(status_code=403, detail="Нельзя переименовать школьную группу")
+
+    new_name = (body.get("name") or "").strip()
+    if not new_name:
+        raise HTTPException(status_code=422, detail="name required")
+    if len(new_name) > 100:
+        raise HTTPException(status_code=422, detail="Название не более 100 символов")
+
+    room.name = new_name
+    await db.commit()
+    return {"name": new_name}
 
 
 @router.post("/rooms/group")

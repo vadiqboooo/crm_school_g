@@ -14,12 +14,14 @@ GET  /student-portal/results                     — результаты экз
 import uuid
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from io import BytesIO
 
 from app.database import get_db
 from app.models.exam import Exam, ExamResult
@@ -55,6 +57,7 @@ class StudentProfileResponse(BaseModel):
     phone: str | None
     email: str | None
     chat_display_name: str | None
+    avatar_url: str | None
     groups: list[dict]
 
     class Config:
@@ -157,10 +160,18 @@ def _calc_end_time(start: str, duration_minutes: int) -> str:
     return f"{total // 60:02d}:{total % 60:02d}"
 
 
+def _build_avatar_url(request: Request, avatar_key: str | None) -> str | None:
+    if not avatar_key:
+        return None
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/student-portal/avatars/{avatar_key}"
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/me", response_model=StudentProfileResponse)
 async def get_my_profile(
+    request: Request,
     identity: PortalIdentity = Depends(get_portal_identity_dep),
     db: AsyncSession = Depends(get_db),
 ):
@@ -177,6 +188,7 @@ async def get_my_profile(
             phone=None,
             email=u.email,
             chat_display_name=None,
+            avatar_url=None,
             groups=[],
         )
 
@@ -216,6 +228,7 @@ async def get_my_profile(
         phone=s.phone,
         email=s.email,
         chat_display_name=s.chat_display_name,
+        avatar_url=_build_avatar_url(request, s.avatar_key),
         groups=groups_data,
     )
 
@@ -618,6 +631,56 @@ async def update_settings(
 
     await db.commit()
     return {"message": "Настройки сохранены"}
+
+
+@router.post("/upload-avatar")
+async def upload_avatar(
+    request: Request,
+    file: UploadFile = File(...),
+    student: Student = Depends(get_current_student_dep),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.s3 import ALLOWED_IMAGE_TYPES, MAX_FILE_SIZE, _get_s3_client
+    from app.config import settings as app_settings
+
+    content_type = file.content_type or "application/octet-stream"
+    if content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Только изображения (jpeg/png/webp)")
+
+    data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="Файл слишком большой (макс. 10 МБ)")
+
+    original_name = file.filename or "avatar"
+    ext = original_name.rsplit(".", 1)[-1] if "." in original_name else "jpg"
+    key = f"avatars/{uuid.uuid4().hex}.{ext}"
+
+    s3 = _get_s3_client()
+    s3.upload_fileobj(
+        BytesIO(data),
+        app_settings.S3_BUCKET_NAME,
+        key,
+        ExtraArgs={"ContentType": content_type},
+    )
+
+    # Save key to student record
+    s_result = await db.execute(select(Student).where(Student.id == student.id))
+    s = s_result.scalar_one()
+    s.avatar_key = key
+    await db.commit()
+
+    return {"avatar_url": _build_avatar_url(request, key)}
+
+
+@router.get("/avatars/{key:path}")
+async def serve_avatar(key: str):
+    """Serve avatar image from S3 (no auth — avatar keys are non-guessable UUIDs)."""
+    from app.s3 import download_file
+    try:
+        data, content_type = download_file(key)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Аватар не найден")
+    return StreamingResponse(BytesIO(data), media_type=content_type)
 
 
 @router.get("/results", response_model=list[ExamResultResponse])

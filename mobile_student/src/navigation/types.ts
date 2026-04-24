@@ -18,10 +18,13 @@ export type HomeStackParamList = {
 export type ChatStackParamList = {
   ChatList: undefined;
   ChatRoom: { roomId: string; title?: string };
+  CreateGroup: undefined;
+  ChatInfo: { roomId: string };
 };
 
 export type ProfileStackParamList = {
   Profile: undefined;
+  Settings: undefined;
 };
 
 export type TabParamList = {

@@ -48,7 +48,9 @@
       "Bash(git -C c:/Users/vadiq/OneDrive/Desktop/DEV_MODE/crm_school_g status --short)",
       "WebFetch(domain:expo.dev)",
       "WebFetch(domain:claude.ai)",
-      "Bash(echo \"---exit=$?---\")"
+      "Bash(echo \"---exit=$?---\")",
+      "WebFetch(domain:docs.expo.dev)",
+      "WebSearch"
     ]
   }
 }
