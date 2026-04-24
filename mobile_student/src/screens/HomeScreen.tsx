@@ -5,90 +5,78 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
-  Linking,
   Alert,
   Modal,
   TextInput,
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
-  ImageBackground,
-  Dimensions,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { ChevronRight, Flame, FileText, X, Bell } from "lucide-react-native";
-import {
-  api,
-  StudentProfile,
-  MyRegistration,
-  ExamSession,
-  HomeBanner,
-  HomeInfoCard,
-  SubscriptionPlanItem,
-} from "../lib/api";
-import type { HomeStackParamList } from "../navigation/types";
+import { useNavigation, CommonActions } from "@react-navigation/native";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
+import { Bell, X } from "lucide-react-native";
+import { api, StudentProfile } from "../lib/api";
+import type { TabParamList } from "../navigation/types";
 
-const MONTH_SHORT = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+type Nav = BottomTabNavigationProp<TabParamList, "HomeTab">;
 
-function fmtDate(iso: string) {
-  const d = new Date(iso);
-  return `${d.getDate()} ${MONTH_SHORT[d.getMonth()]}`;
-}
+type ExamType = "ЕГЭ" | "ОГЭ";
+type SubjectKey = "cs" | "ru" | "ma" | "other";
 
-type Nav = NativeStackNavigationProp<HomeStackParamList, "Home">;
+const OTHER_SUBJECTS_EGE = [
+  "Базовая математика",
+  "Физика",
+  "Обществознание",
+  "История",
+  "Английский",
+  "География",
+  "Биология",
+  "Химия",
+];
+const OTHER_SUBJECTS_OGE = [
+  "Физика",
+  "Обществознание",
+  "История",
+  "Английский",
+  "География",
+  "Биология",
+  "Химия",
+];
+
+const C = {
+  purple: "#7B52F4",
+  yellow: "#F5C300",
+  sub: "#888899",
+  text: "#1A1A1A",
+};
 
 export function HomeScreen() {
   const navigation = useNavigation<Nav>();
   const [profile, setProfile] = useState<StudentProfile | null>(null);
-  const [registrations, setRegistrations] = useState<MyRegistration[]>([]);
-  const [availableSessions, setAvailableSessions] = useState<ExamSession[]>([]);
-  const [banners, setBanners] = useState<HomeBanner[]>([]);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [signupBanner, setSignupBanner] = useState<HomeBanner | null>(null);
-  const [signupValues, setSignupValues] = useState<Record<string, string>>({});
-  const [submittingSignup, setSubmittingSignup] = useState(false);
-  const [infoCard, setInfoCard] = useState<HomeInfoCard | null>(null);
-  const [bannerIndex, setBannerIndex] = useState(0);
-  const [tariffsOpen, setTariffsOpen] = useState(false);
-  const [plans, setPlans] = useState<SubscriptionPlanItem[]>([]);
-  const [trialOpen, setTrialOpen] = useState(false);
-  const [trialForm, setTrialForm] = useState({ student_name: "", phone: "", parent_name: "", class_number: "" });
-  const [submittingTrial, setSubmittingTrial] = useState(false);
+
+  const [exam, setExam] = useState<ExamType>("ЕГЭ");
+  const [subj, setSubj] = useState<SubjectKey>("cs");
+  const [otherSubj, setOtherSubj] = useState<string>("");
+
+  const [signupOpen, setSignupOpen] = useState(false);
+  const [form, setForm] = useState({ first_name: "", last_name: "", phone: "" });
+  const [submitting, setSubmitting] = useState(false);
 
   const loadAll = useCallback(async () => {
     await Promise.all([
       api.getMe().then(setProfile).catch(() => {}),
-      api
-        .getMyRegistrations()
-        .then((regs) => {
-          const upcoming = regs.filter((r) => r.days_until >= 0).sort((a, b) => a.days_until - b.days_until);
-          setRegistrations(upcoming);
-        })
-        .catch(() => {}),
-      api.getExamSessions().then(setAvailableSessions).catch(() => {}),
-      api.getHomeBanners().then(setBanners).catch(() => {}),
       api.getNotificationsUnreadCount().then((r) => setUnreadNotifs(r.count)).catch(() => {}),
-      api.getHomeInfoCard().then(setInfoCard).catch(() => {}),
     ]);
   }, []);
 
   useEffect(() => {
     loadAll().finally(() => setLoading(false));
   }, [loadAll]);
-
-  useFocusEffect(
-    useCallback(() => {
-      api.getHomeBanners().then(setBanners).catch(() => {});
-      api.getNotificationsUnreadCount().then((r) => setUnreadNotifs(r.count)).catch(() => {});
-      api.getHomeInfoCard().then(setInfoCard).catch(() => {});
-    }, []),
-  );
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -99,104 +87,92 @@ export function HomeScreen() {
     }
   }, [loadAll]);
 
-  const handleOpenTariffs = async () => {
-    setTariffsOpen(true);
-    try {
-      const list = await api.getSubscriptionPlans();
-      setPlans(list);
-    } catch {}
-  };
+  const maLabel = exam === "ЕГЭ" ? "Проф. математика" : "Математика";
+  const subjectLabel =
+    subj === "cs"
+      ? "Информатика"
+      : subj === "ru"
+        ? "Русский"
+        : subj === "ma"
+          ? maLabel
+          : otherSubj || "Другой предмет";
 
-  const handleOpenTrial = () => {
-    setTrialForm({
-      student_name: profile ? `${profile.first_name} ${profile.last_name}`.trim() : "",
+  const extraList = exam === "ЕГЭ" ? OTHER_SUBJECTS_EGE : OTHER_SUBJECTS_OGE;
+
+  const openSignup = () => {
+    if (subj === "other" && !otherSubj) {
+      Alert.alert("Выберите предмет", "Укажите предмет из списка");
+      return;
+    }
+    setForm({
+      first_name: profile?.first_name ?? "",
+      last_name: profile?.last_name ?? "",
       phone: profile?.phone ?? "",
-      parent_name: "",
-      class_number: "",
     });
-    setTrialOpen(true);
+    setSignupOpen(true);
   };
 
-  const handleSubmitTrial = async () => {
-    if (!trialForm.student_name.trim()) {
-      Alert.alert("Заполните поля", "Укажите имя ученика");
+  const handleSubmit = async () => {
+    const first = form.first_name.trim();
+    const last = form.last_name.trim();
+    if (!first) {
+      Alert.alert("Заполните поля", "Укажите имя");
       return;
     }
-    if (!trialForm.phone.trim()) {
-      Alert.alert("Заполните поля", "Укажите телефон");
+    if (!last) {
+      Alert.alert("Заполните поля", "Укажите фамилию");
+      return;
+    }
+    if (!form.phone.trim()) {
+      Alert.alert("Заполните поля", "Укажите телефон или email для связи");
       return;
     }
     try {
-      setSubmittingTrial(true);
-      await api.submitTrialSignup({
-        student_name: trialForm.student_name.trim(),
-        phone: trialForm.phone.trim(),
-        parent_name: trialForm.parent_name.trim() || null,
-        class_number: trialForm.class_number ? parseInt(trialForm.class_number, 10) : null,
+      setSubmitting(true);
+      const res = await api.submitTrialSignup({
+        student_name: `${first} ${last}`,
+        phone: form.phone.trim(),
+        exam_type: exam,
+        subject_name: subjectLabel,
       });
-      setTrialOpen(false);
-      Alert.alert("Спасибо!", "Заявка отправлена, мы свяжемся с вами");
-    } catch (e: any) {
-      Alert.alert("Ошибка", e?.message ?? "Не удалось отправить заявку");
-    } finally {
-      setSubmittingTrial(false);
-    }
-  };
+      setSignupOpen(false);
 
-  const handleBannerPress = (banner: HomeBanner) => {
-    if (banner.signup_enabled) {
-      const initial: Record<string, string> = {};
-      (banner.form_fields ?? []).forEach((f) => {
-        initial[f.key] = "";
-      });
-      setSignupValues(initial);
-      setSignupBanner(banner);
-      return;
-    }
-    if (!banner.action_url) return;
-    Linking.openURL(banner.action_url).catch(() => {
-      Alert.alert("Ошибка", "Не удалось открыть ссылку");
-    });
-  };
-
-  const handleSubmitSignup = async () => {
-    if (!signupBanner) return;
-    const fields = signupBanner.form_fields ?? [];
-    for (const f of fields) {
-      if (f.required && !(signupValues[f.key] ?? "").trim()) {
-        Alert.alert("Заполните поля", `Поле «${f.label}» обязательно`);
-        return;
+      if (res.room_id) {
+        navigation.dispatch(
+          CommonActions.navigate({
+            name: "ChatTab",
+            params: {
+              screen: "ChatRoom",
+              params: {
+                roomId: res.room_id,
+                title: res.admin_name ?? "Администратор",
+              },
+              initial: false,
+            },
+          }),
+        );
+      } else {
+        Alert.alert(
+          "Спасибо!",
+          "Заявка принята. Мы свяжемся с вами в ближайшее время.",
+        );
       }
-    }
-    try {
-      setSubmittingSignup(true);
-      await api.submitBannerSignup(signupBanner.id, signupValues);
-      setSignupBanner(null);
-      Alert.alert("Спасибо!", "Заявка отправлена, мы свяжемся с вами");
     } catch (e: any) {
       Alert.alert("Ошибка", e?.message ?? "Не удалось отправить заявку");
     } finally {
-      setSubmittingSignup(false);
+      setSubmitting(false);
     }
   };
-
-  const showBanners = banners.length > 0;
-  const screenWidth = Dimensions.get("window").width;
-  const bannerWidth = screenWidth - 40; // ScrollView horizontal padding 20 each side
-  const handleBannerScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const idx = Math.round(e.nativeEvent.contentOffset.x / bannerWidth);
-    if (idx !== bannerIndex) setBannerIndex(idx);
-  };
-
-  const nearest = registrations[0] ?? null;
 
   return (
     <View className="flex-1 bg-[#f5f5fa]">
       <SafeAreaView edges={["top"]} className="bg-[#f5f5fa]">
-        <View className="px-5 pt-3 pb-4 flex-row items-center justify-between">
-          <Text className="text-2xl font-bold text-gray-900">Школа Гарри 🧙</Text>
+        <View className="px-5 pt-3 pb-2 flex-row items-center justify-between">
+          <Text className="text-2xl font-bold text-gray-900">Гарри 🧙</Text>
           <Pressable
-            onPress={() => navigation.navigate("Notifications")}
+            onPress={() =>
+              navigation.navigate("HomeTab", { screen: "Notifications" })
+            }
             hitSlop={8}
             className="w-10 h-10 rounded-full bg-white items-center justify-center"
           >
@@ -213,495 +189,322 @@ export function HomeScreen() {
       </SafeAreaView>
 
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 32, gap: 20 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#4f46e5" />}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32, gap: 12 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={C.purple} />}
       >
         {loading && (
           <View className="py-8 items-center">
-            <ActivityIndicator color="#4f46e5" />
+            <ActivityIndicator color={C.purple} />
           </View>
         )}
 
-        {nearest ? (
-          <Pressable
-            onPress={() => navigation.navigate("Exams")}
-            className="rounded-2xl p-5 bg-brand-700"
-          >
-            <View className="flex-row items-center gap-1.5 mb-3">
-              <Flame size={14} color="#fdba74" />
-              <Text className="text-xs font-semibold text-white/80 uppercase tracking-wider">
-                Ближайший экзамен
-              </Text>
-            </View>
-            <Text className="text-xl font-bold text-white mb-1">{nearest.exam_title}</Text>
-            <Text className="text-sm text-white/80 mb-4">
-              {fmtDate(nearest.date)} · через {nearest.days_until}{" "}
-              {nearest.days_until === 1 ? "день" : nearest.days_until < 5 ? "дня" : "дней"}
-            </Text>
-            <View className="self-start bg-white/20 rounded-xl px-4 py-2">
-              <Text className="text-white text-sm font-semibold">Подробнее →</Text>
-            </View>
-          </Pressable>
-        ) : availableSessions.length > 0 ? (
-          <Pressable
-            onPress={() => navigation.navigate("ExamRegister")}
-            className="rounded-2xl p-5 bg-brand-700"
-          >
-            <View className="flex-row items-center gap-1.5 mb-3">
-              <FileText size={14} color="#fdba74" />
-              <Text className="text-xs font-semibold text-white/80 uppercase tracking-wider">Запись открыта</Text>
-            </View>
-            <Text className="text-xl font-bold text-white mb-1">{availableSessions[0].exam_title}</Text>
-            <Text className="text-sm text-white/80 mb-4">
-              Доступно {availableSessions[0].time_slots.reduce((s, sl) => s + sl.available_seats, 0)} мест
-            </Text>
-            <View className="self-start bg-white/20 rounded-xl px-4 py-2">
-              <Text className="text-white text-sm font-semibold">Записаться →</Text>
-            </View>
-          </Pressable>
-        ) : null}
+        {/* ── Главный баннер летнего курса ── */}
+        <View
+          style={{
+            borderRadius: 22,
+            backgroundColor: "#1A0A3D",
+            padding: 18,
+            paddingBottom: 16,
+            overflow: "hidden",
+            position: "relative",
+          }}
+        >
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              right: -24,
+              top: -24,
+              width: 130,
+              height: 130,
+              borderRadius: 65,
+              backgroundColor: "rgba(255,130,0,0.13)",
+            }}
+          />
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              right: 30,
+              bottom: -18,
+              width: 80,
+              height: 80,
+              borderRadius: 40,
+              backgroundColor: "rgba(255,130,0,0.08)",
+            }}
+          />
+          <Image
+            source={require("../../assets/icon.png")}
+            resizeMode="contain"
+            style={{
+              position: "absolute",
+              bottom: -20,
+              right: -18,
+              height: 170,
+              width: 170,
+              opacity: 0.6,
+            }}
+          />
 
-        {registrations.length > 0 && (
-          <View>
-            <View className="flex-row items-center justify-between mb-3">
-              <Text className="font-bold text-gray-900 text-base">Мои экзамены</Text>
-              <Pressable onPress={() => navigation.navigate("Exams")}>
-                <Text className="text-sm text-brand-700 font-medium">Все →</Text>
-              </Pressable>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View className="flex-row gap-3">
-                {registrations.slice(0, 4).map((reg) => (
-                  <View key={reg.id} className="bg-violet-100 rounded-2xl p-4" style={{ minWidth: 140 }}>
-                    <View className="flex-row items-start justify-between mb-2">
-                      <View className="w-9 h-9 rounded-xl bg-violet-500 items-center justify-center">
-                        <FileText size={16} color="#fff" />
-                      </View>
-                      <View className="bg-violet-200 px-2 py-0.5 rounded-full">
-                        <Text className="text-xs font-bold text-violet-800">{reg.days_until} дн</Text>
-                      </View>
-                    </View>
-                    <Text className="text-xs font-semibold text-violet-700 mb-0.5">
-                      {reg.exam_type ?? "Экзамен"}
-                    </Text>
-                    <Text className="text-sm font-bold text-gray-900" numberOfLines={2}>
-                      {reg.subject_name ?? reg.exam_title}
-                    </Text>
-                    <Text className="text-xs text-gray-500 mt-1">{fmtDate(reg.date)}</Text>
-                  </View>
-                ))}
+          <View style={{ position: "relative", zIndex: 1 }}>
+            <View style={{ flexDirection: "row", gap: 7, marginBottom: 11, alignItems: "center" }}>
+              <View
+                style={{
+                  backgroundColor: C.yellow,
+                  borderRadius: 20,
+                  paddingHorizontal: 11,
+                  paddingVertical: 4,
+                }}
+              >
+                <Text style={{ color: "#1A1A1A", fontSize: 12, fontWeight: "700" }}>
+                  ☀️ ЛЕТО 2025
+                </Text>
               </View>
-            </ScrollView>
-          </View>
-        )}
+              <View
+                style={{
+                  backgroundColor: "rgba(255,255,255,0.18)",
+                  borderRadius: 20,
+                  paddingHorizontal: 11,
+                  paddingVertical: 4,
+                }}
+              >
+                <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>8–11 класс</Text>
+              </View>
+            </View>
 
-        {showBanners && (
-          <View style={{ marginHorizontal: -20 }}>
-            <ScrollView
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              snapToInterval={bannerWidth}
-              decelerationRate="fast"
-              contentContainerStyle={{ paddingHorizontal: 20 }}
-              onMomentumScrollEnd={handleBannerScroll}
-            >
-              {banners.map((b) => {
-              const hasImage = !!b.background_image_url;
-              const content = (
-                <>
-                  {!hasImage && (
-                    <View
-                      pointerEvents="none"
-                      style={{
-                        position: "absolute",
-                        right: -40,
-                        top: -40,
-                        width: 220,
-                        height: 220,
-                        borderRadius: 110,
-                        backgroundColor: b.gradient_to,
-                        opacity: 0.55,
-                      }}
-                    />
-                  )}
-                  {hasImage && (
-                    <View
-                      pointerEvents="none"
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        backgroundColor: "rgba(0,0,0,0.4)",
-                      }}
-                    />
-                  )}
-                  <View className="flex-row items-center gap-2 mb-3 flex-wrap">
-                    {b.badge_text && (
-                      <View
-                        className="px-2.5 py-1 rounded-full"
-                        style={{ backgroundColor: b.badge_color ?? "#f59e0b" }}
-                      >
-                        <Text className="text-[11px] font-bold text-white">{b.badge_text}</Text>
-                      </View>
-                    )}
-                    {b.price_text && (
-                      <View className="px-2.5 py-1 rounded-full bg-white/25">
-                        <Text className="text-[11px] font-bold text-white">{b.price_text}</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text className="text-xl font-bold text-white mb-1">
-                    {b.icon ? `${b.icon} ` : ""}{b.title}
-                  </Text>
-                  {b.subtitle && (
-                    <Text className="text-sm text-white/90 mb-3">{b.subtitle}</Text>
-                  )}
-                  {b.footer_tags && (
-                    <View className="flex-row items-center justify-between mt-1">
-                      <Text className="text-xs text-white/80">{b.footer_tags}</Text>
-                      {!b.signup_enabled && b.action_url ? <ChevronRight size={16} color="#fff" /> : null}
-                    </View>
-                  )}
-                  {b.signup_enabled && (
-                    <View className="mt-3 bg-white/95 rounded-xl py-2.5 items-center">
-                      <Text className="text-sm font-bold" style={{ color: hasImage ? "#1f2937" : b.gradient_from }}>
-                        {b.signup_button_text || "Записаться"}
-                      </Text>
-                    </View>
-                  )}
-                </>
-              );
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <Text style={{ fontSize: 24, fontWeight: "900", color: "#fff", lineHeight: 28 }}>
+                Летний курс
+              </Text>
+              <View
+                style={{
+                  backgroundColor: "rgba(245,195,0,0.25)",
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 4,
+                }}
+              >
+                <Text style={{ color: C.yellow, fontSize: 14, fontWeight: "900" }}>~60 баллов</Text>
+              </View>
+            </View>
+            <Text style={{ color: "rgba(255,255,255,0.65)", fontSize: 13, marginTop: 4 }}>
+              ЕГЭ и ОГЭ · интенсив
+            </Text>
 
-              return (
-                <Pressable
-                  key={b.id}
-                  onPress={() => handleBannerPress(b)}
-                  disabled={!b.action_url && !b.signup_enabled}
-                  className="rounded-2xl overflow-hidden"
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 13 }}>
+              {["▶ Видео 15мин", "✍️ Задания + ДЗ", "📝 Контрольные", "🎯 2–3 варианта"].map((f) => (
+                <View
+                  key={f}
                   style={{
-                    backgroundColor: b.gradient_from,
-                    width: bannerWidth,
+                    backgroundColor: "rgba(255,255,255,0.13)",
+                    borderRadius: 20,
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
                   }}
                 >
-                  {hasImage ? (
-                    <ImageBackground
-                      source={{ uri: b.background_image_url as string }}
-                      resizeMode="cover"
-                      style={{ padding: 20, minHeight: 180 }}
-                    >
-                      {content}
-                    </ImageBackground>
-                  ) : (
-                    <View style={{ padding: 20, minHeight: 180 }}>{content}</View>
-                  )}
+                  <Text style={{ color: "#fff", fontSize: 11, fontWeight: "500" }}>{f}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        </View>
+
+        {/* ── Тип экзамена + выбор предмета ── */}
+        <View style={{ backgroundColor: "#fff", borderRadius: 18, padding: 14 }}>
+          <Text style={{ fontSize: 13, fontWeight: "700", color: C.sub, marginBottom: 8, letterSpacing: 0.2 }}>
+            ТИП ЭКЗАМЕНА
+          </Text>
+          <View style={{ flexDirection: "row", gap: 8, marginBottom: 14 }}>
+            {(["ЕГЭ", "ОГЭ"] as ExamType[]).map((e) => {
+              const active = exam === e;
+              return (
+                <Pressable
+                  key={e}
+                  onPress={() => setExam(e)}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 10,
+                    borderRadius: 12,
+                    backgroundColor: active ? C.purple : "#F0EEF8",
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: active ? "#fff" : C.text, fontWeight: "700", fontSize: 15 }}>
+                    {e}
+                  </Text>
                 </Pressable>
               );
             })}
-            </ScrollView>
-            {banners.length > 1 && (
-              <View className="flex-row items-center justify-center gap-1.5 mt-3">
-                {banners.map((_, i) => (
-                  <View
-                    key={i}
-                    style={{
-                      width: i === bannerIndex ? 18 : 6,
-                      height: 6,
-                      borderRadius: 3,
-                      backgroundColor: i === bannerIndex ? "#4f46e5" : "#d1d5db",
-                    }}
-                  />
-                ))}
-              </View>
-            )}
           </View>
-        )}
 
-        {infoCard && infoCard.is_visible && (
-          <View
-            className="rounded-3xl p-5 overflow-hidden"
-            style={{ backgroundColor: infoCard.gradient_from }}
-          >
-            <View
-              pointerEvents="none"
-              style={{
-                position: "absolute",
-                right: -60,
-                top: -60,
-                width: 260,
-                height: 260,
-                borderRadius: 130,
-                backgroundColor: infoCard.gradient_to,
-                opacity: 0.55,
-              }}
-            />
-            <View className="flex-row items-center gap-3 mb-4">
-              <View
-                className="w-11 h-11 rounded-xl items-center justify-center"
-                style={{ backgroundColor: infoCard.logo_bg_color }}
-              >
-                <Text style={{ fontSize: 22 }}>{infoCard.logo_emoji}</Text>
-              </View>
-              <View>
-                <Text className="text-white font-bold text-base">{infoCard.center_name}</Text>
-                <Text className="text-white/80 text-xs">{infoCard.center_subtitle}</Text>
-              </View>
-            </View>
-
-            <Text className="text-white text-xl font-bold mb-1">
-              {infoCard.heading_line1}
-              {infoCard.heading_line2 ? (
-                <>
-                  {"\n"}
-                  <Text style={{ color: infoCard.heading_accent_color }}>{infoCard.heading_line2}</Text>
-                </>
-              ) : null}
-            </Text>
-            {infoCard.subheading && (
-              <Text className="text-white/90 text-sm mb-4">{infoCard.subheading}</Text>
-            )}
-
-            {infoCard.stats.length > 0 && (
-              <View className="flex-row gap-2 mb-3">
-                {infoCard.stats.map((s, i) => (
-                  <View key={i} className="flex-1 bg-white/10 rounded-2xl py-3 px-2 items-center">
-                    <Text className="text-white font-bold text-base">{s.value}</Text>
-                    <Text className="text-white/70 text-[10px] text-center mt-1" numberOfLines={2}>
-                      {s.label}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {infoCard.tags.length > 0 && (
-              <View className="gap-2 mb-3">
-                {infoCard.tags.map((t, i) => (
-                  <View key={i} className="flex-row items-center bg-white/15 rounded-full px-3 py-2">
-                    {t.icon ? <Text style={{ marginRight: 8 }}>{t.icon}</Text> : null}
-                    <Text className="text-white text-xs font-medium flex-1">{t.text}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {infoCard.formats.length > 0 && (
-              <View className="flex-row gap-2 mb-4">
-                {infoCard.formats.map((f, i) => (
-                  <View
-                    key={i}
-                    className="flex-1 rounded-2xl p-3"
-                    style={{ backgroundColor: f.bg_color ?? "rgba(255,255,255,0.15)" }}
-                  >
-                    <Text className="text-white font-bold text-sm">
-                      {f.icon ? `${f.icon} ` : ""}{f.title}
-                    </Text>
-                    {f.subtitle && (
-                      <Text className="text-white/90 text-xs mt-0.5">{f.subtitle}</Text>
-                    )}
-                  </View>
-                ))}
-              </View>
-            )}
-
-            <View className="gap-2">
-              {infoCard.trial_button_enabled && (
+          <Text style={{ fontSize: 13, fontWeight: "700", color: C.sub, marginBottom: 8, letterSpacing: 0.2 }}>
+            ПРЕДМЕТ
+          </Text>
+          <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+            {([
+              { id: "cs" as const, emoji: "💻", label: "Информатика" },
+              { id: "ru" as const, emoji: "📖", label: "Русский" },
+            ]).map((s) => {
+              const active = subj === s.id;
+              return (
                 <Pressable
-                  onPress={handleOpenTrial}
-                  className="bg-white rounded-xl py-3 items-center"
+                  key={s.id}
+                  onPress={() => setSubj(s.id)}
+                  style={{
+                    flex: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    paddingVertical: 10,
+                    borderRadius: 12,
+                    backgroundColor: active ? C.purple : "#F0EEF8",
+                  }}
                 >
-                  <Text className="font-bold text-sm" style={{ color: infoCard.gradient_from }}>
-                    {infoCard.trial_button_text}
+                  <Text style={{ fontSize: 14 }}>{s.emoji}</Text>
+                  <Text style={{ color: active ? "#fff" : C.text, fontWeight: "600", fontSize: 14 }}>
+                    {s.label}
                   </Text>
                 </Pressable>
-              )}
-              {infoCard.tariffs_button_enabled && (
-                <Pressable
-                  onPress={handleOpenTariffs}
-                  className="bg-white/20 rounded-xl py-3 items-center"
-                >
-                  <Text className="text-white font-bold text-sm">{infoCard.tariffs_button_text}</Text>
-                </Pressable>
-              )}
+              );
+            })}
+          </View>
+          {[
+            { id: "ma" as const, emoji: "📊", label: maLabel },
+            { id: "other" as const, emoji: "➕", label: "Другой предмет" },
+          ].map((s) => {
+            const active = subj === s.id;
+            return (
+              <Pressable
+                key={s.id}
+                onPress={() => setSubj(s.id)}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  paddingVertical: 10,
+                  borderRadius: 12,
+                  backgroundColor: active ? C.purple : "#F0EEF8",
+                  marginBottom: 8,
+                }}
+              >
+                <Text style={{ fontSize: 14 }}>{s.emoji}</Text>
+                <Text style={{ color: active ? "#fff" : C.text, fontWeight: "600", fontSize: 14 }}>
+                  {s.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* ── Инфо-плашка с ценой ── */}
+        <View style={{ backgroundColor: C.purple, borderRadius: 18, padding: 14 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={{ fontSize: 13, color: "rgba(255,255,255,0.65)" }}>Выбран предмет</Text>
+              <Text style={{ fontSize: 17, fontWeight: "800", color: "#fff", marginTop: 2 }} numberOfLines={2}>
+                {subjectLabel}
+              </Text>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={{ fontSize: 13, color: "rgba(255,255,255,0.65)" }}>Стоимость</Text>
+              <Text style={{ fontSize: 22, fontWeight: "900", color: C.yellow, marginTop: 2 }}>
+                990 ₽
+              </Text>
             </View>
           </View>
-        )}
 
+          {subj === "other" && (
+            <View style={{ marginTop: 12 }}>
+              <Text style={{ color: "rgba(255,255,255,0.65)", fontSize: 12, marginBottom: 6 }}>
+                Выберите предмет из списка:
+              </Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                {extraList.map((s) => {
+                  const active = otherSubj === s;
+                  return (
+                    <Pressable
+                      key={s}
+                      onPress={() => setOtherSubj(s)}
+                      style={{
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 10,
+                        backgroundColor: active ? C.yellow : "rgba(255,255,255,0.18)",
+                      }}
+                    >
+                      <Text style={{ color: active ? "#1A1A1A" : "#fff", fontWeight: "600", fontSize: 12 }}>
+                        {s}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* ── CTA ── */}
+        <Pressable
+          onPress={openSignup}
+          style={{
+            backgroundColor: C.purple,
+            borderRadius: 14,
+            paddingVertical: 14,
+            alignItems: "center",
+          }}
+        >
+          <Text style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}>Оставить заявку →</Text>
+        </Pressable>
       </ScrollView>
 
       <Modal
-        visible={!!signupBanner}
+        visible={signupOpen}
         animationType="slide"
         transparent
-        onRequestClose={() => setSignupBanner(null)}
+        onRequestClose={() => setSignupOpen(false)}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.5)" }}
         >
-          <View className="bg-white rounded-t-3xl max-h-[85%]">
-            <View className="flex-row items-center justify-between px-5 pt-5 pb-2">
-              <Text className="text-lg font-bold text-gray-900 flex-1" numberOfLines={2}>
-                {signupBanner?.title}
+          <View className="bg-white rounded-t-3xl">
+            <View style={{ width: 36, height: 4, backgroundColor: "#E0E0E0", borderRadius: 2, alignSelf: "center", marginTop: 10, marginBottom: 4 }} />
+            <View className="flex-row items-center justify-between px-5 pt-3 pb-2">
+              <Text className="text-lg font-bold text-gray-900 flex-1" numberOfLines={1}>
+                Заявка на летний курс
               </Text>
-              <Pressable onPress={() => setSignupBanner(null)} hitSlop={12}>
-                <X size={22} color="#6b7280" />
-              </Pressable>
-            </View>
-            <ScrollView className="px-5" keyboardShouldPersistTaps="handled">
-              {signupBanner?.subtitle && (
-                <Text className="text-sm text-gray-500 mb-4">{signupBanner.subtitle}</Text>
-              )}
-
-              <View className="bg-blue-50 rounded-xl p-3 mb-4">
-                <Text className="text-xs text-blue-900">
-                  Ваши данные ({profile?.first_name} {profile?.last_name}
-                  {profile?.phone ? ` · ${profile.phone}` : ""}) будут отправлены автоматически
-                </Text>
-              </View>
-
-              {(signupBanner?.form_fields ?? []).map((f) => (
-                <View key={f.id} className="mb-4">
-                  <Text className="text-sm font-medium text-gray-900 mb-1.5">
-                    {f.label}
-                    {f.required ? <Text className="text-red-500"> *</Text> : null}
-                  </Text>
-                  {f.field_type === "select" ? (
-                    <View className="flex-row flex-wrap gap-2">
-                      {(f.options ?? []).map((opt) => {
-                        const selected = signupValues[f.key] === opt;
-                        return (
-                          <Pressable
-                            key={opt}
-                            onPress={() => setSignupValues((prev) => ({ ...prev, [f.key]: opt }))}
-                            className={`px-3 py-2 rounded-full border ${
-                              selected ? "bg-blue-600 border-blue-600" : "bg-white border-gray-300"
-                            }`}
-                          >
-                            <Text className={`text-sm ${selected ? "text-white font-semibold" : "text-gray-700"}`}>
-                              {opt}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  ) : (
-                    <TextInput
-                      value={signupValues[f.key] ?? ""}
-                      onChangeText={(v) => setSignupValues((prev) => ({ ...prev, [f.key]: v }))}
-                      placeholder={f.placeholder ?? ""}
-                      placeholderTextColor="#9ca3af"
-                      multiline={f.field_type === "textarea"}
-                      keyboardType={
-                        f.field_type === "phone"
-                          ? "phone-pad"
-                          : f.field_type === "email"
-                          ? "email-address"
-                          : f.field_type === "number"
-                          ? "numeric"
-                          : "default"
-                      }
-                      autoCapitalize={f.field_type === "email" ? "none" : "sentences"}
-                      className="border border-gray-200 rounded-xl px-3 py-3 text-[16px] text-gray-900 bg-white"
-                      style={f.field_type === "textarea" ? { minHeight: 80, textAlignVertical: "top" } : undefined}
-                    />
-                  )}
-                </View>
-              ))}
-            </ScrollView>
-
-            <View className="px-5 pt-2 pb-6">
-              <Pressable
-                onPress={handleSubmitSignup}
-                disabled={submittingSignup}
-                className="rounded-xl py-3.5 items-center"
-                style={{ backgroundColor: signupBanner?.gradient_from ?? "#2563eb", opacity: submittingSignup ? 0.6 : 1 }}
-              >
-                {submittingSignup ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text className="text-white font-bold text-[16px]">
-                    {signupBanner?.signup_button_text || "Отправить заявку"}
-                  </Text>
-                )}
-              </Pressable>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* Tariffs modal */}
-      <Modal
-        visible={tariffsOpen}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setTariffsOpen(false)}
-      >
-        <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.5)" }}>
-          <View className="bg-white rounded-t-3xl max-h-[85%]">
-            <View className="flex-row items-center justify-between px-5 pt-5 pb-3">
-              <Text className="text-lg font-bold text-gray-900">Тарифы</Text>
-              <Pressable onPress={() => setTariffsOpen(false)} hitSlop={12}>
-                <X size={22} color="#6b7280" />
-              </Pressable>
-            </View>
-            <ScrollView className="px-5 pb-6">
-              {plans.length === 0 ? (
-                <Text className="text-sm text-gray-500 text-center py-10">Пока нет тарифов</Text>
-              ) : (
-                <View className="gap-3">
-                  {plans.map((p) => (
-                    <View key={p.id} className="bg-gray-50 rounded-2xl p-4">
-                      <Text className="text-gray-900 font-bold text-base mb-1">{p.name}</Text>
-                      <Text className="text-gray-500 text-sm mb-2">{p.lessons_count} уроков</Text>
-                      <View className="flex-row items-baseline gap-2">
-                        <Text className="text-gray-900 font-bold text-xl">{p.price.toLocaleString("ru-RU")} ₽</Text>
-                        <Text className="text-gray-400 text-xs">
-                          {Math.round(p.price / p.lessons_count).toLocaleString("ru-RU")} ₽/урок
-                        </Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Trial signup modal */}
-      <Modal
-        visible={trialOpen}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setTrialOpen(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.5)" }}
-        >
-          <View className="bg-white rounded-t-3xl max-h-[85%]">
-            <View className="flex-row items-center justify-between px-5 pt-5 pb-2">
-              <Text className="text-lg font-bold text-gray-900">Записаться на пробный</Text>
-              <Pressable onPress={() => setTrialOpen(false)} hitSlop={12}>
+              <Pressable onPress={() => setSignupOpen(false)} hitSlop={12}>
                 <X size={22} color="#6b7280" />
               </Pressable>
             </View>
             <ScrollView className="px-5" keyboardShouldPersistTaps="handled">
               <Text className="text-sm text-gray-500 mb-4">
-                Мы свяжемся с вами, чтобы подобрать группу и время
+                {subjectLabel} · {exam} · 990 ₽
               </Text>
 
-              <View className="mb-4">
+              <View className="mb-3">
                 <Text className="text-sm font-medium text-gray-900 mb-1.5">
-                  Имя ученика <Text className="text-red-500">*</Text>
+                  Имя <Text className="text-red-500">*</Text>
                 </Text>
                 <TextInput
-                  value={trialForm.student_name}
-                  onChangeText={(v) => setTrialForm((p) => ({ ...p, student_name: v }))}
-                  placeholder="Иван Иванов"
+                  value={form.first_name}
+                  onChangeText={(v) => setForm((p) => ({ ...p, first_name: v }))}
+                  placeholder="Иван"
+                  placeholderTextColor="#9ca3af"
+                  className="border border-gray-200 rounded-xl px-3 py-3 text-[16px] text-gray-900 bg-white"
+                />
+              </View>
+
+              <View className="mb-3">
+                <Text className="text-sm font-medium text-gray-900 mb-1.5">
+                  Фамилия <Text className="text-red-500">*</Text>
+                </Text>
+                <TextInput
+                  value={form.last_name}
+                  onChangeText={(v) => setForm((p) => ({ ...p, last_name: v }))}
+                  placeholder="Иванов"
                   placeholderTextColor="#9ca3af"
                   className="border border-gray-200 rounded-xl px-3 py-3 text-[16px] text-gray-900 bg-white"
                 />
@@ -709,37 +512,14 @@ export function HomeScreen() {
 
               <View className="mb-4">
                 <Text className="text-sm font-medium text-gray-900 mb-1.5">
-                  Телефон <Text className="text-red-500">*</Text>
+                  Телефон или email <Text className="text-red-500">*</Text>
                 </Text>
                 <TextInput
-                  value={trialForm.phone}
-                  onChangeText={(v) => setTrialForm((p) => ({ ...p, phone: v }))}
+                  value={form.phone}
+                  onChangeText={(v) => setForm((p) => ({ ...p, phone: v }))}
                   placeholder="+7 ___ ___ __ __"
                   placeholderTextColor="#9ca3af"
-                  keyboardType="phone-pad"
-                  className="border border-gray-200 rounded-xl px-3 py-3 text-[16px] text-gray-900 bg-white"
-                />
-              </View>
-
-              <View className="mb-4">
-                <Text className="text-sm font-medium text-gray-900 mb-1.5">Имя родителя</Text>
-                <TextInput
-                  value={trialForm.parent_name}
-                  onChangeText={(v) => setTrialForm((p) => ({ ...p, parent_name: v }))}
-                  placeholder="Необязательно"
-                  placeholderTextColor="#9ca3af"
-                  className="border border-gray-200 rounded-xl px-3 py-3 text-[16px] text-gray-900 bg-white"
-                />
-              </View>
-
-              <View className="mb-4">
-                <Text className="text-sm font-medium text-gray-900 mb-1.5">Класс</Text>
-                <TextInput
-                  value={trialForm.class_number}
-                  onChangeText={(v) => setTrialForm((p) => ({ ...p, class_number: v.replace(/[^0-9]/g, "") }))}
-                  placeholder="9"
-                  placeholderTextColor="#9ca3af"
-                  keyboardType="number-pad"
+                  keyboardType="default"
                   className="border border-gray-200 rounded-xl px-3 py-3 text-[16px] text-gray-900 bg-white"
                 />
               </View>
@@ -747,12 +527,17 @@ export function HomeScreen() {
 
             <View className="px-5 pt-2 pb-6">
               <Pressable
-                onPress={handleSubmitTrial}
-                disabled={submittingTrial}
-                className="rounded-xl py-3.5 items-center bg-brand-700"
-                style={{ opacity: submittingTrial ? 0.6 : 1 }}
+                onPress={handleSubmit}
+                disabled={submitting}
+                style={{
+                  backgroundColor: C.purple,
+                  borderRadius: 14,
+                  paddingVertical: 14,
+                  alignItems: "center",
+                  opacity: submitting ? 0.6 : 1,
+                }}
               >
-                {submittingTrial ? (
+                {submitting ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <Text className="text-white font-bold text-[16px]">Отправить заявку</Text>

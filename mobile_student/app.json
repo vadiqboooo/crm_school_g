@@ -1,20 +1,31 @@
 {
   "expo": {
-    "name": "Garry School",
+    "name": "Гарри",
     "slug": "garry-school-student",
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "garryschool",
     "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#fbbf24"
+    },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "ru.garryschool.student"
+      "bundleIdentifier": "ru.garryschool.student",
+      "icon": "./assets/icon.png"
     },
     "android": {
       "package": "ru.garryschool.student",
       "versionCode": 1,
       "softwareKeyboardLayoutMode": "resize",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#fbbf24"
+      },
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",

@@ -78,19 +78,11 @@ def _send_via_smtp(to: str, subject: str, html: str, text: str | None) -> None:
 
 def send_email(to: str, subject: str, html: str, text: str | None = None) -> None:
     if _resend_configured():
-        try:
-            _send_via_resend(to, subject, html, text)
-            return
-        except Exception as e:
-            log.exception("Resend не сработал, пробую SMTP: %s", e)
+        _send_via_resend(to, subject, html, text)
+        return
 
     if _smtp_configured():
-        try:
-            _send_via_smtp(to, subject, html, text)
-            return
-        except Exception as e:
-            log.exception("Не удалось отправить email %s: %s", to, e)
-            raise
+        _send_via_smtp(to, subject, html, text)
         return
 
     log.warning(

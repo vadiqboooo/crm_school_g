@@ -286,7 +286,7 @@ class StudentApiClient {
   }
 
   submitTrialSignup(body: TrialSignupBody) {
-    return this.request<{ message: string; lead_id: string }>("/student-portal/trial-signup", {
+    return this.request<TrialSignupResponse>("/student-portal/trial-signup", {
       method: "POST",
       body: JSON.stringify(body),
     });
@@ -643,6 +643,15 @@ export interface TrialSignupBody {
   phone: string;
   parent_name?: string | null;
   class_number?: number | null;
+  exam_type?: string | null;
+  subject_name?: string | null;
+}
+
+export interface TrialSignupResponse {
+  message: string;
+  lead_id: string;
+  room_id: string | null;
+  admin_name: string | null;
 }
 
 export interface TodayLesson {

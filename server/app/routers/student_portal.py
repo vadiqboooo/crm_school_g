@@ -989,14 +989,19 @@ class TrialSignupRequest(BaseModel):
     phone: str
     parent_name: str | None = None
     class_number: int | None = None
+    exam_type: str | None = None  # "ЕГЭ" / "ОГЭ"
+    subject_name: str | None = None
 
 
 @router.post("/trial-signup", status_code=201)
 async def submit_trial_signup(
     body: TrialSignupRequest,
-    _: PortalIdentity = Depends(get_portal_identity_dep),
+    identity: PortalIdentity = Depends(get_portal_identity_dep),
     db: AsyncSession = Depends(get_db),
 ):
+    from app.models.employee import Employee, EmployeeRole
+    from app.crud import chat as chat_crud
+
     if not body.student_name.strip():
         raise HTTPException(status_code=400, detail="Укажите имя ученика")
     if not body.phone.strip():
@@ -1012,4 +1017,60 @@ async def submit_trial_signup(
     )
     db.add(lead)
     await db.commit()
-    return {"message": "Заявка отправлена", "lead_id": str(lead.id)}
+
+    # ── Создаём чат с администратором и пишем приветственное сообщение ──
+    admin_res = await db.execute(
+        select(Employee)
+        .where(Employee.is_active == True, Employee.role == EmployeeRole.admin)
+        .limit(1)
+    )
+    admin = admin_res.scalar_one_or_none()
+    if not admin:
+        admin_res = await db.execute(
+            select(Employee).where(Employee.is_active == True).limit(1)
+        )
+        admin = admin_res.scalar_one_or_none()
+
+    room_id: str | None = None
+    admin_name: str | None = None
+    if admin:
+        if identity.student:
+            me_id, me_type = identity.student.id, "student"
+        elif identity.app_user:
+            me_id, me_type = identity.app_user.id, "app_user"
+        else:
+            me_id, me_type = None, None
+
+        if me_id and me_type:
+            room = await chat_crud.get_or_create_direct_room(
+                db, me_id, me_type, admin.id, "employee"
+            )
+            subject_part = ""
+            if body.exam_type or body.subject_name:
+                subject_part = (
+                    f" на «{(body.subject_name or '').strip()}»"
+                    if body.subject_name else ""
+                )
+                if body.exam_type:
+                    subject_part = f" на {body.exam_type}{subject_part}"
+            welcome = (
+                f"Спасибо за заявку{subject_part}! "
+                f"Я свяжусь с вами в ближайшее время и расскажу подробнее о летнем курсе. "
+                f"Можете писать прямо сюда — отвечу как только появлюсь онлайн."
+            )
+            await chat_crud.create_message(
+                db,
+                room_id=room.id,
+                sender_id=admin.id,
+                sender_type="employee",
+                content_encrypted=welcome,
+            )
+            room_id = str(room.id)
+            admin_name = f"{admin.first_name} {admin.last_name}".strip()
+
+    return {
+        "message": "Заявка отправлена",
+        "lead_id": str(lead.id),
+        "room_id": room_id,
+        "admin_name": admin_name,
+    }
